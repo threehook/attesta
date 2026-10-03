@@ -1,9 +1,7 @@
 package policy
 
-// Authorize evaluates whether a disclosed credential (represented here by the
-// public signals a ZK proof already verified) satisfies the requirements for
-// accessing resource. It returns an allow/deny decision and a human-readable
-// reason.
+// Authorize evaluates whether a disclosed credential (represented here by the public signals a ZK proof already verified) satisfies the requirements
+// for accessing resource. It returns an allow/deny decision and a human-readable reason.
 func Authorize(resource string, issuer string) (bool, string) {
 	trustedIssuers := map[string]bool{
 		"trusted-university": true,

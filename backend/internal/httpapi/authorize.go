@@ -1,0 +1,88 @@
+package httpapi
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"zk-puoi/backend/internal/authz"
+)
+
+const defaultPolicyID = "diploma_check"
+
+type authorizeRequest struct {
+	Resource string `json:"resource"`
+	PolicyID string `json:"policyId"`
+	Proof    string `json:"proof"`
+	// PublicSignals must cryptographically verify against Proof.
+	PublicSignals []string `json:"publicSignals"`
+	// Issuer is a disclosed credential claim, passed separately from PublicSignals — see internal/authz.Input's doc comment.
+	Issuer string `json:"issuer"`
+}
+
+type authorizeResponse struct {
+	Allow  bool   `json:"allow"`
+	Reason string `json:"reason"`
+}
+
+func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
+	var req authorizeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if req.Resource == "" {
+		writeError(w, http.StatusBadRequest, "resource is required")
+		return
+	}
+	policyID := req.PolicyID
+	if policyID == "" {
+		policyID = defaultPolicyID
+	}
+
+	subject := s.auditSubject(r)
+	s.Logger.Info("authorize request", "subject", subject, "resource", req.Resource, "policyId", policyID)
+
+	valid, err := s.Proof.Verify(req.Proof, req.PublicSignals)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid proof: %v", err))
+		return
+	}
+	if !valid {
+		s.Logger.Info("authorize result", "subject", subject, "resource", req.Resource, "allow", false, "reason", "proof did not verify")
+		writeJSON(w, http.StatusOK, authorizeResponse{Allow: false, Reason: "proof did not verify"})
+		return
+	}
+
+	source, ok := s.Policies.Get(policyID)
+	if !ok {
+		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", policyID))
+		return
+	}
+
+	result, err := s.Authz.Evaluate(source, authz.Input{Resource: req.Resource, Issuer: req.Issuer})
+	if err != nil {
+		s.Logger.Error("policy evaluation failed", "subject", subject, "policyId", policyID, "error", err)
+		writeError(w, http.StatusInternalServerError, "policy evaluation failed")
+		return
+	}
+
+	s.Logger.Info("authorize result", "subject", subject, "resource", req.Resource, "allow", result.Allow, "reason", result.Reason)
+	writeJSON(w, http.StatusOK, authorizeResponse{Allow: result.Allow, Reason: result.Reason})
+}
+
+// auditSubject best-effort extracts the mock-login JWT's subject for logging only. A missing or invalid token never blocks the request — the proof
+// and policy are what decide authorization, the JWT is just identity for the audit trail.
+func (s *Server) auditSubject(r *http.Request) string {
+	const prefix = "Bearer "
+	h := r.Header.Get("Authorization")
+	if !strings.HasPrefix(h, prefix) {
+		return "anonymous"
+	}
+	claims, err := s.Auth.Verify(strings.TrimPrefix(h, prefix))
+	if err != nil {
+		return "anonymous"
+	}
+	return claims.Subject
+}

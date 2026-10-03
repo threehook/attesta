@@ -1,14 +1,13 @@
-// Command spike is a throwaway proof-of-concept for embedding gnovm
-// in-process (no gno.land chain) and calling an exported Gno function
-// from Go, to validate the approach before building internal/authz on it.
+// Command spike is a minimal, throwaway example of embedding gnovm in-process (no gno.land chain) and calling an exported Gno function from Go. See
+// internal/authz for the real, concurrency-safe implementation.
 package main
 
 import (
 	"fmt"
 	"os"
 
-	gno "github.com/gnolang/gno/gnovm/pkg/gnolang"
 	"github.com/gnolang/gno/gnovm/pkg/gnoenv"
+	gno "github.com/gnolang/gno/gnovm/pkg/gnolang"
 	"github.com/gnolang/gno/gnovm/pkg/test"
 )
 
