@@ -184,12 +184,6 @@ workspace link points at `client-lib/dist`, which Vite doesn't watch across the 
   consistently document this convention. If a future snarkjs/circom version
   changes it, every verification would start failing; the fixture-based test
   is the safety net.
-- **Docker Desktop's Kubernetes has been observed running a stale image under a reused tag** even after a
-  genuine `docker build` produced new content (`docker run` against the fresh image showed correct behavior;
-  the k8s pod under the same tag didn't, across two separate rebuild/redeploy cycles). The Makefile now tags
-  every build uniquely and uses `kubectl set image` instead of relying on a static manifest's `image:` field —
-  this reliably forces a real rollout, but the root cause (containerd-side image cache/tag resolution,
-  presumably) wasn't fully diagnosed.
 - **The demo credential registry is a small, fixed set** (`client-lib/circuits/diploma_membership/registry.mjs`'s
   two example credentials, padded to a depth-3 Merkle tree) — there's no real credential issuance; adding or
   revoking a credential means regenerating the registry and redeploying its root, not a running API. Its
