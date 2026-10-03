@@ -1,0 +1,75 @@
+:root {
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  justify-content: center;
+}
+
+#root {
+  width: 100%;
+  max-width: 720px;
+  padding: 2rem 1rem;
+}
+
+nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+nav button {
+  padding: 0.5rem 1rem;
+}
+
+nav button[aria-current="page"] {
+  font-weight: bold;
+  text-decoration: underline;
+}
+
+fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0 0 1rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid light-dark(#ddd, #444);
+}
+
+.result {
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  margin-top: 1rem;
+}
+
+.result.allow {
+  background: light-dark(#e6f7e9, #163d1e);
+}
+
+.result.deny {
+  background: light-dark(#fbeaea, #4a1f1f);
+}
+
+.error {
+  color: light-dark(#b00020, #ff6b6b);
+}

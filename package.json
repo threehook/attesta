@@ -1,0 +1,8 @@
+{
+  "name": "zk-puoi",
+  "private": true,
+  "description": "Monorepo root for the zk-puoi TypeScript packages (client-lib, examples/react-gui). The Go backend is not part of this workspace; see backend/go.mod.",
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -17,6 +17,10 @@ client-lib/circuits/**/proof.json
 client-lib/circuits/**/public.json
 client-lib/circuits/**/input.json
 
+# examples/react-gui/public/circuits is a synced copy of client-lib/circuits/*/build (see sync-circuit script),
+# not a separate source of truth — regenerate it rather than committing it twice.
+examples/react-gui/public/circuits/
+
 # IDE
 .idea/
 .vscode/

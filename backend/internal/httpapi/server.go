@@ -27,11 +27,26 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/login", s.handleLogin)
 	mux.HandleFunc("POST /v1/authorize", s.handleAuthorize)
 	mux.HandleFunc("POST /admin/policies", s.requireAdmin(s.handlePutPolicy))
-	return mux
+	return withCORS(mux)
 }
 
 func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
+}
+
+// withCORS allows any origin, unconditionally — fine for examples/react-gui's dev server talking to a local
+// backend, not fine anywhere this is reachable by an untrusted browser. See README's Known risks.
+func withCORS(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {

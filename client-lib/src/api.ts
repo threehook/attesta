@@ -22,7 +22,9 @@ export class ApiError extends Error {
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
-    private readonly fetchImpl: typeof fetch = fetch,
+    // Wrapped, not passed directly: a bare `fetch` reference loses its required `this` binding to `window` once
+    // detached from the global object, and browsers reject the call with "Illegal invocation" at call time.
+    private readonly fetchImpl: typeof fetch = (...args) => fetch(...args),
   ) {}
 
   async login(req: LoginRequest): Promise<LoginResponse> {

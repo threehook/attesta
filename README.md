@@ -42,7 +42,7 @@ Key design decisions (see commit history / discussion for rationale):
 | ZK proving | circom + snarkjs own the circuit, its trusted setup, and proving — entirely client-side |
 | ZK verifying | Go backend verifies with `gnark-crypto`'s pairing primitives directly against snarkjs's exported verification key; the full `gnark` module (circuit compiler, its own Setup/Prove) isn't a dependency at all — Groth16 verification is protocol-level math, not tied to whichever toolchain produced the circuit |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node |
-| TS workspace | pnpm workspaces across `client-lib` and `examples/react-gui` — not wired yet; `client-lib` currently stands alone on plain npm since there's no second package to link against until `examples/react-gui` exists |
+| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib` and `examples/react-gui` via `workspace:*` |
 | Verifiable Credentials | lightweight mock VCs for the MVP (no DID/signature infra yet) |
 
 ## Repo layout
@@ -72,10 +72,17 @@ client-lib/                TypeScript package @zk-puoi/client
     cubic/             circom circuit (toy, standing in for a real credential circuit), its build script, and a
                         CLI prove.sh for manually exercising /v1/authorize without a browser client
 examples/
-  react-gui/         (planned) Vite + React example GUI
+  react-gui/              Vite + React example GUI (@zk-puoi/react-gui)
+    src/
+      App.tsx               ties the three views together via simple tab state
+      components/           LoginView, WalletView, ResourceView (the proof-build + authorize flow)
+      lib/clients.ts         shared ApiClient/Wallet instances, circuit asset paths
+    public/circuits/        synced copy of client-lib's circuit build output (gitignored, see
+                             the sync-circuit script) — served as static files for snarkjs to fetch
 k8s/
   backend/            namespace/deployment/service manifests for Docker Desktop's k8s
 go.work               Go workspace covering backend/
+pnpm-workspace.yaml   client-lib + examples/react-gui
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
 
@@ -134,6 +141,21 @@ npm run typecheck
 npm run build      # emits dist/ (ESM + .d.ts); excludes *.test.ts via tsconfig.build.json
 ```
 
+### examples/react-gui
+
+Install once from the repo root with `pnpm install` (links `@zk-puoi/client` into the app via the workspace).
+Requires the backend running on `:8080` (CORS is wide open for this, see Known risks) and `client-lib`'s circuit
+already built (`client-lib/circuits/cubic/build.sh`, see above).
+
+```sh
+cd examples/react-gui
+pnpm dev       # syncs the circuit's wasm/zkey into public/circuits (predev hook), then starts Vite on :5173
+pnpm build      # same sync, then tsc -b && vite build
+```
+
+If you change `client-lib`'s source, rebuild it (`cd client-lib && npm run build`) and restart Vite — the
+workspace link points at `client-lib/dist`, which Vite doesn't watch across the package boundary.
+
 ## Known risks / open items
 
 - **gnovm embedding is not an upstream-stable API.** `gnovm/pkg/test.ProdStore`
@@ -177,3 +199,11 @@ npm run build      # emits dist/ (ESM + .d.ts); excludes *.test.ts via tsconfig.
   (`underscore`/`jsonpath`/`bfj`, an unbounded-recursion DoS). Upstream snarkjs's own dependency tree, not
   something this project controls without patching or forking; low real-world impact here since nothing feeds
   attacker-controlled input through those specific code paths, but unresolved.
+- **The backend's CORS policy (`internal/httpapi.withCORS`) allows any origin, unconditionally.** Needed for
+  `examples/react-gui`'s dev server to call a local backend at all; must become an allowlist before this is
+  reachable by anything other than a trusted local dev setup.
+- **`ApiClient`'s default `fetch` must be wrapped, not passed directly** (`(...args) => fetch(...args)`, not
+  bare `fetch`) — a detached `fetch` reference loses the `this === window` binding browsers require internally
+  and fails at call time with "Illegal invocation". Node's global `fetch` doesn't have this quirk, so
+  `client-lib`'s own (Node-run) tests never caught it; only the real browser run against `examples/react-gui`
+  did. Worth remembering before trusting Node-only test coverage for anything `fetch`-shaped.
