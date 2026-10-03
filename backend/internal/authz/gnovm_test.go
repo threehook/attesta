@@ -7,9 +7,12 @@ import (
 
 const diplomaPolicyV1 = `package policy
 
-func Authorize(resource string, issuer string) (bool, string) {
+func Authorize(resource string, credType string, issuer string) (bool, string) {
 	if resource != "diploma-vault" {
 		return false, "unknown resource"
+	}
+	if credType != "Diploma" {
+		return false, "unexpected credential type"
 	}
 	if issuer != "trusted-university" {
 		return false, "issuer not trusted"
@@ -20,7 +23,7 @@ func Authorize(resource string, issuer string) (bool, string) {
 
 const diplomaPolicyV2 = `package policy
 
-func Authorize(resource string, issuer string) (bool, string) {
+func Authorize(resource string, credType string, issuer string) (bool, string) {
 	return false, "v2 denies everything"
 }
 `
@@ -31,7 +34,7 @@ func TestGnoVMEvaluate(t *testing.T) {
 		t.Fatalf("NewGnoVM: %v", err)
 	}
 
-	result, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Issuer: "trusted-university"})
+	result, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"})
 	if err != nil {
 		t.Fatalf("Evaluate allow case: %v", err)
 	}
@@ -39,7 +42,7 @@ func TestGnoVMEvaluate(t *testing.T) {
 		t.Fatalf("Evaluate allow case: got deny, reason %q", result.Reason)
 	}
 
-	result, err = vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Issuer: "diploma-mill"})
+	result, err = vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "diploma-mill"})
 	if err != nil {
 		t.Fatalf("Evaluate deny case: %v", err)
 	}
@@ -56,7 +59,7 @@ func TestGnoVMEvaluateAfterHotReload(t *testing.T) {
 		t.Fatalf("NewGnoVM: %v", err)
 	}
 
-	in := Input{Resource: "diploma-vault", Issuer: "trusted-university"}
+	in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"}
 
 	result, err := vm.Evaluate(diplomaPolicyV1, in)
 	if err != nil || !result.Allow {

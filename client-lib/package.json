@@ -23,6 +23,8 @@
   "devDependencies": {
     "@types/node": "^26.6.4",
     "@types/snarkjs": "^0.7.9",
+    "circomlib": "^2.0.5",
+    "circomlibjs": "^0.1.7",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }

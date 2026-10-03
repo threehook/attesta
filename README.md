@@ -69,14 +69,19 @@ client-lib/                TypeScript package @zk-puoi/client
     wallet.ts             mock Verifiable Credential store (localStorage, or in-memory outside a browser)
     types.ts              shared wire types matching the backend's JSON exactly
   circuits/
-    cubic/             circom circuit (toy, standing in for a real credential circuit), its build script, and a
-                        CLI prove.sh for manually exercising /v1/authorize without a browser client
+    cubic/                  the original toy circuit (x³+x+5=y); kept only as a minimal gnark-crypto/snarkjs
+                             interop reference (internal/proof/snarkjs_test.go's fixtures), not otherwise used
+    diploma_membership/     the circuit examples/react-gui and the backend actually run: proves membership in a
+                             small Merkle-tree credential registry plus a disclosed type/issuer, without revealing
+                             which credential. registry.mjs generates the fixed demo registry; build.sh compiles
+                             + runs its trusted setup
 examples/
   react-gui/              Vite + React example GUI (@zk-puoi/react-gui)
     src/
       App.tsx               ties the three views together via simple tab state
-      components/           LoginView, WalletView, ResourceView (the proof-build + authorize flow)
-      lib/clients.ts         shared ApiClient/Wallet instances, circuit asset paths
+      components/           LoginView, WalletView (imports a demo credential from the registry), ResourceView
+                             (the proof-build + authorize flow)
+      lib/clients.ts         shared ApiClient/Wallet instances, circuit asset paths, registry loader
     public/circuits/        synced copy of client-lib's circuit build output (gitignored, see
                              the sync-circuit script) — served as static files for snarkjs to fetch
 k8s/
@@ -119,17 +124,19 @@ make k8s-apply POLICY=backend/policies/diploma_check.gno  # also hot-deploy a po
 
 `internal/config` falls back to insecure dev defaults (JWT secret, admin token) when their
 env vars aren't set, which is what `k8s/backend/deployment.yaml` relies on for now — fine for
-local Docker Desktop, not fine for anything beyond it (see Known risks).
+local Docker Desktop, not fine for anything beyond it.
 
 ### Building and exercising the circuit
 
 ```sh
-cd client-lib/circuits/cubic
-./build.sh              # compiles cubic.circom and runs a toy Groth16 trusted setup, producing
-                         # build/cubic_js/cubic.wasm, build/cubic_final.zkey, build/verification_key.json
-./prove.sh 3             # generates a real proof for private x=3, prints proof.json/public.json
-                         # ready to paste into a POST /v1/authorize body (no browser client needed)
+cd client-lib/circuits/diploma_membership
+./build.sh               # compiles diploma_membership.circom and runs a toy Groth16 trusted setup, producing
+                          # build/diploma_membership_js/diploma_membership.wasm,
+                          # build/diploma_membership_final.zkey, build/verification_key.json
+node registry.mjs         # (re)generates the fixed demo credential registry, build/registry.json
 ```
+
+`cubic`'s own `build.sh`/`prove.sh` still work the same way, for its narrower purpose (see repo layout above).
 
 ### client-lib
 
@@ -144,12 +151,12 @@ npm run build      # emits dist/ (ESM + .d.ts); excludes *.test.ts via tsconfig.
 ### examples/react-gui
 
 Install once from the repo root with `pnpm install` (links `@zk-puoi/client` into the app via the workspace).
-Requires the backend running on `:8080` (CORS is wide open for this, see Known risks) and `client-lib`'s circuit
-already built (`client-lib/circuits/cubic/build.sh`, see above).
+Requires the backend running on `:8080` (CORS is wide open for this) and `client-lib`'s diploma_membership circuit
+and registry already built (`client-lib/circuits/diploma_membership/build.sh` and `registry.mjs`, see above).
 
 ```sh
 cd examples/react-gui
-pnpm dev       # syncs the circuit's wasm/zkey into public/circuits (predev hook), then starts Vite on :5173
+pnpm dev       # syncs the circuit's wasm/zkey/registry.json into public/circuits (predev hook), then starts Vite on :5173
 pnpm build      # same sync, then tsc -b && vite build
 ```
 
@@ -183,3 +190,8 @@ workspace link points at `client-lib/dist`, which Vite doesn't watch across the 
   every build uniquely and uses `kubectl set image` instead of relying on a static manifest's `image:` field —
   this reliably forces a real rollout, but the root cause (containerd-side image cache/tag resolution,
   presumably) wasn't fully diagnosed.
+- **The demo credential registry is a small, fixed set** (`client-lib/circuits/diploma_membership/registry.mjs`'s
+  two example credentials, padded to a depth-3 Merkle tree) — there's no real credential issuance; adding or
+  revoking a credential means regenerating the registry and redeploying its root, not a running API. Its
+  trusted setup (`build.sh`) is also the same throwaway, local, non-ceremony kind as the toy cubic circuit —
+  a real deployment would need an actual MPC ceremony or a transparent-setup scheme (e.g. PLONK) instead.

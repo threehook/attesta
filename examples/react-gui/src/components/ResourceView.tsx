@@ -1,38 +1,43 @@
 import { useState } from "react";
 import type { AuthorizeResponse, Credential } from "@zk-puoi/client";
 import { buildProof } from "@zk-puoi/client";
-import { apiClient, CUBIC_WASM_PATH, CUBIC_ZKEY_PATH } from "../lib/clients.js";
+import { apiClient, CIRCUIT_WASM_PATH, CIRCUIT_ZKEY_PATH, loadRegistry, type RegistryCredentialInput } from "../lib/clients.js";
 
 interface Props {
   token: string;
   credentials: Credential[];
 }
 
-// ResourceView is the actual proof-then-authorize flow: build a real Groth16 proof in the browser for the toy cubic circuit (x^3+x+5=y), then submit
-// it to /v1/authorize. The circuit takes a raw x, not a value derived from a wallet credential — there's no mapping between the two defined yet, so
-// x is typed in directly to demo the end-to-end flow.
+// ResourceView is the actual proof-then-authorize flow for the diploma_membership example: build a real Groth16
+// proof in the browser showing the selected wallet credential is a member of the registry and discloses the
+// required type/issuer, then submit it to /v1/authorize. "diploma_check" below is this example's own policy
+// choice, not something the backend assumes.
 export function ResourceView({ token, credentials }: Props) {
   const [resource, setResource] = useState("diploma-vault");
-  const [x, setX] = useState("3");
-  const [issuer, setIssuer] = useState(credentials[0]?.issuer ?? "trusted-university");
+  const [credentialId, setCredentialId] = useState(credentials[0]?.id ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<AuthorizeResponse | null>(null);
-  const [publicY, setPublicY] = useState<string | null>(null);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setResult(null);
-    setPublicY(null);
     setPending(true);
     try {
+      const credential = credentials.find((c) => c.id === credentialId);
+      const registryInput = credential?.claims.registryInput as RegistryCredentialInput | undefined;
+      if (!registryInput) {
+        throw new Error("select a credential imported from the demo registry");
+      }
+
+      const { root } = await loadRegistry();
       const { proof, publicSignals } = await buildProof(
-        { x: Number(x) },
-        { wasmPath: CUBIC_WASM_PATH, zkeyPath: CUBIC_ZKEY_PATH },
+        { ...registryInput, root, reqType: registryInput.credType, reqIssuer: registryInput.issuer },
+        { wasmPath: CIRCUIT_WASM_PATH, zkeyPath: CIRCUIT_ZKEY_PATH },
       );
-      setPublicY(publicSignals[0] ?? null);
-      const response = await apiClient.authorize({ resource, proof, publicSignals, issuer }, token);
+
+      const response = await apiClient.authorize({ resource, policyId: "diploma_check", proof, publicSignals }, token);
       setResult(response);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -50,15 +55,20 @@ export function ResourceView({ token, credentials }: Props) {
             <input value={resource} onChange={(e) => setResource(e.target.value)} required />
           </label>
           <label>
-            Private x (fed into the toy circuit: proves knowledge of x such that x³+x+5=y)
-            <input type="number" value={x} onChange={(e) => setX(e.target.value)} required />
-          </label>
-          <label>
-            Issuer claim (stands in for a real disclosed credential field — see client-lib README)
-            <input value={issuer} onChange={(e) => setIssuer(e.target.value)} required />
+            Credential
+            <select value={credentialId} onChange={(e) => setCredentialId(e.target.value)} required>
+              <option value="" disabled>
+                Select a credential
+              </option>
+              {credentials.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.type} — {c.issuer} ({c.subject})
+                </option>
+              ))}
+            </select>
           </label>
         </fieldset>
-        <button type="submit" disabled={pending}>
+        <button type="submit" disabled={pending || !credentialId}>
           {pending ? "Building proof & requesting…" : "Request access"}
         </button>
       </form>
@@ -68,11 +78,6 @@ export function ResourceView({ token, credentials }: Props) {
       {result && (
         <div className={`result ${result.allow ? "allow" : "deny"}`}>
           <strong>{result.allow ? "Allowed" : "Denied"}</strong>: {result.reason}
-          {publicY && (
-            <p>
-              Proved: x³+x+5 = <code>{publicY}</code>, without revealing x.
-            </p>
-          )}
         </div>
       )}
     </section>

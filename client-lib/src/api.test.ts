@@ -46,7 +46,7 @@ describe("ApiClient.authorize", () => {
     const fetchImpl = fakeFetch(200, { allow: true, reason: "ok" });
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 
-    const result = await client.authorize({ resource: "diploma-vault", proof: PROOF, publicSignals: ["35"] }, "tok");
+    const result = await client.authorize({ resource: "vault", policyId: "p1", proof: PROOF, publicSignals: ["35"] }, "tok");
 
     expect(result).toEqual({ allow: true, reason: "ok" });
     const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
@@ -57,7 +57,7 @@ describe("ApiClient.authorize", () => {
     const fetchImpl = fakeFetch(200, { allow: false, reason: "no" });
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 
-    await client.authorize({ resource: "diploma-vault", proof: PROOF, publicSignals: ["35"] });
+    await client.authorize({ resource: "vault", policyId: "p1", proof: PROOF, publicSignals: ["35"] });
 
     const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
@@ -67,7 +67,7 @@ describe("ApiClient.authorize", () => {
     const fetchImpl = fakeFetch(404, { error: "unknown policy \"x\"" });
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 
-    await expect(client.authorize({ resource: "r", proof: PROOF, publicSignals: [] })).rejects.toMatchObject({
+    await expect(client.authorize({ resource: "r", policyId: "p1", proof: PROOF, publicSignals: [] })).rejects.toMatchObject({
       status: 404,
       message: 'unknown policy "x"',
     });

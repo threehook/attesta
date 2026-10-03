@@ -19,6 +19,8 @@ type Server struct {
 	Auth       *auth.Issuer
 	AdminToken string
 	Logger     *slog.Logger
+	// RegistryRoot is the expected Merkle root a proof's disclosed root public signal must match — see authz.DecodePublicSignals.
+	RegistryRoot string
 }
 
 func (s *Server) Routes() http.Handler {
@@ -34,8 +36,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// withCORS allows any origin, unconditionally — fine for examples/react-gui's dev server talking to a local
-// backend, not fine anywhere this is reachable by an untrusted browser. See README's Known risks.
+// withCORS allows any origin, unconditionally — fine for examples/react-gui's dev server talking to a local backend, not fine anywhere this is
+// reachable by an untrusted browser.
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")

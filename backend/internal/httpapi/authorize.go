@@ -9,18 +9,13 @@ import (
 	"zk-puoi/backend/internal/authz"
 )
 
-const defaultPolicyID = "diploma_check"
-
 type authorizeRequest struct {
 	Resource string `json:"resource"`
 	PolicyID string `json:"policyId"`
 	// Proof is a Groth16 proof in snarkjs's native JSON format (its proof.json shape), not re-encoded.
 	Proof json.RawMessage `json:"proof"`
-	// PublicSignals must cryptographically verify against Proof; it's snarkjs's public.json shape, one decimal
-	// string per public signal.
+	// PublicSignals must cryptographically verify against Proof; it's snarkjs's public.json shape — decimal-string field elements.
 	PublicSignals []string `json:"publicSignals"`
-	// Issuer is a disclosed credential claim, passed separately from PublicSignals — see internal/authz.Input's doc comment.
-	Issuer string `json:"issuer"`
 }
 
 type authorizeResponse struct {
@@ -38,10 +33,11 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "resource is required")
 		return
 	}
-	policyID := req.PolicyID
-	if policyID == "" {
-		policyID = defaultPolicyID
+	if req.PolicyID == "" {
+		writeError(w, http.StatusBadRequest, "policyId is required")
+		return
 	}
+	policyID := req.PolicyID
 
 	subject := s.auditSubject(r)
 	s.Logger.Info("authorize request", "subject", subject, "resource", req.Resource, "policyId", policyID)
@@ -57,13 +53,25 @@ func (s *Server) handleAuthorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	input, ok, err := authz.DecodePublicSignals(req.PublicSignals, req.Resource, s.RegistryRoot)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid public signals: %v", err))
+		return
+	}
+	if !ok {
+		const reason = "proof is not for the expected credential registry"
+		s.Logger.Info("authorize result", "subject", subject, "resource", req.Resource, "allow", false, "reason", reason)
+		writeJSON(w, http.StatusOK, authorizeResponse{Allow: false, Reason: reason})
+		return
+	}
+
 	source, ok := s.Policies.Get(policyID)
 	if !ok {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", policyID))
 		return
 	}
 
-	result, err := s.Authz.Evaluate(source, authz.Input{Resource: req.Resource, Issuer: req.Issuer})
+	result, err := s.Authz.Evaluate(source, input)
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "subject", subject, "policyId", policyID, "error", err)
 		writeError(w, http.StatusInternalServerError, "policy evaluation failed")

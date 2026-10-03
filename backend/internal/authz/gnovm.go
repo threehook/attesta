@@ -11,10 +11,11 @@ import (
 	"github.com/gnolang/gno/gnovm/pkg/test"
 )
 
-// Input is what gets passed into a policy's Authorize function. Issuer is a disclosed credential claim, passed separately from the proof's public
-// signals since the current proof circuit carries no claim data of its own.
+// Input is what gets passed into a policy's Authorize function. Type and Issuer are the credential claims a ZK proof disclosed (see
+// DecodePublicSignals) — the policy decides whether that combination is acceptable for Resource, it never sees anything the proof kept private.
 type Input struct {
 	Resource string
+	Type     string
 	Issuer   string
 }
 
@@ -29,7 +30,7 @@ type Evaluator interface {
 	// Validate reports whether source compiles as a Gno package, without running any particular function in it. Used to reject bad policy source
 	// before it's stored.
 	Validate(source string) error
-	// Evaluate loads source as a Gno package and calls its exported Authorize(resource, issuer string) (bool, string) function.
+	// Evaluate loads source as a Gno package and calls its exported Authorize(resource, credType, issuer string) (bool, string) function.
 	Evaluate(source string, in Input) (Result, error)
 }
 
@@ -80,7 +81,7 @@ func (e *GnoVM) Evaluate(source string, in Input) (result Result, err error) {
 		}
 		m.RunFiles(file)
 
-		expr := fmt.Sprintf("Authorize(%q, %q)", in.Resource, in.Issuer)
+		expr := fmt.Sprintf("Authorize(%q, %q, %q)", in.Resource, in.Type, in.Issuer)
 		ex, err := m.ParseExpr(expr)
 		if err != nil {
 			return fmt.Errorf("parse call expression: %w", err)

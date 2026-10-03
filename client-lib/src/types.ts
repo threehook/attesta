@@ -24,12 +24,9 @@ export interface LoginResponse {
 
 export interface AuthorizeRequest {
   resource: string;
-  policyId?: string;
+  policyId: string;
   proof: Groth16Proof;
   publicSignals: PublicSignals;
-  // issuer is a disclosed credential claim passed separately from publicSignals — see backend/internal/authz.Input's doc comment for why this is a
-  // stand-in, not the final design.
-  issuer?: string;
 }
 
 export interface AuthorizeResponse {

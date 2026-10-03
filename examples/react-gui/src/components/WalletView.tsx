@@ -1,22 +1,27 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Credential } from "@zk-puoi/client";
-import { wallet } from "../lib/clients.js";
+import { loadRegistry, wallet, type RegistryCredential } from "../lib/clients.js";
 
 interface Props {
   credentials: Credential[];
   onChange: () => void;
 }
 
-// WalletView manages the mock Verifiable Credential store: plain JSON in browser storage (client-lib's Wallet), not real signed VCs — see
-// client-lib/src/wallet.ts's doc comment for why.
+// WalletView lets the user import one of a small set of pre-registered demo credentials into their wallet.
+// Arbitrary typed-in credentials aren't possible here: proving membership requires a Merkle path into the real
+// registry (see client-lib/circuits/diploma_membership/registry.mjs), which only exists for these few entries.
 export function WalletView({ credentials, onChange }: Props) {
-  const [type, setType] = useState("Diploma");
-  const [issuer, setIssuer] = useState("trusted-university");
-  const [subject, setSubject] = useState("alice");
+  const [available, setAvailable] = useState<RegistryCredential[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
-  function handleAdd(e: React.FormEvent) {
-    e.preventDefault();
-    wallet.add({ id: crypto.randomUUID(), type, issuer, subject, claims: {} });
+  useEffect(() => {
+    loadRegistry()
+      .then((r) => setAvailable(r.credentials))
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)));
+  }, []);
+
+  function handleImport(rc: RegistryCredential) {
+    wallet.add({ id: rc.id, type: rc.type, issuer: rc.issuer, subject: rc.subject, claims: { registryInput: rc.privateInput } });
     onChange();
   }
 
@@ -25,26 +30,39 @@ export function WalletView({ credentials, onChange }: Props) {
     onChange();
   }
 
+  const heldIds = new Set(credentials.map((c) => c.id));
+
   return (
     <section>
-      <form onSubmit={handleAdd}>
-        <fieldset>
-          <label>
-            Credential type
-            <input value={type} onChange={(e) => setType(e.target.value)} required />
-          </label>
-          <label>
-            Issuer
-            <input value={issuer} onChange={(e) => setIssuer(e.target.value)} required />
-          </label>
-          <label>
-            Subject
-            <input value={subject} onChange={(e) => setSubject(e.target.value)} required />
-          </label>
-        </fieldset>
-        <button type="submit">Add credential</button>
-      </form>
+      {error && <p className="error">{error}</p>}
 
+      <h2>Available demo credentials</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Issuer</th>
+            <th>Subject</th>
+            <th />
+          </tr>
+        </thead>
+        <tbody>
+          {available.map((rc) => (
+            <tr key={rc.id}>
+              <td>{rc.type}</td>
+              <td>{rc.issuer}</td>
+              <td>{rc.subject}</td>
+              <td>
+                <button type="button" disabled={heldIds.has(rc.id)} onClick={() => handleImport(rc)}>
+                  {heldIds.has(rc.id) ? "In wallet" : "Import"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <h2>Your wallet</h2>
       {credentials.length === 0 ? (
         <p>No credentials yet.</p>
       ) : (

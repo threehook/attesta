@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "sync-circuit": "mkdir -p public/circuits/cubic && cp ../../client-lib/circuits/cubic/build/cubic_js/cubic.wasm ../../client-lib/circuits/cubic/build/cubic_final.zkey public/circuits/cubic/",
+    "sync-circuit": "mkdir -p public/circuits/diploma_membership && cp ../../client-lib/circuits/diploma_membership/build/diploma_membership_js/diploma_membership.wasm ../../client-lib/circuits/diploma_membership/build/diploma_membership_final.zkey ../../client-lib/circuits/diploma_membership/build/registry.json public/circuits/diploma_membership/",
     "predev": "npm run sync-circuit",
     "prebuild": "npm run sync-circuit",
     "dev": "vite",

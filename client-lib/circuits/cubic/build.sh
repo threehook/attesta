@@ -16,6 +16,9 @@ rm -rf build
 mkdir build
 circom cubic.circom --r1cs --wasm --sym -o build
 
+# generate_witness.js is CommonJS; client-lib's package.json is ESM.
+echo '{"type": "commonjs"}' > build/cubic_js/package.json
+
 cd build
 "$SNARKJS" powersoftau new bn128 "$PTAU_POWER" pot_0000.ptau -v
 "$SNARKJS" powersoftau contribute pot_0000.ptau pot_0001.ptau --name="zk-puoi toy setup" -v -e="$(head -c 64 /dev/urandom | base64)"

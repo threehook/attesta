@@ -42,13 +42,19 @@ func run() error {
 		return fmt.Errorf("load verifying key: %w", err)
 	}
 
+	registryRoot, err := authz.LoadRegistryRoot(cfg.RegistryPath)
+	if err != nil {
+		return fmt.Errorf("load registry: %w", err)
+	}
+
 	server := &httpapi.Server{
-		Proof:      proof.NewSnarkjsVerifier(vk),
-		Authz:      gnoVM,
-		Policies:   policies,
-		Auth:       auth.NewIssuer(cfg.JWTSecret),
-		AdminToken: cfg.AdminToken,
-		Logger:     logger,
+		Proof:        proof.NewSnarkjsVerifier(vk),
+		Authz:        gnoVM,
+		Policies:     policies,
+		Auth:         auth.NewIssuer(cfg.JWTSecret),
+		AdminToken:   cfg.AdminToken,
+		Logger:       logger,
+		RegistryRoot: registryRoot,
 	}
 
 	logger.Info("listening", "addr", cfg.Addr)
