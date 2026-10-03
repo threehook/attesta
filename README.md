@@ -166,22 +166,10 @@ workspace link points at `client-lib/dist`, which Vite doesn't watch across the 
   the latter makes `store.SetCachePackage` panic on the second call with the
   same package path, which is exactly what happens under real traffic. This
   works and is tested (including a hot-reload test), but the approach isn't
-  blessed by gno's maintainers; worth raising with the gno community, and
-  worth a concurrency/throughput benchmark (`GnoVM.Evaluate` currently
-  serializes all calls behind a single mutex).
-- **GNOROOT in the container is minimal.** The Docker image bundles
-  `gnovm/stdlibs` and `examples` so `GNOROOT` resolves without a `go`
-  toolchain at runtime, but no current policy imports anything from either
-  tree — this is unexercised. Revisit once a policy actually imports a gno
-  stdlib package.
-- **Dev-only insecure defaults.** `ZKPUOI_JWT_SECRET` and
-  `ZKPUOI_ADMIN_TOKEN` default to hardcoded values (`internal/config`) and
-  `k8s/backend/deployment.yaml` doesn't override them. Fine for local Docker
-  Desktop; must become real secrets before this goes anywhere else.
-- **The toy circuit's trusted setup is throwaway and local**
-  (`client-lib/circuits/cubic/build.sh`), not a real ceremony. Irrelevant for
-  a circuit with no real secrets, but a real credential circuit will need an
-  actual decision here (MPC ceremony, or a transparent-setup scheme).
+  blessed by gno's maintainers. `GnoVM.Evaluate` serializes all calls behind
+  a single mutex; measured (`BenchmarkGnoVMEvaluate`) at ~60µs/call on an M5
+  Max, i.e. a ~16k/s ceiling on one core — not a bottleneck at this project's
+  scale.
 - **The G2 coordinate ordering in `internal/proof`'s snarkjs JSON parsing**
   (`parseG2`'s `coords[i][0]` → `A0`, `coords[i][1]` → `A1`) was confirmed
   correct empirically, against real snarkjs output (`internal/proof/snarkjs_test.go`'s
@@ -195,15 +183,3 @@ workspace link points at `client-lib/dist`, which Vite doesn't watch across the 
   every build uniquely and uses `kubectl set image` instead of relying on a static manifest's `image:` field —
   this reliably forces a real rollout, but the root cause (containerd-side image cache/tag resolution,
   presumably) wasn't fully diagnosed.
-- **`npm audit` reports 3 high-severity advisories in `client-lib`**, all transitive through `snarkjs`
-  (`underscore`/`jsonpath`/`bfj`, an unbounded-recursion DoS). Upstream snarkjs's own dependency tree, not
-  something this project controls without patching or forking; low real-world impact here since nothing feeds
-  attacker-controlled input through those specific code paths, but unresolved.
-- **The backend's CORS policy (`internal/httpapi.withCORS`) allows any origin, unconditionally.** Needed for
-  `examples/react-gui`'s dev server to call a local backend at all; must become an allowlist before this is
-  reachable by anything other than a trusted local dev setup.
-- **`ApiClient`'s default `fetch` must be wrapped, not passed directly** (`(...args) => fetch(...args)`, not
-  bare `fetch`) — a detached `fetch` reference loses the `this === window` binding browsers require internally
-  and fails at call time with "Illegal invocation". Node's global `fetch` doesn't have this quirk, so
-  `client-lib`'s own (Node-run) tests never caught it; only the real browser run against `examples/react-gui`
-  did. Worth remembering before trusting Node-only test coverage for anything `fetch`-shaped.
