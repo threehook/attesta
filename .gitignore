@@ -1,0 +1,19 @@
+# Go
+/backend/zk-puoi
+/backend/spike
+*.exe
+
+# Node / pnpm
+node_modules/
+dist/
+.vite/
+
+# Circuit build artifacts (regenerate via `make circuits`)
+backend/circuits/build/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
