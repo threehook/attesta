@@ -38,9 +38,9 @@ docker-build:
 # rollout, unlike re-applying a manifest whose image: field never changes. Add POLICY=path/to/file.gno to also hot-deploy that policy once the rollout
 # is ready, e.g.: make k8s-apply POLICY=backend/policies/diploma_check.gno
 k8s-apply: docker-build
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	$(MAKE) k8s-secret
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/backend/deployment.yaml -f k8s/backend/service.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-backend zk-puoi-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-backend -n $(NAMESPACE)
 	@if [ -n "$(POLICY)" ]; then $(MAKE) k8s-deploy-policy POLICY="$(POLICY)" POLICY_ID="$(POLICY_ID)"; fi
@@ -54,9 +54,9 @@ k8s-secret:
 			--from-literal=admin-token=$$(openssl rand -hex 32)
 
 k8s-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/backend/deployment.yaml -f k8s/backend/service.yaml --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml --ignore-not-found
 	kubectl --context $(KUBE_CONTEXT) delete secret zk-puoi-backend -n $(NAMESPACE) --ignore-not-found
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/backend/namespace.yaml --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/backend/namespace.yaml --ignore-not-found
 
 k8s-restart:
 	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/zk-puoi-backend -n $(NAMESPACE)
@@ -89,14 +89,14 @@ docker-build-gui:
 
 # Same pattern as k8s-apply. Depends on the backend already being applied (shares its namespace).
 k8s-gui-apply: docker-build-gui
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/backend/namespace.yaml
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/gui/deployment.yaml -f k8s/gui/service.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/gui/deployment.yaml -f k8s/local/gui/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-gui zk-puoi-gui=$(GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-gui -n $(NAMESPACE)
 
 # Leaves the shared "zk-puoi" namespace alone — k8s-delete (backend) owns it.
 k8s-gui-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/gui/deployment.yaml -f k8s/gui/service.yaml --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/gui/deployment.yaml -f k8s/local/gui/service.yaml --ignore-not-found
 
 k8s-gui-restart:
 	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/zk-puoi-gui -n $(NAMESPACE)

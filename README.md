@@ -1,12 +1,12 @@
 # zk-puoi
 
 A Go backend that authorizes requests based on zero-knowledge proofs submitted
-by clients, rather than classic authentication. A ZK proof can attest to facts
-about a user — e.g. "I hold a diploma issued by a trusted university" — without
-revealing the underlying credential. The proof's disclosed public signals are
-then run through an **authorization policy written in Gno** and evaluated
-in-process by [gnovm](https://github.com/gnolang/gno), gno.land's VM, embedded
-directly in the backend (no blockchain involved).
+by clients. A ZK proof can attest to facts about a user — e.g. "I hold a
+diploma issued by a trusted university" — without revealing the underlying
+credential. The proof's disclosed public signals are then run through an
+**authorization policy written in Gno** and evaluated in-process by
+[gnovm](https://github.com/gnolang/gno), gno.land's VM, embedded directly in
+the backend (no blockchain involved).
 
 This is a monorepo: the backend, a TypeScript client library, and an example
 React GUI all live here together.
@@ -85,8 +85,10 @@ examples/
     public/circuits/        synced copy of client-lib's circuit build output (gitignored, see
                              the sync-circuit script) — served as static files for snarkjs to fetch
 k8s/
-  backend/            namespace/deployment/service manifests for Docker Desktop's k8s
-go.work               Go workspace covering backend/
+  local/              manifests for Docker Desktop's local k8s
+    backend/          namespace/deployment/service for the Go backend
+    gui/              deployment/service for examples/react-gui
+  cloud/              (empty for now)
 pnpm-workspace.yaml   client-lib + examples/react-gui
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
@@ -111,7 +113,7 @@ For the k8s loop (requires Docker Desktop running, with Kubernetes enabled):
 ```sh
 make docker-build       # builds from the repo root (not backend/) into Docker Desktop's local
                          # image store, tagged uniquely per build — no registry push needed
-make k8s-apply           # applies k8s/backend/*.yaml, then points the deployment at that
+make k8s-apply           # applies k8s/local/backend/*.yaml, then points the deployment at that
                           # exact new tag via `kubectl set image`, which always triggers a
                           # real rollout (see the Makefile's own comment on why the tag can't
                           # just be reused — Docker Desktop's k8s has been seen serving stale
@@ -123,7 +125,7 @@ make k8s-apply POLICY=backend/policies/diploma_check.gno  # also hot-deploy a po
 ```
 
 `internal/config` falls back to insecure dev defaults (JWT secret, admin token) when their
-env vars aren't set, which is what `k8s/backend/deployment.yaml` relies on for now — fine for
+env vars aren't set, which is what `k8s/local/backend/deployment.yaml` relies on for now — fine for
 local Docker Desktop, not fine for anything beyond it.
 
 ### Building and exercising the circuit
