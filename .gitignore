@@ -8,8 +8,14 @@ node_modules/
 dist/
 .vite/
 
-# Circuit build artifacts (regenerate via `make circuits`)
-backend/circuits/build/
+# Circuit build scratch: client-lib/circuits/*/build.sh produces cubic_js/cubic.wasm, the final
+# zkey and verification_key.json, which ARE committed; these intermediate/per-run files are not.
+client-lib/circuits/**/*.ptau
+client-lib/circuits/**/*_0000.zkey
+client-lib/circuits/**/*.wtns
+client-lib/circuits/**/proof.json
+client-lib/circuits/**/public.json
+client-lib/circuits/**/input.json
 
 # IDE
 .idea/

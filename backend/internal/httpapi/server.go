@@ -19,10 +19,6 @@ type Server struct {
 	Auth       *auth.Issuer
 	AdminToken string
 	Logger     *slog.Logger
-
-	// DevProver, if non-nil, registers POST /v1/dev/prove — a development-only convenience for exercising /v1/authorize with curl without a real ZK
-	// client. Leave nil to omit the route entirely (e.g. in an environment this shouldn't be exposed in).
-	DevProver *proof.CubicScheme
 }
 
 func (s *Server) Routes() http.Handler {
@@ -31,9 +27,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/login", s.handleLogin)
 	mux.HandleFunc("POST /v1/authorize", s.handleAuthorize)
 	mux.HandleFunc("POST /admin/policies", s.requireAdmin(s.handlePutPolicy))
-	if s.DevProver != nil {
-		mux.HandleFunc("POST /v1/dev/prove", s.handleDevProve)
-	}
 	return mux
 }
 

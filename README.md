@@ -26,7 +26,8 @@ POST /v1/authorize { resource, proof, publicSignals }
   │
   ▼
 backend (Go)
-  │  4. verify proof (gnark Groth16)               -> reject if invalid
+  │  4. verify proof (gnark-crypto, against the    -> reject if invalid
+  │     circuit's circom-exported verification key)
   │  5. evaluate business policy over publicSignals
   │     via an embedded gnovm Machine running a
   │     .gno policy package                        -> allow/deny + reason
@@ -38,7 +39,8 @@ Key design decisions (see commit history / discussion for rationale):
 
 | Area | Decision |
 |---|---|
-| ZK proving | circom + snarkjs in the browser client; gnark Groth16 verification in the Go backend |
+| ZK proving | circom + snarkjs own the circuit, its trusted setup, and proving — entirely client-side |
+| ZK verifying | Go backend verifies with `gnark-crypto`'s pairing primitives directly against snarkjs's exported verification key; the full `gnark` module (circuit compiler, its own Setup/Prove) isn't a dependency at all — Groth16 verification is protocol-level math, not tied to whichever toolchain produced the circuit |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node |
 | TS workspace | pnpm workspaces across `client-lib` and `examples/react-gui` |
 | Verifiable Credentials | lightweight mock VCs for the MVP (no DID/signature infra yet) |
@@ -54,13 +56,17 @@ backend/
   internal/
     config/            env-based configuration
     auth/              mock login issuing a JWT (identity/audit only, not authz)
-    proof/             ProofVerifier + a toy gnark Groth16 circuit standing in for a real credential circuit
+    proof/             Verifier: checks a snarkjs Groth16 proof with gnark-crypto against a verification key
     authz/             Evaluator backed by an embedded gnovm interpreter
     scripts/           policy source store (startup load + admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
   policies/            .gno authorization policy packages, loaded at startup
   Dockerfile
-client-lib/          (planned) TypeScript zk-puoi client library
+client-lib/
+  circuits/
+    cubic/             circom circuit (toy, standing in for a real credential circuit), its build script, and a
+                        CLI prove.sh for manually exercising /v1/authorize without a browser client
+  (client library itself: planned)
 examples/
   react-gui/         (planned) Vite + React example GUI
 k8s/
@@ -81,22 +87,38 @@ go run ./cmd/zk-puoi      # listens on :8080, loads backend/policies at startup
 go test ./...
 ```
 
+`go run`'s default `ZKPUOI_VERIFICATION_KEY` assumes `client-lib/` is checked out next to
+`backend/` and already has a built circuit (see below).
+
 For the k8s loop (requires Docker Desktop running, with Kubernetes enabled):
 
 ```sh
-make docker-build       # docker build -t zk-puoi-backend:dev backend
-                         # (Docker Desktop's k8s reads from the same local image store —
-                         # no registry push needed)
-make k8s-apply           # applies k8s/backend/*.yaml, rebuilds the image first, and
-                          # rollout-restarts so new pods pick it up
+make docker-build       # builds from the repo root (not backend/) into Docker Desktop's local
+                         # image store, tagged uniquely per build — no registry push needed
+make k8s-apply           # applies k8s/backend/*.yaml, then points the deployment at that
+                          # exact new tag via `kubectl set image`, which always triggers a
+                          # real rollout (see the Makefile's own comment on why the tag can't
+                          # just be reused — Docker Desktop's k8s has been seen serving stale
+                          # image content under a repeated tag)
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
+make k8s-apply POLICY=backend/policies/diploma_check.gno  # also hot-deploy a policy after rollout
 ```
 
 `internal/config` falls back to insecure dev defaults (JWT secret, admin token) when their
 env vars aren't set, which is what `k8s/backend/deployment.yaml` relies on for now — fine for
 local Docker Desktop, not fine for anything beyond it (see Known risks).
+
+### Building and exercising the circuit
+
+```sh
+cd client-lib/circuits/cubic
+./build.sh              # compiles cubic.circom and runs a toy Groth16 trusted setup, producing
+                         # build/cubic_js/cubic.wasm, build/cubic_final.zkey, build/verification_key.json
+./prove.sh 3             # generates a real proof for private x=3, prints proof.json/public.json
+                         # ready to paste into a POST /v1/authorize body (no browser client needed)
+```
 
 ## Known risks / open items
 
@@ -120,11 +142,20 @@ local Docker Desktop, not fine for anything beyond it (see Known risks).
   `ZKPUOI_ADMIN_TOKEN` default to hardcoded values (`internal/config`) and
   `k8s/backend/deployment.yaml` doesn't override them. Fine for local Docker
   Desktop; must become real secrets before this goes anywhere else.
-- **`POST /v1/dev/prove`** generates toy-circuit proofs server-side purely so
-  `/v1/authorize` can be tested with curl without a real browser-based ZK
-  client. It's registered unconditionally by `cmd/zk-puoi` today — make it
-  opt-out (or remove it) once a real client exists.
-- **The toy circuit's trusted setup is throwaway and process-local**
-  (`proof.NewCubicScheme`), per `groth16.Setup`'s own docs. Irrelevant for a
-  circuit with no real secrets, but a real credential circuit will need an
+- **The toy circuit's trusted setup is throwaway and local**
+  (`client-lib/circuits/cubic/build.sh`), not a real ceremony. Irrelevant for
+  a circuit with no real secrets, but a real credential circuit will need an
   actual decision here (MPC ceremony, or a transparent-setup scheme).
+- **The G2 coordinate ordering in `internal/proof`'s snarkjs JSON parsing**
+  (`parseG2`'s `coords[i][0]` → `A0`, `coords[i][1]` → `A1`) was confirmed
+  correct empirically, against real snarkjs output (`internal/proof/snarkjs_test.go`'s
+  fixtures), not derived from a documented spec — gnark/circom/snarkjs don't
+  consistently document this convention. If a future snarkjs/circom version
+  changes it, every verification would start failing; the fixture-based test
+  is the safety net.
+- **Docker Desktop's Kubernetes has been observed running a stale image under a reused tag** even after a
+  genuine `docker build` produced new content (`docker run` against the fresh image showed correct behavior;
+  the k8s pod under the same tag didn't, across two separate rebuild/redeploy cycles). The Makefile now tags
+  every build uniquely and uses `kubectl set image` instead of relying on a static manifest's `image:` field —
+  this reliably forces a real rollout, but the root cause (containerd-side image cache/tag resolution,
+  presumably) wasn't fully diagnosed.

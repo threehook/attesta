@@ -1,4 +1,8 @@
-IMAGE := zk-puoi-backend:dev
+IMAGE_REPO := zk-puoi-backend
+# A fresh tag per build, not a reused "dev" tag: Docker Desktop's Kubernetes has been observed keeping pods on stale image content under a reused tag
+# even after a real rebuild (imagePullPolicy: IfNotPresent plus whatever caching containerd does for "already present" tags) — a unique tag every time
+# sidesteps that entirely.
+IMAGE := $(IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 NAMESPACE := zk-puoi
 KUBE_CONTEXT := docker-desktop
 # Must match internal/config's default, or ZKPUOI_ADMIN_TOKEN if that's been overridden.
@@ -19,17 +23,17 @@ test:
 	cd backend && go test ./...
 
 # Builds straight into Docker Desktop's local image store, which its bundled k8s reads from directly — no registry push needed for this inner dev
-# loop.
+# loop. Context is the repo root (not backend/) because the image also needs client-lib's circom-exported verification key.
 docker-build:
-	docker build -t $(IMAGE) backend
+	docker build -f backend/Dockerfile -t $(IMAGE) .
 
-# Re-applies manifests and forces a rollout restart so freshly built pods pick up the image that was just rebuilt under the same tag (imagePullPolicy:
-# IfNotPresent would otherwise keep running whatever was already pulled for that tag). Add POLICY=path/to/file.gno to also hot-deploy that policy
-# once the rollout is ready, e.g.: make k8s-apply POLICY=backend/policies/diploma_check.gno
+# Re-applies manifests, then points the deployment at the just-built image's exact (unique) tag via `kubectl set image` — this always triggers a real
+# rollout, unlike re-applying a manifest whose image: field never changes. Add POLICY=path/to/file.gno to also hot-deploy that policy once the rollout
+# is ready, e.g.: make k8s-apply POLICY=backend/policies/diploma_check.gno
 k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/backend/deployment.yaml -f k8s/backend/service.yaml
-	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/zk-puoi-backend -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-backend zk-puoi-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-backend -n $(NAMESPACE)
 	@if [ -n "$(POLICY)" ]; then $(MAKE) k8s-deploy-policy POLICY="$(POLICY)" POLICY_ID="$(POLICY_ID)"; fi
 

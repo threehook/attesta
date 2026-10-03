@@ -1,0 +1,7 @@
+.git
+.idea
+**/node_modules
+backend/zk-puoi
+backend/spike
+**/*.test
+client-lib/circuits/**/*.ptau

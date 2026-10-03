@@ -14,8 +14,10 @@ const defaultPolicyID = "diploma_check"
 type authorizeRequest struct {
 	Resource string `json:"resource"`
 	PolicyID string `json:"policyId"`
-	Proof    string `json:"proof"`
-	// PublicSignals must cryptographically verify against Proof.
+	// Proof is a Groth16 proof in snarkjs's native JSON format (its proof.json shape), not re-encoded.
+	Proof json.RawMessage `json:"proof"`
+	// PublicSignals must cryptographically verify against Proof; it's snarkjs's public.json shape, one decimal
+	// string per public signal.
 	PublicSignals []string `json:"publicSignals"`
 	// Issuer is a disclosed credential claim, passed separately from PublicSignals — see internal/authz.Input's doc comment.
 	Issuer string `json:"issuer"`

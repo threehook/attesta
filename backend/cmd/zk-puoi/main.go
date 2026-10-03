@@ -37,19 +37,18 @@ func run() error {
 	}
 	logger.Info("policies loaded", "dir", cfg.PoliciesDir, "ids", policies.IDs())
 
-	cubicScheme, err := proof.NewCubicScheme()
+	vk, err := proof.LoadVerifyingKey(cfg.VerificationKeyPath)
 	if err != nil {
-		return fmt.Errorf("init proof scheme: %w", err)
+		return fmt.Errorf("load verifying key: %w", err)
 	}
 
 	server := &httpapi.Server{
-		Proof:      cubicScheme,
+		Proof:      proof.NewSnarkjsVerifier(vk),
 		Authz:      gnoVM,
 		Policies:   policies,
 		Auth:       auth.NewIssuer(cfg.JWTSecret),
 		AdminToken: cfg.AdminToken,
 		Logger:     logger,
-		DevProver:  cubicScheme,
 	}
 
 	logger.Info("listening", "addr", cfg.Addr)
