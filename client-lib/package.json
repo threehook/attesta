@@ -1,14 +1,29 @@
 {
-  "name": "client-lib",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+  "name": "@zk-puoi/client",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript client library for zk-puoi: builds ZK proofs in the browser and talks to the zk-puoi authorization API.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
-  "keywords": [],
-  "type": "commonjs",
-  "devDependencies": {
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
     "snarkjs": "^0.7.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/snarkjs": "^0.7.9",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
   }
 }

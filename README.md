@@ -42,7 +42,7 @@ Key design decisions (see commit history / discussion for rationale):
 | ZK proving | circom + snarkjs own the circuit, its trusted setup, and proving — entirely client-side |
 | ZK verifying | Go backend verifies with `gnark-crypto`'s pairing primitives directly against snarkjs's exported verification key; the full `gnark` module (circuit compiler, its own Setup/Prove) isn't a dependency at all — Groth16 verification is protocol-level math, not tied to whichever toolchain produced the circuit |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node |
-| TS workspace | pnpm workspaces across `client-lib` and `examples/react-gui` |
+| TS workspace | pnpm workspaces across `client-lib` and `examples/react-gui` — not wired yet; `client-lib` currently stands alone on plain npm since there's no second package to link against until `examples/react-gui` exists |
 | Verifiable Credentials | lightweight mock VCs for the MVP (no DID/signature infra yet) |
 
 ## Repo layout
@@ -62,11 +62,15 @@ backend/
     httpapi/           HTTP handlers wiring the above together
   policies/            .gno authorization policy packages, loaded at startup
   Dockerfile
-client-lib/
+client-lib/                TypeScript package @zk-puoi/client
+  src/
+    proof.ts             buildProof(): wraps snarkjs.groth16.fullProve for browser or Node use
+    api.ts               typed client for backend/internal/httpapi (login, authorize, admin deploy)
+    wallet.ts             mock Verifiable Credential store (localStorage, or in-memory outside a browser)
+    types.ts              shared wire types matching the backend's JSON exactly
   circuits/
     cubic/             circom circuit (toy, standing in for a real credential circuit), its build script, and a
                         CLI prove.sh for manually exercising /v1/authorize without a browser client
-  (client library itself: planned)
 examples/
   react-gui/         (planned) Vite + React example GUI
 k8s/
@@ -120,6 +124,16 @@ cd client-lib/circuits/cubic
                          # ready to paste into a POST /v1/authorize body (no browser client needed)
 ```
 
+### client-lib
+
+```sh
+cd client-lib
+npm install
+npm test          # vitest — proof.test.ts builds a real proof against the committed circuit artifacts
+npm run typecheck
+npm run build      # emits dist/ (ESM + .d.ts); excludes *.test.ts via tsconfig.build.json
+```
+
 ## Known risks / open items
 
 - **gnovm embedding is not an upstream-stable API.** `gnovm/pkg/test.ProdStore`
@@ -159,3 +173,7 @@ cd client-lib/circuits/cubic
   every build uniquely and uses `kubectl set image` instead of relying on a static manifest's `image:` field —
   this reliably forces a real rollout, but the root cause (containerd-side image cache/tag resolution,
   presumably) wasn't fully diagnosed.
+- **`npm audit` reports 3 high-severity advisories in `client-lib`**, all transitive through `snarkjs`
+  (`underscore`/`jsonpath`/`bfj`, an unbounded-recursion DoS). Upstream snarkjs's own dependency tree, not
+  something this project controls without patching or forking; low real-world impact here since nothing feeds
+  attacker-controlled input through those specific code paths, but unresolved.
