@@ -17,6 +17,7 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// Issuer signs and verifies the mock login's JWTs.
 type Issuer struct {
 	secret []byte
 	ttl    time.Duration
@@ -45,6 +46,7 @@ func (i *Issuer) MockLogin(subject string, roles []string) (string, error) {
 	return signed, nil
 }
 
+// Verify parses and validates a JWT issued by MockLogin, returning its claims.
 func (i *Issuer) Verify(tokenString string) (*Claims, error) {
 	var claims Claims
 	_, err := jwt.ParseWithClaims(tokenString, &claims, func(t *jwt.Token) (any, error) {

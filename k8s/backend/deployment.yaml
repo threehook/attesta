@@ -1,5 +1,3 @@
-# Local dev only: ZKPUOI_JWT_SECRET / ZKPUOI_ADMIN_TOKEN are left unset, so the backend falls back to the insecure defaults baked into internal/config
-# for this exact purpose. Anything beyond local Docker-Desktop dev needs those injected from a real Secret instead.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -23,6 +21,17 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
+          env:
+            - name: ZKPUOI_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: zk-puoi-backend
+                  key: jwt-secret
+            - name: ZKPUOI_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: zk-puoi-backend
+                  key: admin-token
           readinessProbe:
             httpGet:
               path: /healthz

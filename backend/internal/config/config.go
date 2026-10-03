@@ -3,6 +3,7 @@ package config
 
 import "os"
 
+// Config holds zk-puoi's runtime configuration; see FromEnv.
 type Config struct {
 	// Addr is the address the HTTP server listens on.
 	Addr string
@@ -20,6 +21,8 @@ type Config struct {
 	JWTSecret string
 	// AdminToken gates POST /admin/policies. Same caveat as JWTSecret.
 	AdminToken string
+	// CORSOrigins is the comma-separated browser-origin allowlist passed to httpapi.Server; see withCORS.
+	CORSOrigins string
 }
 
 func FromEnv() Config {
@@ -30,6 +33,7 @@ func FromEnv() Config {
 		AdminToken:          getenv("ZKPUOI_ADMIN_TOKEN", "dev-only-insecure-admin-token"),
 		VerificationKeyPath: getenv("ZKPUOI_VERIFICATION_KEY", "../client-lib/circuits/diploma_membership/build/verification_key.json"),
 		RegistryPath:        getenv("ZKPUOI_REGISTRY_PATH", "../client-lib/circuits/diploma_membership/build/registry.json"),
+		CORSOrigins:         getenv("ZKPUOI_CORS_ORIGINS", "http://localhost:5173"),
 	}
 }
 

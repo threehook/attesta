@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zk-puoi-gui
+  namespace: zk-puoi
+  labels:
+    app: zk-puoi-gui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zk-puoi-gui
+  template:
+    metadata:
+      labels:
+        app: zk-puoi-gui
+    spec:
+      containers:
+        - name: zk-puoi-gui
+          image: zk-puoi-gui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10

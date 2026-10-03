@@ -55,6 +55,7 @@ func run() error {
 		AdminToken:   cfg.AdminToken,
 		Logger:       logger,
 		RegistryRoot: registryRoot,
+		CORSOrigins:  cfg.CORSOrigins,
 	}
 
 	logger.Info("listening", "addr", cfg.Addr)
