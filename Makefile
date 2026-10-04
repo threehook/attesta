@@ -15,13 +15,18 @@ GUI_IMAGE := $(GUI_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 # Vite's own preview-server port; used for the k8s-gui-port-forward fallback, matching the LoadBalancer's own port.
 GUI_LOCAL_PORT := 4173
 
+ISSUER_IMAGE_REPO := zk-puoi-issuer
+# Same unique-tag reasoning as IMAGE above.
+ISSUER_IMAGE := $(ISSUER_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
+
 # POLICY=path/to/file.gno is the policy k8s-deploy-policy hot-deploys into the running backend. POLICY_ID
 # defaults to the filename without its .gno extension, e.g. diploma_check.gno -> diploma_check.
 POLICY :=
 POLICY_ID := $(basename $(notdir $(POLICY)))
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-deploy-policy \
-	docker-build-gui k8s-gui-apply k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward
+	docker-build-gui k8s-gui-apply k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward \
+	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs
 
 build:
 	cd backend && go build ./...
@@ -106,3 +111,25 @@ k8s-gui-logs:
 # Fallback only — zk-puoi-gui is a LoadBalancer Service, already auto-forwarded to localhost.
 k8s-gui-port-forward:
 	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/zk-puoi-gui $(GUI_LOCAL_PORT):80
+
+# Built with the repo root as context (see examples/issuer/Dockerfile) — the pnpm workspace install needs the other workspace packages' manifests.
+docker-build-issuer:
+	docker build -f examples/issuer/Dockerfile -t $(ISSUER_IMAGE) .
+
+# Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one examples/simple-gui's
+# policy trusts. Reachable from the host at http://localhost:4000 through the LoadBalancer.
+k8s-issuer-apply: docker-build-issuer
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/deployment.yaml -f k8s/local/issuer/service.yaml
+	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-issuer zk-puoi-issuer=$(ISSUER_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-issuer -n $(NAMESPACE)
+
+# Leaves the shared "zk-puoi" namespace alone — k8s-delete (backend) owns it.
+k8s-issuer-delete:
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/deployment.yaml -f k8s/local/issuer/service.yaml --ignore-not-found
+
+k8s-issuer-restart:
+	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/zk-puoi-issuer -n $(NAMESPACE)
+
+k8s-issuer-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/zk-puoi-issuer -f

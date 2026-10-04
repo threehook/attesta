@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zk-puoi-issuer
+  namespace: zk-puoi
+  labels:
+    app: zk-puoi-issuer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zk-puoi-issuer
+  template:
+    metadata:
+      labels:
+        app: zk-puoi-issuer
+    spec:
+      containers:
+        - name: zk-puoi-issuer
+          image: zk-puoi-issuer:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4000
+          env:
+            # Wallets on the host reach the issuer through the LoadBalancer on localhost:4000; this address is written into every offer.
+            - name: ZKPUOI_ISSUER_PUBLIC_URL
+              value: http://localhost:4000
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 4000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10

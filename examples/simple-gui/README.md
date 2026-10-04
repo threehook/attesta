@@ -25,7 +25,8 @@ wallet, then run the page:
 
 ```sh
 make k8s-gui-apply            # the page and its policy in Docker Desktop's k8s, or deploy the policy with `make k8s-deploy-policy`
-cd examples/issuer && pnpm start              # prints the issuer DID; open http://localhost:4000, fill the form, copy the offer link
+make k8s-issuer-apply         # the demo issuer in k8s (or `cd examples/issuer && pnpm start`); it prints its DID
+                              # open http://localhost:4000, fill the form, copy the offer link
 ZKPUOI_ALLOW_INSECURE_HTTP=1 pnpm --filter @zk-puoi/wallet-desktop start   # the wallet: paste the offer link and confirm
 cd examples/simple-gui && pnpm dev            # http://localhost:5173
                                               # paste the link the page shows into the wallet and confirm

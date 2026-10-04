@@ -64,6 +64,7 @@ k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
     gui/              deployment/service for examples/simple-gui
+    issuer/           deployment/service for examples/issuer (LoadBalancer on localhost:4000)
   cloud/              (empty for now)
 pnpm-workspace.yaml   client-lib + wallet + wallet-desktop + examples
 Makefile              build/test/docker/k8s targets (see Development workflow)
@@ -95,6 +96,7 @@ make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
 make k8s-gui-apply       # deploys examples/simple-gui, then hot-deploys its policy into the backend
+make k8s-issuer-apply    # deploys the demo issuer; open http://localhost:4000 for its form
 ```
 
 Policies are held in memory only, so a backend restart empties the store; `make k8s-deploy-policy POLICY=<file.gno>` puts one back.
@@ -116,7 +118,7 @@ With the backend running (`ZKPUOI_PUBLIC_URL` set to its address, for example `h
 deployed:
 
 ```sh
-cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000
+cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000 (or `make k8s-issuer-apply`)
 ZKPUOI_ALLOW_INSECURE_HTTP=1 pnpm --filter @zk-puoi/wallet-desktop start    # the wallet: paste the offer link from the issuer form, confirm
 cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Request access", then paste the page's link into the wallet and confirm
 ```

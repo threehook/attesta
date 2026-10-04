@@ -15,3 +15,7 @@ pnpm test       # issues credentials to an in-process wallet
 ```
 
 `ZKPUOI_ISSUER_PUBLIC_URL` must be the address wallets reach the issuer at: it appears in every offer and in the issuer metadata.
+
+In Docker Desktop's Kubernetes, `make k8s-issuer-apply` builds the image and deploys it (`k8s/local/issuer/`); the form is then at http://localhost:4000, which is
+also the address written into every offer. The signing key comes from the seed, so the DID stays the same across restarts although the container's store does not.
+
