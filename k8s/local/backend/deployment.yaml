@@ -1,34 +1,34 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: zk-puoi-backend
-  namespace: zk-puoi
+  name: attesta-backend
+  namespace: attesta
   labels:
-    app: zk-puoi-backend
+    app: attesta-backend
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: zk-puoi-backend
+      app: attesta-backend
   template:
     metadata:
       labels:
-        app: zk-puoi-backend
+        app: attesta-backend
     spec:
       containers:
-        - name: zk-puoi-backend
-          image: zk-puoi-backend:dev
+        - name: attesta-backend
+          image: attesta-backend:dev
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           env:
             # Wallets on the host reach the backend through the GUI's LoadBalancer, whose nginx proxies /v1/ here.
-            - name: ZKPUOI_PUBLIC_URL
+            - name: ATTESTA_PUBLIC_URL
               value: http://localhost:4173
-            - name: ZKPUOI_ADMIN_TOKEN
+            - name: ATTESTA_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: zk-puoi-backend
+                  name: attesta-backend
                   key: admin-token
           readinessProbe:
             httpGet:

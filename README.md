@@ -1,12 +1,12 @@
-# zk-puoi
+# attesta
 
 A Go backend that authorizes requests based on verifiable credentials that users present from their own wallet. An application asks the backend to
 start an authorization; the user's wallet answers with an SD-JWT presentation that discloses only what was asked for; the backend verifies it and
 runs the result through an **authorization policy written in Gno**, evaluated in-process by [gnovm](https://github.com/gnolang/gno), gno.land's VM,
 embedded directly in the backend (no blockchain involved).
 
-Despite the name, presentations use selective disclosure (SD-JWT), not zero-knowledge proofs: the holder reveals only the requested claims, but the
-issuer's signature and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
+Presentations use selective disclosure (SD-JWT), not zero-knowledge proofs: the holder reveals only the requested claims, but the issuer's signature
+and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
 
 This is a monorepo: the backend, a TypeScript client library, a wallet core, and two examples (a demo issuer and a relying web page).
 
@@ -41,7 +41,7 @@ Key design decisions:
 ```
 backend/
   cmd/
-    zk-puoi/          server entrypoint
+    attesta/          server entrypoint
     spike/            throwaway PoC validating embedded-gnovm policy calls (superseded
                        by internal/authz, kept as a minimal reference)
   internal/
@@ -52,9 +52,9 @@ backend/
     scripts/           policy source store (startup load + admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
   Dockerfile
-client-lib/                TypeScript package @zk-puoi/client: typed client for the backend API (authorization requests, outcome polling, policy deploy)
-wallet/                    @zk-puoi/wallet: the wallet core — a Credo holder agent that accepts credential offers, answers presentation requests, and has a CLI
-wallet-desktop/            @zk-puoi/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
+client-lib/                TypeScript package @attesta/client: typed client for the backend API (authorization requests, outcome polling, policy deploy)
+wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that accepts credential offers, answers presentation requests, and has a CLI
+wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
   issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
   simple-gui/              Vite + React relying page: asks the backend for a Diploma presentation and shows the decision
@@ -77,12 +77,12 @@ Quick local iteration without a container works too:
 
 ```sh
 cd backend
-go run ./cmd/zk-puoi      # listens on :8080, no policies unless ZKPUOI_POLICIES_DIR is set
+go run ./cmd/attesta      # listens on :8080, no policies unless ATTESTA_POLICIES_DIR is set
 go test ./...
 ```
 
-Configuration comes from the environment: `ZKPUOI_ADDR`, `ZKPUOI_PUBLIC_URL` (where wallets reach the backend: it appears in every presentation
-request), `ZKPUOI_POLICIES_DIR`, `ZKPUOI_ADMIN_TOKEN`, `ZKPUOI_CORS_ORIGINS`. `internal/config` falls back to an insecure dev default for the admin token when its variable
+Configuration comes from the environment: `ATTESTA_ADDR`, `ATTESTA_PUBLIC_URL` (where wallets reach the backend: it appears in every presentation
+request), `ATTESTA_POLICIES_DIR`, `ATTESTA_ADMIN_TOKEN`, `ATTESTA_CORS_ORIGINS`. `internal/config` falls back to an insecure dev default for the admin token when its variable
 isn't set — fine for local Docker Desktop, not fine for anything beyond it.
 
 For the k8s loop (requires Docker Desktop running, with Kubernetes enabled):
@@ -105,21 +105,21 @@ Policies are held in memory only, so a backend restart empties the store; `make 
 
 ```sh
 pnpm install                          # from the repo root; allows the install scripts listed in pnpm-workspace.yaml
-pnpm --filter @zk-puoi/client test     # client library
-pnpm --filter @zk-puoi/issuer test     # issues credentials to an in-process wallet
-pnpm --filter @zk-puoi/wallet-desktop test:e2e   # the desktop wallet, driven like a user
+pnpm --filter @attesta/client test     # client library
+pnpm --filter @attesta/issuer test     # issues credentials to an in-process wallet
+pnpm --filter @attesta/wallet-desktop test:e2e   # the desktop wallet, driven like a user
 ```
 
 Askar, the wallet's storage, ships a native library that its install script downloads from the OpenWallet Foundation's GitHub releases.
 
 ### Trying the whole flow
 
-With the backend running (`ZKPUOI_PUBLIC_URL` set to its address, for example `http://localhost:8080`) and `examples/simple-gui/policies/diploma_check.gno`
+With the backend running (`ATTESTA_PUBLIC_URL` set to its address, for example `http://localhost:8080`) and `examples/simple-gui/policies/diploma_check.gno`
 deployed:
 
 ```sh
 cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000 (or `make k8s-issuer-apply`)
-ZKPUOI_ALLOW_INSECURE_HTTP=1 pnpm --filter @zk-puoi/wallet-desktop start    # the wallet: paste the offer link from the issuer form, confirm
+ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start    # the wallet: paste the offer link from the issuer form, confirm
 cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Request access", then paste the page's link into the wallet and confirm
 ```
 

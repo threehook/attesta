@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: zk-puoi-issuer
-  namespace: zk-puoi
+  name: attesta-issuer
+  namespace: attesta
   labels:
-    app: zk-puoi-issuer
+    app: attesta-issuer
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: zk-puoi-issuer
+      app: attesta-issuer
   template:
     metadata:
       labels:
-        app: zk-puoi-issuer
+        app: attesta-issuer
     spec:
       containers:
-        - name: zk-puoi-issuer
-          image: zk-puoi-issuer:dev
+        - name: attesta-issuer
+          image: attesta-issuer:dev
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4000
           env:
             # Wallets on the host reach the issuer through the LoadBalancer on localhost:4000; this address is written into every offer.
-            - name: ZKPUOI_ISSUER_PUBLIC_URL
+            - name: ATTESTA_ISSUER_PUBLIC_URL
               value: http://localhost:4000
           readinessProbe:
             httpGet:

@@ -1,23 +1,23 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: zk-puoi-gui
-  namespace: zk-puoi
+  name: attesta-gui
+  namespace: attesta
   labels:
-    app: zk-puoi-gui
+    app: attesta-gui
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: zk-puoi-gui
+      app: attesta-gui
   template:
     metadata:
       labels:
-        app: zk-puoi-gui
+        app: attesta-gui
     spec:
       containers:
-        - name: zk-puoi-gui
-          image: zk-puoi-gui:dev
+        - name: attesta-gui
+          image: attesta-gui:dev
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 80
