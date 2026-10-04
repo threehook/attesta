@@ -1,0 +1,33 @@
+{
+  "name": "@zk-puoi/wallet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "zk-puoi credential wallet core: a Credo holder agent that accepts OpenID4VCI offers and stores SD-JWT VCs.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "cli": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "@credo-ts/askar": "0.7.2",
+    "@credo-ts/core": "0.7.2",
+    "@credo-ts/node": "0.7.2",
+    "@credo-ts/openid4vc": "0.7.2",
+    "@openwallet-foundation/askar-nodejs": "0.6.1",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

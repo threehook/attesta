@@ -1,3 +1,14 @@
 packages:
   - client-lib
   - examples/simple-gui
+  - examples/issuer
+  - wallet
+
+# @openwallet-foundation/askar-nodejs fetches Askar's native library (from the OpenWallet Foundation's GitHub releases)
+# in its install script; koffi is the FFI layer that loads it.
+allowBuilds:
+  "@openwallet-foundation/askar-nodejs": true
+  koffi: true
+  # Their install scripts only verify or speed up optional prebuilt binaries that arrive as separate platform packages.
+  cbor-extract: false
+  esbuild: false

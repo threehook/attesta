@@ -1,0 +1,30 @@
+{
+  "name": "@zk-puoi/issuer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Demo credential issuer for zk-puoi: issues SD-JWT diploma credentials through OpenID4VCI.",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "pretest": "pnpm --filter @zk-puoi/wallet build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@credo-ts/askar": "0.7.2",
+    "@credo-ts/core": "0.7.2",
+    "@credo-ts/node": "0.7.2",
+    "@credo-ts/openid4vc": "0.7.2",
+    "@openwallet-foundation/askar-nodejs": "0.6.1",
+    "express": "^5.2.1",
+    "reflect-metadata": "^0.2.2"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.4",
+    "@zk-puoi/wallet": "workspace:*",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

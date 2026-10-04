@@ -1,0 +1,6 @@
+export { createWalletAgent } from './agent.js'
+export type { WalletAgent, WalletOptions } from './agent.js'
+export { acceptCredentialOffer, acceptPreviewedOffer, listCredentials, previewCredentialOffer } from './credentials.js'
+export type { CredentialOffer, HeldCredential } from './credentials.js'
+export { resolvePresentationRequest, submitPresentation } from './presentations.js'
+export type { PresentationRequest } from './presentations.js'
