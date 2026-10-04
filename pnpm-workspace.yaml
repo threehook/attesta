@@ -3,6 +3,7 @@ packages:
   - examples/simple-gui
   - examples/issuer
   - wallet
+  - wallet-desktop
 
 # @openwallet-foundation/askar-nodejs fetches Askar's native library (from the OpenWallet Foundation's GitHub releases)
 # in its install script; koffi is the FFI layer that loads it.
@@ -11,4 +12,6 @@ allowBuilds:
   koffi: true
   # Their install scripts only verify or speed up optional prebuilt binaries that arrive as separate platform packages.
   cbor-extract: false
+  # Electron's install script downloads its prebuilt binary from GitHub releases.
+  electron: true
   esbuild: false
