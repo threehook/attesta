@@ -17,8 +17,9 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 pnpm --filter @zk-puoi/wallet-desktop start     # builds, then starts Electron
 ```
 
-`ZKPUOI_ALLOW_INSECURE_HTTP=1` lets it talk to issuers and verifiers on plain http, for local development. `ZKPUOI_WALLET_DATA_DIR` keeps the wallet's
-data somewhere other than the system's per-user app folder.
+Three environment variables are for development and tests only: `ZKPUOI_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
+http, `ZKPUOI_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, and `ZKPUOI_WALLET_KEY` supplies the store key
+directly. An installed (packaged) app ignores all three (`src/main/dev-switches.ts`).
 
 A development run does not register itself as the handler for `openid-credential-offer://` and `openid4vp://` links, because that changes the system's
 defaults; set `ZKPUOI_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,
@@ -28,7 +29,7 @@ and one passed to a second launch goes to the running instance.
 
 The wallet store (Askar, SQLite) is encrypted with a random key that is generated on first start and kept in the app's data folder, encrypted with
 Electron's `safeStorage` — the system keychain on macOS, DPAPI on Windows, the secret service on Linux. The user is never asked for a password. If the
-system's secure storage is not available the wallet refuses to start. `ZKPUOI_WALLET_KEY` supplies a key directly, for tests.
+system's secure storage is not available the wallet refuses to start.
 
 ## How it is built
 

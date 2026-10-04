@@ -3,15 +3,17 @@ import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
 import { createWalletAgent, type WalletAgent } from "@zk-puoi/wallet";
 import { channels, type Result } from "../shared/api.js";
+import { devSwitches } from "./dev-switches.js";
 import { loadOrCreateStoreKey } from "./keystore.js";
 import { WalletService } from "./service.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const LINK_SCHEMES = ["openid-credential-offer", "openid4vp"];
 
-// Tests and development can keep the wallet's data somewhere else.
-if (process.env.ZKPUOI_WALLET_DATA_DIR) {
-  app.setPath("userData", process.env.ZKPUOI_WALLET_DATA_DIR);
+// Development and tests can change where the wallet keeps its data, which key protects it, and allow plain http; an installed app cannot.
+const dev = devSwitches(process.env, app.isPackaged);
+if (dev.dataDir) {
+  app.setPath("userData", dev.dataDir);
 }
 
 if (!app.requestSingleInstanceLock()) {
@@ -78,7 +80,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   const userData = app.getPath("userData");
-  const storeKey = process.env.ZKPUOI_WALLET_KEY ?? loadOrCreateStoreKey(join(userData, "store-key"), {
+  const storeKey = dev.storeKey ?? loadOrCreateStoreKey(join(userData, "store-key"), {
         isAvailable: () => safeStorage.isEncryptionAvailable(),
         encrypt: (plain) => safeStorage.encryptString(plain),
         decrypt: (encrypted) => safeStorage.decryptString(encrypted),
@@ -87,7 +89,7 @@ app.whenReady().then(async () => {
     storeId: "wallet",
     storeKey,
     path: join(userData, "wallet"),
-    allowInsecureHttp: process.env.ZKPUOI_ALLOW_INSECURE_HTTP === "1",
+    allowInsecureHttp: dev.allowInsecureHttp,
   });
   const service = new WalletService(agent);
 
