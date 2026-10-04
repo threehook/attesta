@@ -7,19 +7,8 @@
 node_modules/
 dist/
 .vite/
-
-# Circuit build scratch: client-lib/circuits/*/build.sh produces cubic_js/cubic.wasm, the final
-# zkey and verification_key.json, which ARE committed; these intermediate/per-run files are not.
-client-lib/circuits/**/*.ptau
-client-lib/circuits/**/*_0000.zkey
-client-lib/circuits/**/*.wtns
-client-lib/circuits/**/proof.json
-client-lib/circuits/**/public.json
-client-lib/circuits/**/input.json
-
-# examples/simple-gui/public/circuits is a synced copy of client-lib/circuits/*/build (see sync-circuit script),
-# not a separate source of truth — regenerate it rather than committing it twice.
-examples/simple-gui/public/circuits/
+test-results/
+playwright-report/
 
 # IDE
 .idea/

@@ -1,10 +1,9 @@
 // Thin typed wrapper around backend/internal/httpapi's HTTP surface. Takes a fetch implementation as a constructor argument (defaulting to the global
 // one) so tests can stub it without a real server.
 import type {
-  AuthorizeRequest,
-  AuthorizeResponse,
-  LoginRequest,
-  LoginResponse,
+  AuthorizationOutcome,
+  AuthorizationRequest,
+  AuthorizationRequestResponse,
   PutPolicyRequest,
   PutPolicyResponse,
 } from "./types.js";
@@ -19,6 +18,14 @@ export class ApiError extends Error {
   }
 }
 
+export interface WaitOptions {
+  // Time between polls. Defaults to one second.
+  intervalMs?: number;
+  // How long to wait before giving up. Defaults to the backend's five-minute request lifetime.
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+
 export class ApiClient {
   constructor(
     private readonly baseUrl: string,
@@ -27,26 +34,42 @@ export class ApiClient {
     private readonly fetchImpl: typeof fetch = (...args) => fetch(...args),
   ) {}
 
-  async login(req: LoginRequest): Promise<LoginResponse> {
-    return this.postJSON<LoginResponse>("/v1/login", req);
+  // createAuthorizationRequest starts an authorization. Hand the returned link to the user's wallet, then wait for the decision.
+  async createAuthorizationRequest(req: AuthorizationRequest): Promise<AuthorizationRequestResponse> {
+    return this.requestJSON<AuthorizationRequestResponse>("POST", "/v1/authorize/requests", req);
   }
 
-  // authorize submits a proof for verification and policy evaluation. token, if given, is the mock-login JWT — attached for audit/logging only,
-  // per backend/internal/httpapi/authorize.go; it never affects the decision.
-  async authorize(req: AuthorizeRequest, token?: string): Promise<AuthorizeResponse> {
-    return this.postJSON<AuthorizeResponse>("/v1/authorize", req, token ? { Authorization: `Bearer ${token}` } : {});
+  async getAuthorizationOutcome(requestId: string): Promise<AuthorizationOutcome> {
+    return this.requestJSON<AuthorizationOutcome>("GET", `/v1/authorize/requests/${encodeURIComponent(requestId)}`);
+  }
+
+  // waitForOutcome polls until the wallet has answered and the backend has decided.
+  async waitForOutcome(requestId: string, options: WaitOptions = {}): Promise<Extract<AuthorizationOutcome, { status: "done" }>> {
+    const { intervalMs = 1000, timeoutMs = 5 * 60 * 1000, signal } = options;
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      signal?.throwIfAborted();
+      const outcome = await this.getAuthorizationOutcome(requestId);
+      if (outcome.status === "done") {
+        return outcome;
+      }
+      if (Date.now() + intervalMs > deadline) {
+        throw new Error("timed out waiting for the wallet to answer");
+      }
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
   }
 
   // deployPolicy hot-deploys a .gno policy via the admin API. Requires the server's configured admin token.
   async deployPolicy(adminToken: string, req: PutPolicyRequest): Promise<PutPolicyResponse> {
-    return this.postJSON<PutPolicyResponse>("/admin/policies", req, { "X-Admin-Token": adminToken });
+    return this.requestJSON<PutPolicyResponse>("POST", "/admin/policies", req, { "X-Admin-Token": adminToken });
   }
 
-  private async postJSON<Res>(path: string, body: unknown, headers: Record<string, string> = {}): Promise<Res> {
+  private async requestJSON<Res>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<Res> {
     const res = await this.fetchImpl(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
+      method,
+      headers: { ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
+      body: body === undefined ? undefined : JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) {

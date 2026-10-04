@@ -1,18 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiClient, ApiError } from "./api.js";
-import type { Groth16Proof } from "./types.js";
-
-const PROOF: Groth16Proof = {
-  pi_a: ["1", "2", "1"],
-  pi_b: [
-    ["1", "2"],
-    ["3", "4"],
-    ["1", "0"],
-  ],
-  pi_c: ["5", "6", "1"],
-  protocol: "groth16",
-  curve: "bn128",
-};
 
 function fakeFetch(status: number, body: unknown): typeof fetch {
   return vi.fn().mockResolvedValue({
@@ -23,54 +10,78 @@ function fakeFetch(status: number, body: unknown): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
-describe("ApiClient.login", () => {
-  it("posts to /v1/login and returns the token", async () => {
-    const fetchImpl = fakeFetch(200, { token: "abc" });
+function sequenceFetch(...bodies: unknown[]): typeof fetch {
+  const fn = vi.fn();
+  for (const body of bodies) {
+    fn.mockResolvedValueOnce({ ok: true, status: 200, statusText: "OK", json: async () => body });
+  }
+  return fn as unknown as typeof fetch;
+}
+
+describe("ApiClient.createAuthorizationRequest", () => {
+  it("posts the request and returns the link and id", async () => {
+    const fetchImpl = fakeFetch(200, { requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
+    const client = new ApiClient("http://localhost:8080", fetchImpl);
+    const req = { resource: "vault", policyId: "p1", credentialType: "Diploma", claims: ["degree"] };
+
+    const result = await client.createAuthorizationRequest(req);
+
+    expect(result).toEqual({ requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/v1/authorize/requests",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(req) }),
+    );
+  });
+
+  it("throws an ApiError carrying the backend's message", async () => {
+    const client = new ApiClient("http://localhost:8080", fakeFetch(404, { error: 'unknown policy "p1"' }));
+
+    await expect(client.createAuthorizationRequest({ resource: "v", policyId: "p1", credentialType: "Diploma" })).rejects.toMatchObject({
+      name: "ApiError",
+      status: 404,
+      message: 'unknown policy "p1"',
+    });
+    await expect(client.createAuthorizationRequest({ resource: "v", policyId: "p1", credentialType: "Diploma" })).rejects.toBeInstanceOf(ApiError);
+  });
+});
+
+describe("ApiClient.getAuthorizationOutcome", () => {
+  it("gets /v1/authorize/requests/{id} without a body", async () => {
+    const fetchImpl = fakeFetch(200, { status: "pending" });
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 
-    const result = await client.login({ subject: "alice", roles: ["student"] });
-
-    expect(result).toEqual({ token: "abc" });
+    expect(await client.getAuthorizationOutcome("a/b")).toEqual({ status: "pending" });
     expect(fetchImpl).toHaveBeenCalledWith(
-      "http://localhost:8080/v1/login",
-      expect.objectContaining({
-        method: "POST",
-        body: JSON.stringify({ subject: "alice", roles: ["student"] }),
-      }),
+      "http://localhost:8080/v1/authorize/requests/a%2Fb",
+      expect.objectContaining({ method: "GET", body: undefined }),
     );
   });
 });
 
-describe("ApiClient.authorize", () => {
-  it("attaches a bearer token when given one", async () => {
-    const fetchImpl = fakeFetch(200, { allow: true, reason: "ok" });
+describe("ApiClient.waitForOutcome", () => {
+  it("polls until the decision is done", async () => {
+    const allowed = { status: "done", allow: true, reason: "ok", subject: { issuer: "did:key:i", email: "ada@example.com" } };
+    const fetchImpl = sequenceFetch({ status: "pending" }, { status: "pending" }, allowed);
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 
-    const result = await client.authorize({ resource: "vault", policyId: "p1", proof: PROOF, publicSignals: ["35"] }, "tok");
+    const outcome = await client.waitForOutcome("r1", { intervalMs: 0 });
 
-    expect(result).toEqual({ allow: true, reason: "ok" });
-    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect((init.headers as Record<string, string>).Authorization).toBe("Bearer tok");
+    expect(outcome).toEqual(allowed);
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
   });
 
-  it("omits the Authorization header when no token is given", async () => {
-    const fetchImpl = fakeFetch(200, { allow: false, reason: "no" });
-    const client = new ApiClient("http://localhost:8080", fetchImpl);
+  it("gives up after the timeout", async () => {
+    const client = new ApiClient("http://localhost:8080", fakeFetch(200, { status: "pending" }));
 
-    await client.authorize({ resource: "vault", policyId: "p1", proof: PROOF, publicSignals: ["35"] });
-
-    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+    await expect(client.waitForOutcome("r1", { intervalMs: 5, timeoutMs: 10 })).rejects.toThrow("timed out");
   });
 
-  it("throws ApiError with the server's message on a non-2xx response", async () => {
-    const fetchImpl = fakeFetch(404, { error: "unknown policy \"x\"" });
-    const client = new ApiClient("http://localhost:8080", fetchImpl);
+  it("stops when aborted", async () => {
+    const client = new ApiClient("http://localhost:8080", fakeFetch(200, { status: "pending" }));
+    const controller = new AbortController();
+    controller.abort();
 
-    await expect(client.authorize({ resource: "r", policyId: "p1", proof: PROOF, publicSignals: [] })).rejects.toMatchObject({
-      status: 404,
-      message: 'unknown policy "x"',
-    });
+    await expect(client.waitForOutcome("r1", { signal: controller.signal })).rejects.toThrow();
   });
 });
 
@@ -82,13 +93,9 @@ describe("ApiClient.deployPolicy", () => {
     const result = await client.deployPolicy("admin-tok", { id: "p1", source: "package policy" });
 
     expect(result).toEqual({ status: "deployed", id: "p1" });
-    const [, init] = (fetchImpl as ReturnType<typeof vi.fn>).mock.calls[0];
-    expect((init.headers as Record<string, string>)["X-Admin-Token"]).toBe("admin-tok");
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/admin/policies",
+      expect.objectContaining({ headers: expect.objectContaining({ "X-Admin-Token": "admin-tok" }) }),
+    );
   });
-});
-
-it("ApiError carries the HTTP status", () => {
-  const err = new ApiError(401, "nope");
-  expect(err.status).toBe(401);
-  expect(err.message).toBe("nope");
 });

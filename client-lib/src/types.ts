@@ -1,38 +1,27 @@
-// Shared types for talking to the zk-puoi backend (see backend/internal/httpapi) and for building/holding proofs.
+// Shared types for talking to the zk-puoi backend (see backend/internal/httpapi).
 
-// Groth16Proof is snarkjs's native proof.json shape — the exact format backend/internal/proof.SnarkjsVerifier expects in /v1/authorize's "proof"
-// field, unmodified.
-export interface Groth16Proof {
-  pi_a: [string, string, string];
-  pi_b: [[string, string], [string, string], [string, string]];
-  pi_c: [string, string, string];
-  protocol: "groth16";
-  curve: string;
-}
-
-// PublicSignals is snarkjs's public.json shape: one decimal string per public circuit output, in declaration order.
-export type PublicSignals = string[];
-
-export interface LoginRequest {
-  subject: string;
-  roles?: string[];
-}
-
-export interface LoginResponse {
-  token: string;
-}
-
-export interface AuthorizeRequest {
+// What an application asks the user's wallet for. The credential type, the issuer and the holder's email are always established; claims lists what
+// the wallet is asked to disclose on top of that.
+export interface AuthorizationRequest {
   resource: string;
   policyId: string;
-  proof: Groth16Proof;
-  publicSignals: PublicSignals;
+  credentialType: string;
+  claims?: string[];
 }
 
-export interface AuthorizeResponse {
-  allow: boolean;
-  reason: string;
+export interface AuthorizationRequestResponse {
+  requestId: string;
+  // An `openid4vp://` link the application hands to the user's wallet.
+  authorizationRequest: string;
 }
+
+// Who was allowed: the email address the issuer vouches for. Absent for a denial, because an untrusted issuer's claims prove nothing.
+export interface Subject {
+  issuer: string;
+  email: string;
+}
+
+export type AuthorizationOutcome = { status: "pending" } | { status: "done"; allow: boolean; reason: string; subject?: Subject };
 
 export interface PutPolicyRequest {
   id: string;

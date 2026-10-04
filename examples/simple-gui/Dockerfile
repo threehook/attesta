@@ -6,7 +6,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY client-lib/package.json client-lib/package.json
 COPY examples/simple-gui/package.json examples/simple-gui/package.json
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --filter @zk-puoi/simple-gui...
 
 COPY client-lib/ client-lib/
 COPY examples/simple-gui/ examples/simple-gui/

@@ -2,7 +2,7 @@
   "name": "@zk-puoi/client",
   "version": "0.1.0",
   "private": true,
-  "description": "TypeScript client library for zk-puoi: builds ZK proofs in the browser and talks to the zk-puoi authorization API.",
+  "description": "TypeScript client library for zk-puoi: a typed wrapper around the authorization API.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -17,14 +17,8 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "snarkjs": "^0.7.6"
-  },
   "devDependencies": {
     "@types/node": "^26.6.4",
-    "@types/snarkjs": "^0.7.9",
-    "circomlib": "^2.0.5",
-    "circomlibjs": "^0.1.7",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"
   }
