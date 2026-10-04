@@ -25,7 +25,7 @@ sequenceDiagram
     A->>W: 2. the user pastes the link and confirms
     W->>B: 3. SD-JWT presentation (direct_post)
     Note over B: 4. verify issuer signature, disclosures, key binding
-    Note over B: 5. evaluate the Gno policy (resource, type, issuer DID)
+    Note over B: 5. evaluate the Gno policy (resource, type, issuer DID, claims)
     A->>B: 6. GET /v1/authorize/requests/{id}, polled
     B-->>A: status, allow, reason, subject
 ```
@@ -39,7 +39,7 @@ Key design decisions:
 | Verifier identity | requests are unsigned and identify the verifier by its response URI (`redirect_uri` client identifier prefix), so there is no verifier key to manage |
 | Identity | the holder is identified by the `email` claim of their credential, together with the issuer's DID. Every request asks the wallet for it, a presentation without it is rejected, and an allowed outcome carries it as `subject`; a denial does not, since an untrusted issuer's claims prove nothing |
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
-| Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node |
+| Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string) (bool, string)`; `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every offer and every disclosure |
 | TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer` and `examples/simple-gui` |
 
@@ -151,5 +151,4 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
 - **Presentations are linkable.** SD-JWT hides undisclosed claims but not the issuer's signature or the holder's key, so a verifier, or a verifier
   together with the issuer, can correlate presentations of the same credential.
 - **No revocation.** The backend does not check a credential's status; a credential is valid until it expires.
-- **The policy sees the resource, the credential type and the issuer's DID only**, not the disclosed claims, and the email is not checked beyond being disclosed
-  and signed by the issuer. Only Ed25519 `did:key` issuers are accepted.
+- **The email is not checked beyond being disclosed and signed by the issuer.** Only Ed25519 `did:key` issuers are accepted.

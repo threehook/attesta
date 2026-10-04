@@ -35,7 +35,7 @@ for (const trusted of [true, false]) {
         id: policyId,
         source: `package policy
 
-func Authorize(resource string, credType string, issuer string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
 	if issuer != "${trustedDid}" {
 		return false, "issuer not trusted: " + issuer
 	}

@@ -2,7 +2,8 @@ package policy
 
 // Authorize allows access to the diploma vault for a Diploma credential issued by the demo issuer (examples/issuer, with its default seed).
 // issuer is the issuer's DID; add the DIDs of other issuers you trust to trustedIssuers.
-func Authorize(resource string, credType string, issuer string) (bool, string) {
+// claims holds the disclosed claims by name; this policy does not use them.
+func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
 	trustedIssuers := map[string]bool{
 		"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA": true,
 	}

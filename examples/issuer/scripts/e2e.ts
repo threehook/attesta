@@ -39,7 +39,7 @@ try {
 async function deployPolicy(id: string, trustedIssuer: string) {
   const source = `package policy
 
-func Authorize(resource string, credType string, issuer string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
 	if resource != "diploma-vault" {
 		return false, "unknown resource: " + resource
 	}
