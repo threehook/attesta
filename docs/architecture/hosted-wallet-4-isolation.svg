@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1500 1000" width="1500" height="1000" font-family="Helvetica, Arial, sans-serif">
+<defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#444"/></marker><marker id="c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c55a11"/></marker></defs>
+<rect width="1500" height="1000" fill="#ffffff"/>
+<text x="40" y="28" font-size="16" text-anchor="start" dominant-baseline="central" fill="#333333" font-weight="bold">One wallet per employee, and what keeps them apart</text>
+<rect x="30" y="60" width="560" height="600" rx="8" fill="none" stroke="#999" stroke-dasharray="6 4"/>
+<text x="40" y="74" font-size="12" text-anchor="start" dominant-baseline="central" fill="#555" font-weight="bold">Per employee: a tenant</text>
+<rect x="60" y="110" width="500" height="240" rx="9" fill="#f5f5f5" stroke="#666666" stroke-width="1.3"/>
+<text x="310.0" y="230.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222"></text>
+<text x="80" y="131" font-size="13" text-anchor="start" dominant-baseline="central" fill="#333333" font-weight="bold">Tenant: Employee A</text>
+<rect x="80" y="155" width="220" height="70" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="190.0" y="182.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Credentials</text><text x="190.0" y="197.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">encrypted with this tenant&#x27;s data key</text>
+<rect x="320" y="155" width="220" height="70" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="430.0" y="182.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Consent history</text><text x="430.0" y="197.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">(who asked, what was shared)</text>
+<rect x="80" y="250" width="460" height="70" rx="9" fill="#fff2cc" stroke="#d6b656" stroke-width="1.3"/>
+<text x="310.0" y="277.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Holder keys for this employee</text><text x="310.0" y="292.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">inside the KMS: the wallet can ask for a signature, never for the key</text>
+<rect x="60" y="380" width="500" height="240" rx="9" fill="#f5f5f5" stroke="#666666" stroke-width="1.3"/>
+<text x="310.0" y="500.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222"></text>
+<text x="80" y="401" font-size="13" text-anchor="start" dominant-baseline="central" fill="#333333" font-weight="bold">Tenant: Employee B</text>
+<rect x="80" y="425" width="220" height="70" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="190.0" y="452.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Credentials</text><text x="190.0" y="467.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">encrypted with this tenant&#x27;s data key</text>
+<rect x="320" y="425" width="220" height="70" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="430.0" y="452.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Consent history</text><text x="430.0" y="467.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">(who asked, what was shared)</text>
+<rect x="80" y="520" width="460" height="70" rx="9" fill="#fff2cc" stroke="#d6b656" stroke-width="1.3"/>
+<text x="310.0" y="547.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Holder keys for this employee</text><text x="310.0" y="562.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">inside the KMS: the wallet can ask for a signature, never for the key</text>
+<rect x="640" y="60" width="380" height="600" rx="8" fill="none" stroke="#999" stroke-dasharray="6 4"/>
+<text x="650" y="74" font-size="12" text-anchor="start" dominant-baseline="central" fill="#555" font-weight="bold">Wallet service (shared, holds nothing itself)</text>
+<rect x="665" y="110" width="330" height="100" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="830.0" y="137.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Request-scoped tenant context</text><text x="830.0" y="152.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">the tenant is the signed-in employee</text><text x="830.0" y="167.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">(from the identity provider, never from</text><text x="830.0" y="182.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">the request body)</text>
+<rect x="665" y="250" width="330" height="90" rx="9" fill="#ffffff" stroke="#b85450" stroke-width="1.3" stroke-dasharray="5 3"/>
+<text x="830.0" y="280.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Approval gate</text><text x="830.0" y="295.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">signs only with a fresh passkey answer</text><text x="830.0" y="310.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">for exactly this request</text>
+<rect x="665" y="380" width="330" height="80" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="830.0" y="412.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Verifier registry</text><text x="830.0" y="427.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">presents only to registered apps</text>
+<rect x="665" y="500" width="330" height="80" rx="9" fill="#dae8fc" stroke="#6c8ebf" stroke-width="1.3"/>
+<text x="830.0" y="532.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Audit log</text><text x="830.0" y="547.5" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">append-only, one entry per presentation</text>
+<rect x="1070" y="60" width="400" height="600" rx="8" fill="none" stroke="#999" stroke-dasharray="6 4"/>
+<text x="1080" y="74" font-size="12" text-anchor="start" dominant-baseline="central" fill="#555" font-weight="bold">Key custody</text>
+<rect x="1095" y="110" width="350" height="100" rx="9" fill="#fff2cc" stroke="#d6b656" stroke-width="1.3"/>
+<text x="1270.0" y="145.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">KMS master key</text><text x="1270.0" y="160.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">wraps each tenant&#x27;s data key</text><text x="1270.0" y="175.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">(delete the data key: the tenant is gone)</text>
+<rect x="1095" y="250" width="350" height="100" rx="9" fill="#fff2cc" stroke="#d6b656" stroke-width="1.3"/>
+<text x="1270.0" y="285.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">KMS / HSM</text><text x="1270.0" y="300.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">holder keys, non-exportable;</text><text x="1270.0" y="315.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">IAM: sign yes, export never</text>
+<rect x="1095" y="390" width="350" height="100" rx="9" fill="#f5f5f5" stroke="#666666" stroke-width="1.3"/>
+<text x="1270.0" y="425.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">Network policy</text><text x="1270.0" y="440.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">the wallet service may reach only the issuer,</text><text x="1270.0" y="455.0" font-size="12" text-anchor="middle" dominant-baseline="central" fill="#222">the registered verifiers and the KMS</text>
+<polyline points="665,140.0 560,158.0" fill="none" stroke="#444" stroke-width="1.3" marker-end="url(#a)"/>
+<polyline points="665,180.0 560,416.0" fill="none" stroke="#444" stroke-width="1.3" marker-end="url(#a)"/>
+<polyline points="665,304.0 540,285.0" fill="none" stroke="#444" stroke-width="1.3" marker-end="url(#a)" stroke-dasharray="5 3"/>
+<polyline points="995,295.0 1095,300.0" fill="none" stroke="#444" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="1007.4" y="290.0" width="75.19999999999999" height="15" fill="#fff" opacity="0.92"/>
+<text x="1045.0" y="297.5" font-size="11" text-anchor="middle" dominant-baseline="central" fill="#333">asks to sign</text>
+<text x="40" y="704" font-size="14" text-anchor="start" dominant-baseline="central" fill="#333333" font-weight="bold">What an attacker needs, per layer</text>
+<text x="60" y="737" font-size="12" text-anchor="start" dominant-baseline="central" fill="#333333">•  Steal a session: reaches that one employee&#x27;s wallet, and still cannot present without a passkey answer.</text>
+<text x="60" y="765" font-size="12" text-anchor="start" dominant-baseline="central" fill="#333333">•  Break into the wallet service: can ask for signatures, but only with the approval gate&#x27;s agreement; keys never leave the KMS.</text>
+<text x="60" y="793" font-size="12" text-anchor="start" dominant-baseline="central" fill="#333333">•  Read the database: sees ciphertext only, one data key per tenant, wrapped by the KMS.</text>
+<text x="60" y="821" font-size="12" text-anchor="start" dominant-baseline="central" fill="#333333">•  Present to a rogue verifier: refused, because the registry lists the apps allowed.</text>
+<text x="60" y="849" font-size="12" text-anchor="start" dominant-baseline="central" fill="#333333">•  An employee leaves: their tenant&#x27;s data key and holder keys are destroyed.</text>
+<rect x="40" y="900" width="28" height="16" rx="4" fill="#dae8fc" stroke="#6c8ebf"/>
+<text x="78" y="908" font-size="11" dominant-baseline="central" fill="#333">to build</text>
+<rect x="40" y="926" width="28" height="16" rx="4" fill="#fff2cc" stroke="#d6b656"/>
+<text x="78" y="934" font-size="11" dominant-baseline="central" fill="#333">security component</text>
+<rect x="40" y="952" width="28" height="16" rx="4" fill="#ffffff" stroke="#b85450" stroke-dasharray="4 3"/>
+<text x="78" y="960" font-size="11" dominant-baseline="central" fill="#333">optional hardening</text>
+<rect x="40" y="978" width="28" height="16" rx="4" fill="#f5f5f5" stroke="#666666"/>
+<text x="78" y="986" font-size="11" dominant-baseline="central" fill="#333">exists, or a platform concern</text>
+</svg>
