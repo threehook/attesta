@@ -32,8 +32,19 @@ type Request struct {
 	PolicyID       string
 	CredentialType string
 	// Claims are the top-level claim names the holder is asked to disclose, besides the email that identifies them. The type and issuer are always
-	// established.
+	// established. Respond requires every one of them to be disclosed.
 	Claims []string
+}
+
+// asked lists every claim name a request asks for: its Claims and the identifying email, each once.
+func (r Request) asked() []string {
+	asked := []string{}
+	for _, name := range append(append([]string{}, r.Claims...), identityClaim) {
+		if !slices.Contains(asked, name) {
+			asked = append(asked, name)
+		}
+	}
+	return asked
 }
 
 // Subject identifies the person who presented a credential: the email address the issuer vouches for.
@@ -50,7 +61,8 @@ type Presented struct {
 	// Subject is only as trustworthy as the issuer, so it is meaningful once the policy has accepted the issuer.
 	Subject Subject
 	// Type is the credential's own type, which matches Request.CredentialType.
-	Type   string
+	Type string
+	// Claims are the disclosed claims that were asked for, the email included; anything else the wallet disclosed is dropped.
 	Claims map[string]any
 }
 
@@ -105,12 +117,7 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 		"format": "dc+sd-jwt",
 		"meta":   map[string]any{"vct_values": []string{r.CredentialType}},
 	}
-	asked := []string{}
-	for _, name := range append(append([]string{}, r.Claims...), identityClaim) {
-		if !slices.Contains(asked, name) {
-			asked = append(asked, name)
-		}
-	}
+	asked := r.asked()
 	claims := make([]map[string]any, len(asked))
 	for i, name := range asked {
 		claims[i] = map[string]any{"path": []string{name}}
@@ -180,12 +187,20 @@ func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Pres
 	if verified.Type != sess.request.CredentialType {
 		return nil, invalid("credential type %q is not the requested %q", verified.Type, sess.request.CredentialType)
 	}
-	email, _ := verified.Claims[identityClaim].(string)
+	claims := map[string]any{}
+	for _, name := range sess.request.asked() {
+		value, ok := verified.Claims[name]
+		if !ok {
+			return nil, invalid("the %q claim was not disclosed", name)
+		}
+		claims[name] = value
+	}
+	email, _ := claims[identityClaim].(string)
 	if email == "" {
-		return nil, invalid("the %q claim that identifies the holder was not disclosed", identityClaim)
+		return nil, invalid("the %q claim that identifies the holder is not a text", identityClaim)
 	}
 	return &Presented{
-		Request: sess.request, Issuer: verified.Issuer, Subject: Subject{Issuer: verified.Issuer, Email: email}, Type: verified.Type, Claims: verified.Claims,
+		Request: sess.request, Issuer: verified.Issuer, Subject: Subject{Issuer: verified.Issuer, Email: email}, Type: verified.Type, Claims: claims,
 	}, nil
 }
 

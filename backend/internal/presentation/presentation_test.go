@@ -149,6 +149,29 @@ func TestRespondRequiresTheEmail(t *testing.T) {
 	}
 }
 
+func TestRespondRequiresEveryRequestedClaim(t *testing.T) {
+	r := loadRecorded(t)
+	v := newRecordedVerifier(t, r, r.Full, Request{CredentialType: "Diploma", Claims: []string{"degree", "department"}})
+
+	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
+	if !errors.Is(err, ErrInvalidPresentation) || !strings.Contains(err.Error(), "department") {
+		t.Errorf("error = %v, want ErrInvalidPresentation mentioning the missing claim", err)
+	}
+}
+
+func TestRespondKeepsOnlyTheAskedClaims(t *testing.T) {
+	r := loadRecorded(t)
+	v := newRecordedVerifier(t, r, r.Full, Request{CredentialType: "Diploma"})
+
+	got, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
+	if err != nil {
+		t.Fatalf("Respond: %v", err)
+	}
+	if len(got.Claims) != 1 || got.Claims["email"] != "ada@example.com" {
+		t.Errorf("Claims = %v, want only the email: the degree was disclosed but not asked for", got.Claims)
+	}
+}
+
 func TestRespondRejects(t *testing.T) {
 	r := loadRecorded(t)
 	good := formOf(r.Full)
