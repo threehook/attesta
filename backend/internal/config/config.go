@@ -7,7 +7,7 @@ import "os"
 type Config struct {
 	// Addr is the address the HTTP server listens on.
 	Addr string
-	// PoliciesDir is loaded into the policy store at startup.
+	// PoliciesDir is loaded into the policy store at startup when set; empty starts with no policies, to be hot-deployed via POST /admin/policies.
 	PoliciesDir string
 	// VerificationKeyPath is a snarkjs-exported verification_key.json for the circuit proofs are checked against. The default assumes the working
 	// directory is backend/ (as `go run ./cmd/zk-puoi` leaves it) and client-lib is checked out alongside it; the Docker image overrides this to a
@@ -28,7 +28,7 @@ type Config struct {
 func FromEnv() Config {
 	return Config{
 		Addr:                getenv("ZKPUOI_ADDR", ":8080"),
-		PoliciesDir:         getenv("ZKPUOI_POLICIES_DIR", "policies"),
+		PoliciesDir:         getenv("ZKPUOI_POLICIES_DIR", ""),
 		JWTSecret:           getenv("ZKPUOI_JWT_SECRET", "dev-only-insecure-secret"),
 		AdminToken:          getenv("ZKPUOI_ADMIN_TOKEN", "dev-only-insecure-admin-token"),
 		VerificationKeyPath: getenv("ZKPUOI_VERIFICATION_KEY", "../client-lib/circuits/diploma_membership/build/verification_key.json"),

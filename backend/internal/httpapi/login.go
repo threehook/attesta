@@ -14,7 +14,7 @@ type loginResponse struct {
 	Token string `json:"token"`
 }
 
-// handleLogin is the mock login examples/react-gui uses to obtain a JWT: it performs no credential check at all and issues a token for whatever
+// handleLogin is the mock login examples/simple-gui uses to obtain a JWT: it performs no credential check at all and issues a token for whatever
 // subject/roles the caller sends. The token identifies the session for audit/logging in handleAuthorize; it plays no part in the allow/deny decision
 // itself.
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {

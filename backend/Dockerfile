@@ -22,14 +22,12 @@ WORKDIR /app
 
 COPY --from=builder /out/zk-puoi ./zk-puoi
 COPY --from=builder /out/gnoroot ./gnoroot
-COPY backend/policies ./policies
 COPY client-lib/circuits/diploma_membership/build/verification_key.json ./circuits/verification_key.json
 COPY client-lib/circuits/diploma_membership/build/registry.json ./circuits/registry.json
 
 ENV GNOROOT=/app/gnoroot
 # ^ points gnovm at the stdlib/examples folders copied in above.
 ENV ZKPUOI_ADDR=:8080
-ENV ZKPUOI_POLICIES_DIR=/app/policies
 ENV ZKPUOI_VERIFICATION_KEY=/app/circuits/verification_key.json
 ENV ZKPUOI_REGISTRY_PATH=/app/circuits/registry.json
 

@@ -1,6 +1,6 @@
 packages:
   - client-lib
-  - examples/react-gui
+  - examples/simple-gui
 
 # blake-hash (a circomlibjs dependency, used for off-circuit witness/registry generation) needs its native
 # addon built; trusted here since it's a standard, widely-used part of the circom/circomlibjs toolchain.

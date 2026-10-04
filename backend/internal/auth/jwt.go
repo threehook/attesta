@@ -1,4 +1,4 @@
-// Package auth provides the mock login used by examples/react-gui: it issues a JWT carrying whatever role(s) the caller asked for, with no real
+// Package auth provides the mock login used by examples/simple-gui: it issues a JWT carrying whatever role(s) the caller asked for, with no real
 // credential check behind it. The JWT identifies the session for audit/logging; it is never what an /v1/authorize decision is based on — that comes
 // from the ZK proof and the Gno policy evaluating it.
 package auth

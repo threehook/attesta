@@ -11,20 +11,20 @@ import (
 	"github.com/gnolang/gno/gnovm/pkg/test"
 )
 
-const policyFile = "policies/diploma_check.gno"
+const policyFile = "../examples/simple-gui/policies/diploma_check.gno"
 
 func main() {
-	if err := run("diploma-vault", "trusted-university"); err != nil {
+	if err := run("diploma-vault", "Diploma", "trusted-university"); err != nil {
 		fmt.Fprintln(os.Stderr, "allow case failed:", err)
 		os.Exit(1)
 	}
-	if err := run("diploma-vault", "diploma-mill"); err != nil {
+	if err := run("diploma-vault", "Diploma", "diploma-mill"); err != nil {
 		fmt.Fprintln(os.Stderr, "deny case failed:", err)
 		os.Exit(1)
 	}
 }
 
-func run(resource, issuer string) error {
+func run(resource, credType, issuer string) error {
 	rootDir := gnoenv.RootDir()
 	output := test.OutputWithError(os.Stdout, os.Stderr)
 	_, store := test.ProdStore(rootDir, output, nil)
@@ -49,7 +49,7 @@ func run(resource, issuer string) error {
 	file := m.MustReadFile(policyFile)
 	m.RunFiles(file)
 
-	expr := fmt.Sprintf("Authorize(%q, %q)", resource, issuer)
+	expr := fmt.Sprintf("Authorize(%q, %q, %q)", resource, credType, issuer)
 	ex, err := m.ParseExpr(expr)
 	if err != nil {
 		return fmt.Errorf("parse expr: %w", err)
@@ -62,6 +62,6 @@ func run(resource, issuer string) error {
 
 	allow := results[0].GetBool()
 	reason := results[1].GetString()
-	fmt.Printf("resource=%q issuer=%q -> allow=%v reason=%q\n", resource, issuer, allow, reason)
+	fmt.Printf("resource=%q type=%q issuer=%q -> allow=%v reason=%q\n", resource, credType, issuer, allow, reason)
 	return nil
 }

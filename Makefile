@@ -15,7 +15,7 @@ GUI_IMAGE := $(GUI_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 # Vite's own preview-server port; used for the k8s-gui-port-forward fallback, matching the LoadBalancer's own port.
 GUI_LOCAL_PORT := 4173
 
-# POLICY=path/to/file.gno hot-deploys that policy into the running backend (see k8s-deploy-policy). POLICY_ID
+# POLICY=path/to/file.gno is the policy k8s-deploy-policy hot-deploys into the running backend. POLICY_ID
 # defaults to the filename without its .gno extension, e.g. diploma_check.gno -> diploma_check.
 POLICY :=
 POLICY_ID := $(basename $(notdir $(POLICY)))
@@ -35,15 +35,13 @@ docker-build:
 	docker build -f backend/Dockerfile -t $(IMAGE) .
 
 # Re-applies manifests, then points the deployment at the just-built image's exact (unique) tag via `kubectl set image` — this always triggers a real
-# rollout, unlike re-applying a manifest whose image: field never changes. Add POLICY=path/to/file.gno to also hot-deploy that policy once the rollout
-# is ready, e.g.: make k8s-apply POLICY=backend/policies/diploma_check.gno
+# rollout, unlike re-applying a manifest whose image: field never changes.
 k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	$(MAKE) k8s-secret
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-backend zk-puoi-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-backend -n $(NAMESPACE)
-	@if [ -n "$(POLICY)" ]; then $(MAKE) k8s-deploy-policy POLICY="$(POLICY)" POLICY_ID="$(POLICY_ID)"; fi
 
 # Creates the JWT-signing-secret/admin-token Secret with random values if it doesn't already exist. Left alone on repeat applies so a redeploy
 # doesn't invalidate already-issued JWTs or require re-learning a new admin token.
@@ -69,7 +67,7 @@ k8s-port-forward:
 	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/zk-puoi-backend 8080:8080
 
 # Hot-deploys a .gno policy file into the already-running backend via POST /admin/policies — no rebuild or restart.
-# Usage: make k8s-deploy-policy POLICY=backend/policies/diploma_check.gno [POLICY_ID=name]
+# Usage: make k8s-deploy-policy POLICY=examples/simple-gui/policies/diploma_check.gno [POLICY_ID=name]
 k8s-deploy-policy:
 	@if [ -z "$(POLICY)" ]; then echo "usage: make k8s-deploy-policy POLICY=path/to/file.gno [POLICY_ID=name]"; exit 1; fi
 	@if [ ! -f "$(POLICY)" ]; then echo "no such file: $(POLICY)"; exit 1; fi
@@ -83,16 +81,18 @@ k8s-deploy-policy:
 		&& echo "\npolicy '$(POLICY_ID)' deployed" || echo "policy deploy failed"
 	@kill $$(cat /tmp/zk-puoi-port-forward.pid) 2>/dev/null; rm -f /tmp/zk-puoi-port-forward.pid
 
-# Built with the repo root as context (see examples/react-gui/Dockerfile) — the pnpm workspace install needs client-lib's package.json too.
+# Built with the repo root as context (see examples/simple-gui/Dockerfile) — the pnpm workspace install needs client-lib's package.json too.
 docker-build-gui:
-	docker build -f examples/react-gui/Dockerfile -t $(GUI_IMAGE) .
+	docker build -f examples/simple-gui/Dockerfile -t $(GUI_IMAGE) .
 
-# Same pattern as k8s-apply. Depends on the backend already being applied (shares its namespace).
+# Same pattern as k8s-apply, then hot-deploys the example's own policy into the backend (the backend itself ships none). Depends on the backend
+# already being applied (shares its namespace). Policies are in-memory only, so re-run this after a backend rollout.
 k8s-gui-apply: docker-build-gui
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/gui/deployment.yaml -f k8s/local/gui/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-gui zk-puoi-gui=$(GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-gui -n $(NAMESPACE)
+	$(MAKE) k8s-deploy-policy POLICY=examples/simple-gui/policies/diploma_check.gno
 
 # Leaves the shared "zk-puoi" namespace alone — k8s-delete (backend) owns it.
 k8s-gui-delete:

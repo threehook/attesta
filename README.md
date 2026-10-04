@@ -9,7 +9,7 @@ credential. The proof's disclosed public signals are then run through an
 the backend (no blockchain involved).
 
 This is a monorepo: the backend, a TypeScript client library, and an example
-React GUI all live here together.
+Simple GUI all live here together.
 
 > **Status: early scaffolding.** This README is kept up to date as the codebase evolves —
 > check the repo layout and known risks below before assuming more than what's described here.
@@ -17,7 +17,7 @@ React GUI all live here together.
 ## Architecture
 
 ```
-React GUI (examples/react-gui)
+Simple GUI (examples/simple-gui)
   │  1. mock login -> JWT with role(s)            (identity/audit only)
   │  2. wallet holds mock Verifiable Credentials   (e.g. a diploma)
   │  3. client-lib builds a ZK proof in-browser    (circom + snarkjs)
@@ -42,7 +42,7 @@ Key design decisions (see commit history / discussion for rationale):
 | ZK proving | circom + snarkjs own the circuit, its trusted setup, and proving — entirely client-side |
 | ZK verifying | Go backend verifies with `gnark-crypto`'s pairing primitives directly against snarkjs's exported verification key; the full `gnark` module (circuit compiler, its own Setup/Prove) isn't a dependency at all — Groth16 verification is protocol-level math, not tied to whichever toolchain produced the circuit |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node |
-| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib` and `examples/react-gui` via `workspace:*` |
+| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib` and `examples/simple-gui` via `workspace:*` |
 | Verifiable Credentials | lightweight mock VCs for the MVP (no DID/signature infra yet) |
 
 ## Repo layout
@@ -60,7 +60,6 @@ backend/
     authz/             Evaluator backed by an embedded gnovm interpreter
     scripts/           policy source store (startup load + admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
-  policies/            .gno authorization policy packages, loaded at startup
   Dockerfile
 client-lib/                TypeScript package @zk-puoi/client
   src/
@@ -71,25 +70,27 @@ client-lib/                TypeScript package @zk-puoi/client
   circuits/
     cubic/                  the original toy circuit (x³+x+5=y); kept only as a minimal gnark-crypto/snarkjs
                              interop reference (internal/proof/snarkjs_test.go's fixtures), not otherwise used
-    diploma_membership/     the circuit examples/react-gui and the backend actually run: proves membership in a
+    diploma_membership/     the circuit examples/simple-gui and the backend actually run: proves membership in a
                              small Merkle-tree credential registry plus a disclosed type/issuer, without revealing
                              which credential. registry.mjs generates the fixed demo registry; build.sh compiles
                              + runs its trusted setup
 examples/
-  react-gui/              Vite + React example GUI (@zk-puoi/react-gui)
+  simple-gui/             Vite + React example GUI (@zk-puoi/simple-gui)
     src/
       App.tsx               ties the three views together via simple tab state
       components/           LoginView, WalletView (imports a demo credential from the registry), ResourceView
                              (the proof-build + authorize flow)
       lib/clients.ts         shared ApiClient/Wallet instances, circuit asset paths, registry loader
+    policies/               diploma_check.gno, the Gno policy this example's ResourceView requests; deploy it with
+                             `make k8s-deploy-policy` (the backend ships with no policies)
     public/circuits/        synced copy of client-lib's circuit build output (gitignored, see
                              the sync-circuit script) — served as static files for snarkjs to fetch
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    gui/              deployment/service for examples/react-gui
+    gui/              deployment/service for examples/simple-gui
   cloud/              (empty for now)
-pnpm-workspace.yaml   client-lib + examples/react-gui
+pnpm-workspace.yaml   client-lib + examples/simple-gui
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
 
@@ -101,7 +102,7 @@ local iteration without a container still works too:
 
 ```sh
 cd backend
-go run ./cmd/zk-puoi      # listens on :8080, loads backend/policies at startup
+go run ./cmd/zk-puoi      # listens on :8080, no policies unless ZKPUOI_POLICIES_DIR is set
 go test ./...
 ```
 
@@ -121,7 +122,7 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make k8s-apply POLICY=backend/policies/diploma_check.gno  # also hot-deploy a policy after rollout
+make k8s-gui-apply       # deploys examples/simple-gui, then hot-deploys its policy into the backend
 ```
 
 `internal/config` falls back to insecure dev defaults (JWT secret, admin token) when their
@@ -150,14 +151,14 @@ npm run typecheck
 npm run build      # emits dist/ (ESM + .d.ts); excludes *.test.ts via tsconfig.build.json
 ```
 
-### examples/react-gui
+### examples/simple-gui
 
 Install once from the repo root with `pnpm install` (links `@zk-puoi/client` into the app via the workspace).
 Requires the backend running on `:8080` (CORS is wide open for this) and `client-lib`'s diploma_membership circuit
 and registry already built (`client-lib/circuits/diploma_membership/build.sh` and `registry.mjs`, see above).
 
 ```sh
-cd examples/react-gui
+cd examples/simple-gui
 pnpm dev       # syncs the circuit's wasm/zkey/registry.json into public/circuits (predev hook), then starts Vite on :5173
 pnpm build      # same sync, then tsc -b && vite build
 ```

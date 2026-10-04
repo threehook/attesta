@@ -32,8 +32,10 @@ func run() error {
 	}
 
 	policies := scripts.NewStore(gnoVM)
-	if err := policies.LoadDir(cfg.PoliciesDir); err != nil {
-		return fmt.Errorf("load policies: %w", err)
+	if cfg.PoliciesDir != "" {
+		if err := policies.LoadDir(cfg.PoliciesDir); err != nil {
+			return fmt.Errorf("load policies: %w", err)
+		}
 	}
 	logger.Info("policies loaded", "dir", cfg.PoliciesDir, "ids", policies.IDs())
 
