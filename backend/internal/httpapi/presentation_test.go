@@ -160,6 +160,25 @@ func TestHandlePresentationResponse(t *testing.T) {
 	}
 }
 
+func TestHandlePresentationResponsePassesTheClaimsToThePolicy(t *testing.T) {
+	p := presented()
+	p.Claims = map[string]any{"department": "burgerzaken", "email": "ada@example.com", "level": float64(3), "courses": []any{"a", "b"}}
+	e := &fakeEvaluator{result: authz.Result{Allow: true}}
+	s := newPresentationServer(t, &fakePresenter{presented: p}, e)
+
+	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
+
+	want := map[string]string{"department": "burgerzaken", "email": "ada@example.com", "level": "3", "courses": `["a","b"]`}
+	if len(e.evaluated.Claims) != len(want) {
+		t.Fatalf("policy got claims %v, want %v", e.evaluated.Claims, want)
+	}
+	for name, value := range want {
+		if e.evaluated.Claims[name] != value {
+			t.Errorf("claim %s = %q, want %q", name, e.evaluated.Claims[name], value)
+		}
+	}
+}
+
 func TestHandlePresentationOutcome(t *testing.T) {
 	yes, no := true, false
 	cases := map[string]struct {

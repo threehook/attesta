@@ -4,6 +4,8 @@ package authz
 import (
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 	"sync"
 
 	"github.com/gnolang/gno/gnovm/pkg/gnoenv"
@@ -17,6 +19,8 @@ type Input struct {
 	Resource string
 	Type     string
 	Issuer   string
+	// Claims are the disclosed claims the policy may base its decision on, by name. The values are strings; the caller encodes anything else.
+	Claims map[string]string
 }
 
 // Result is a policy's allow/deny decision and the human-readable reason for it.
@@ -30,7 +34,8 @@ type Evaluator interface {
 	// Validate reports whether source compiles as a Gno package, without running any particular function in it. Used to reject bad policy source
 	// before it's stored.
 	Validate(source string) error
-	// Evaluate loads source as a Gno package and calls its exported Authorize(resource, credType, issuer string) (bool, string) function.
+	// Evaluate loads source as a Gno package and calls its exported
+	// Authorize(resource, credType, issuer string, claims map[string]string) (bool, string) function.
 	Evaluate(source string, in Input) (Result, error)
 }
 
@@ -57,7 +62,7 @@ func NewGnoVM(output io.Writer) (*GnoVM, error) {
 const policyPkgPath = "attesta/policy"
 
 // validationInput is the sample call Validate makes to prove the policy's Authorize has the expected signature; its values are never interpreted.
-var validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate"}
+var validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate", Claims: map[string]string{"validate": "validate"}}
 
 // Validate checks that source compiles and that its Authorize function exists with the signature Evaluate calls, by running it once against
 // validationInput. A policy that panics on that call is rejected too.
@@ -85,7 +90,7 @@ func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 		}
 		m.RunFiles(file)
 
-		expr := fmt.Sprintf("Authorize(%q, %q, %q)", in.Resource, in.Type, in.Issuer)
+		expr := fmt.Sprintf("Authorize(%q, %q, %q, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims))
 		ex, err := m.ParseExpr(expr)
 		if err != nil {
 			return fmt.Errorf("parse call expression: %w", err)
@@ -140,4 +145,24 @@ func parseFile(m *gno.Machine, source string) (*gno.FileNode, error) {
 		return nil, fmt.Errorf("parse policy source: %w", err)
 	}
 	return file, nil
+}
+
+// claimsLiteral renders claims as a Gno map literal, with sorted keys so the call is the same every time. %q yields valid Gno string literals.
+func claimsLiteral(claims map[string]string) string {
+	names := make([]string, 0, len(claims))
+	for name := range claims {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var b strings.Builder
+	b.WriteString("map[string]string{")
+	for i, name := range names {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q: %q", name, claims[name])
+	}
+	b.WriteString("}")
+	return b.String()
 }

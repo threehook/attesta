@@ -104,7 +104,9 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", presented.Request.PolicyID))
 		return
 	}
-	decision, err := s.Authz.Evaluate(source, authz.Input{Resource: presented.Request.Resource, Type: presented.Type, Issuer: presented.Issuer})
+	decision, err := s.Authz.Evaluate(source, authz.Input{
+		Resource: presented.Request.Resource, Type: presented.Type, Issuer: presented.Issuer, Claims: policyClaims(presented.Claims),
+	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
 		s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "policy evaluation failed"})
@@ -155,4 +157,21 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, Email: outcome.Subject.Email}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// policyClaims gives a policy the claims as strings: text as it is, anything else (numbers, booleans, lists, objects) as its JSON.
+func policyClaims(claims map[string]any) map[string]string {
+	out := make(map[string]string, len(claims))
+	for name, value := range claims {
+		if text, ok := value.(string); ok {
+			out[name] = text
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			continue // cannot happen for values that came out of JSON
+		}
+		out[name] = string(encoded)
+	}
+	return out
 }

@@ -17,7 +17,8 @@ import (
 type fakeEvaluator struct {
 	result    authz.Result
 	err       error
-	validated string // last source passed to Validate, for assertions
+	validated string      // last source passed to Validate, for assertions
+	evaluated authz.Input // last input passed to Evaluate
 }
 
 func (f *fakeEvaluator) Validate(source string) error {
@@ -25,7 +26,8 @@ func (f *fakeEvaluator) Validate(source string) error {
 	return nil
 }
 
-func (f *fakeEvaluator) Evaluate(string, authz.Input) (authz.Result, error) {
+func (f *fakeEvaluator) Evaluate(_ string, in authz.Input) (authz.Result, error) {
+	f.evaluated = in
 	return f.result, f.err
 }
 
