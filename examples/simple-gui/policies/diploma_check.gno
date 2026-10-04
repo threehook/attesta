@@ -1,11 +1,10 @@
 package policy
 
-// Authorize evaluates whether a disclosed credential (credType, issuer — both disclosed by a ZK proof already verified against the real credential
-// registry, see internal/authz.DecodePublicSignals) satisfies the requirements for accessing resource. It returns an allow/deny decision and a
-// human-readable reason.
+// Authorize allows access to the diploma vault for a Diploma credential issued by the demo issuer (examples/issuer, with its default seed).
+// issuer is the issuer's DID; add the DIDs of other issuers you trust to trustedIssuers.
 func Authorize(resource string, credType string, issuer string) (bool, string) {
 	trustedIssuers := map[string]bool{
-		"trusted-university": true,
+		"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA": true,
 	}
 
 	if resource != "diploma-vault" {

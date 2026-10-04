@@ -4,4 +4,3 @@
 backend/zk-puoi
 backend/spike
 **/*.test
-client-lib/circuits/**/*.ptau

@@ -22,11 +22,9 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            - name: ZKPUOI_JWT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: zk-puoi-backend
-                  key: jwt-secret
+            # Wallets on the host reach the backend through the GUI's LoadBalancer, whose nginx proxies /v1/ here.
+            - name: ZKPUOI_PUBLIC_URL
+              value: http://localhost:4173
             - name: ZKPUOI_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:

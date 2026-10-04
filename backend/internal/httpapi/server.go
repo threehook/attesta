@@ -1,5 +1,5 @@
-// Package httpapi wires the HTTP surface: mock login, the authorize endpoint (verify proof, then evaluate policy), and the admin hot-deploy endpoint
-// — on top of internal/proof, internal/authz, internal/scripts and internal/auth.
+// Package httpapi wires the HTTP surface: the authorize flow (request a presentation, receive the wallet's answer, evaluate the policy,
+// report the decision), and the admin hot-deploy endpoint — on top of internal/presentation, internal/authz, internal/scripts.
 package httpapi
 
 import (
@@ -7,22 +7,18 @@ import (
 	"net/http"
 	"strings"
 
-	"zk-puoi/backend/internal/auth"
 	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/proof"
 	"zk-puoi/backend/internal/scripts"
 )
 
 // Server holds the HTTP handlers' dependencies; call Routes to get an http.Handler.
 type Server struct {
-	Proof      proof.Verifier
 	Authz      authz.Evaluator
 	Policies   *scripts.Store
-	Auth       *auth.Issuer
 	AdminToken string
 	Logger     *slog.Logger
-	// RegistryRoot is the expected Merkle root a proof's disclosed root public signal must match — see authz.DecodePublicSignals.
-	RegistryRoot string
+	// Presenter serves the OpenID4VP flow (POST /v1/authorize/requests); nil disables it.
+	Presenter Presenter
 	// CORSOrigins is the comma-separated list of origins allowed to call this API from a browser; see withCORS.
 	CORSOrigins string
 }
@@ -30,8 +26,9 @@ type Server struct {
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
-	mux.HandleFunc("POST /v1/login", s.handleLogin)
-	mux.HandleFunc("POST /v1/authorize", s.handleAuthorize)
+	mux.HandleFunc("POST /v1/authorize/requests", s.handlePresentationRequest)
+	mux.HandleFunc("POST /v1/authorize/requests/{id}/response", s.handlePresentationResponse)
+	mux.HandleFunc("GET /v1/authorize/requests/{id}", s.handlePresentationOutcome)
 	mux.HandleFunc("POST /admin/policies", s.requireAdmin(s.handlePutPolicy))
 	return withCORS(mux, s.CORSOrigins)
 }

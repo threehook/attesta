@@ -30,9 +30,9 @@ test:
 	cd backend && go test ./...
 
 # Builds straight into Docker Desktop's local image store, which its bundled k8s reads from directly — no registry push needed for this inner dev
-# loop. Context is the repo root (not backend/) because the image also needs client-lib's circom-exported verification key.
+# loop.
 docker-build:
-	docker build -f backend/Dockerfile -t $(IMAGE) .
+	docker build -t $(IMAGE) backend
 
 # Re-applies manifests, then points the deployment at the just-built image's exact (unique) tag via `kubectl set image` — this always triggers a real
 # rollout, unlike re-applying a manifest whose image: field never changes.
@@ -43,12 +43,11 @@ k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) set image deployment/zk-puoi-backend zk-puoi-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/zk-puoi-backend -n $(NAMESPACE)
 
-# Creates the JWT-signing-secret/admin-token Secret with random values if it doesn't already exist. Left alone on repeat applies so a redeploy
-# doesn't invalidate already-issued JWTs or require re-learning a new admin token.
+# Creates the admin-token Secret with a random value if it doesn't already exist. Left alone on repeat applies so a redeploy
+# doesn't require re-learning a new admin token.
 k8s-secret:
 	@kubectl --context $(KUBE_CONTEXT) get secret zk-puoi-backend -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic zk-puoi-backend -n $(NAMESPACE) \
-			--from-literal=jwt-secret=$$(openssl rand -hex 32) \
 			--from-literal=admin-token=$$(openssl rand -hex 32)
 
 k8s-delete:

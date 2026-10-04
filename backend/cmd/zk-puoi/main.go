@@ -1,4 +1,4 @@
-// Command zk-puoi runs the authorization backend: verify a ZK proof, then evaluate the matching Gno policy against its disclosed public signals.
+// Command zk-puoi runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
 package main
 
 import (
@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"os"
 
-	"zk-puoi/backend/internal/auth"
 	"zk-puoi/backend/internal/authz"
 	"zk-puoi/backend/internal/config"
 	"zk-puoi/backend/internal/httpapi"
-	"zk-puoi/backend/internal/proof"
+	"zk-puoi/backend/internal/presentation"
 	"zk-puoi/backend/internal/scripts"
+	"zk-puoi/backend/internal/sdjwt"
 )
 
 func main() {
@@ -39,25 +39,15 @@ func run() error {
 	}
 	logger.Info("policies loaded", "dir", cfg.PoliciesDir, "ids", policies.IDs())
 
-	vk, err := proof.LoadVerifyingKey(cfg.VerificationKeyPath)
-	if err != nil {
-		return fmt.Errorf("load verifying key: %w", err)
-	}
-
-	registryRoot, err := authz.LoadRegistryRoot(cfg.RegistryPath)
-	if err != nil {
-		return fmt.Errorf("load registry: %w", err)
-	}
+	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}})
 
 	server := &httpapi.Server{
-		Proof:        proof.NewSnarkjsVerifier(vk),
-		Authz:        gnoVM,
-		Policies:     policies,
-		Auth:         auth.NewIssuer(cfg.JWTSecret),
-		AdminToken:   cfg.AdminToken,
-		Logger:       logger,
-		RegistryRoot: registryRoot,
-		CORSOrigins:  cfg.CORSOrigins,
+		Authz:       gnoVM,
+		Policies:    policies,
+		AdminToken:  cfg.AdminToken,
+		Logger:      logger,
+		Presenter:   presenter,
+		CORSOrigins: cfg.CORSOrigins,
 	}
 
 	logger.Info("listening", "addr", cfg.Addr)
