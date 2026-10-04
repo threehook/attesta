@@ -49,5 +49,6 @@ pnpm --filter @zk-puoi/wallet-desktop test:e2e    # the real app, driven like a 
 Setting `ZKPUOI_BACKEND_URL` (a backend whose `ZKPUOI_PUBLIC_URL` is that address, and `ZKPUOI_ADMIN_TOKEN` if not the dev default) also runs the whole
 flow against it: issuer, wallet, backend and the Gno policy, for a trusted and an untrusted issuer.
 
-Electron's own install script can finish without unpacking the binary on some Node versions, which shows up as "Electron failed to install
-correctly". `scripts/ensure-electron.mjs` detects that and unpacks the downloaded archive with the system tools; `start` and `test:e2e` run it first.
+Electron 40 and later no longer download their binary during `pnpm install`: the first `electron` run (or first `require('electron')`, which is what the
+tests do) fetches it from GitHub releases and unpacks it. Earlier versions unpacked it with `extract-zip`, which hangs on Node 24.16 and 26.1 and later
+and leaves the install half done ("Electron failed to install correctly"); newer ones use their own extractor.
