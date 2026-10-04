@@ -12,15 +12,22 @@ This is a monorepo: the backend, a TypeScript client library, a wallet core, and
 
 ## Architecture
 
-```
-Issuer (examples/issuer)                  Wallet (wallet-desktop/, around the Credo holder agent in wallet/)
-  signs SD-JWT VC credentials  ─OpenID4VCI─►  holds credentials, keys bound per credential
-                                                     ▲   │ 3. answers with an SD-JWT presentation (direct_post)
-Relying application (examples/simple-gui)            │   ▼
-  1. POST /v1/authorize/requests ───────────►  backend (Go)
-  2. hands the openid4vp:// link to the wallet     4. verify issuer signature, disclosures, key binding
-  5. polls GET /v1/authorize/requests/{id}         5. evaluate the Gno policy (resource, type, issuer DID)
-        ◄── { status: done, allow, reason, subject }
+```mermaid
+sequenceDiagram
+    participant I as Issuer (examples/issuer)
+    participant W as Wallet (wallet-desktop, Credo agent in wallet/)
+    participant A as Relying application (examples/simple-gui)
+    participant B as Backend (Go)
+
+    I->>W: SD-JWT VC credential (OpenID4VCI), once
+    A->>B: 1. POST /v1/authorize/requests
+    B-->>A: request id and openid4vp:// link
+    A->>W: 2. the user pastes the link and confirms
+    W->>B: 3. SD-JWT presentation (direct_post)
+    Note over B: 4. verify issuer signature, disclosures, key binding
+    Note over B: 5. evaluate the Gno policy (resource, type, issuer DID)
+    A->>B: 6. GET /v1/authorize/requests/{id}, polled
+    B-->>A: status, allow, reason, subject
 ```
 
 Key design decisions:
