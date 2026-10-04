@@ -1,0 +1,84 @@
+# The laadpalen app backend with attesta beside it as a sidecar. They share the pod's network, so the app calls attesta on 127.0.0.1:8080. In a workforce
+# setup everything runs inside the organisation, and the wallet reaches attesta over the internal network (the laadpalen-attesta Service).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laadpalen-api
+  namespace: attesta
+  labels:
+    app: laadpalen-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: laadpalen-api
+  template:
+    metadata:
+      labels:
+        app: laadpalen-api
+    spec:
+      # Kubernetes would otherwise inject variables such as LAADPALEN_API_PORT=tcp://10.0.0.1:8787 for every Service in the namespace.
+      enableServiceLinks: false
+      containers:
+        - name: api
+          image: laadpalen-api:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: LAADPALEN_ADDR
+              value: ":8787"
+            - name: ATTESTA_URL
+              value: http://127.0.0.1:8080
+          ports:
+            - containerPort: 8787
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8787
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8787
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: attesta
+          image: attesta-backend:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATTESTA_ADDR
+              value: ":8080"
+            # Where the wallet reaches attesta. The demo wallet runs on the host, through the laadpalen-attesta LoadBalancer on localhost:4175.
+            - name: ATTESTA_PUBLIC_URL
+              value: http://localhost:4175
+            - name: ATTESTA_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: laadpalen-attesta
+                  key: admin-token
+            # This app's policies; the sidecar reloads them when the ConfigMap changes: no restart (make laadpalen-policies).
+            - name: ATTESTA_POLICIES_DIR
+              value: /policies
+          ports:
+            - containerPort: 8080
+          volumeMounts:
+            - name: policies
+              mountPath: /policies
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: policies
+          configMap:
+            name: laadpalen-policies
+            optional: true

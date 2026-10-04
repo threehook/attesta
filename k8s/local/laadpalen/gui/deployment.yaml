@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: laadpalen-gui
+  namespace: attesta
+  labels:
+    app: laadpalen-gui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: laadpalen-gui
+  template:
+    metadata:
+      labels:
+        app: laadpalen-gui
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: laadpalen-gui
+          image: laadpalen-gui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10

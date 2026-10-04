@@ -65,13 +65,15 @@ wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet 
 examples/
   issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
   simple-gui/              Vite + React relying page: asks the backend for a Diploma presentation and shows the decision
-    policies/                diploma_check.gno, the Gno policy this example requests; deploy it with
-                             `make simple-gui` adds it (the backend ships with no policies)
+    policies/                diploma_check.gno, the Gno policy this example requests; `make simple-gui` adds it
+                             to the backend (the backend ships with no policies)
+  laadpalen/               a relying application with attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
     gui/              deployment/service for examples/simple-gui
     issuer/           deployment/service for examples/issuer (LoadBalancer on localhost:4000)
+    laadpalen/        the laadpalen app: one pod with its backend and the attesta sidecar, and its page (localhost:4174, the demo wallet reaches attesta at localhost:4175)
   cloud/              (empty for now)
 pnpm-workspace.yaml   client-lib + wallet + wallet-desktop + examples
 Makefile              build/test/docker/k8s targets (see Development workflow)
@@ -106,6 +108,8 @@ make simple-gui          # deploys examples/simple-gui and adds its policy diplo
 make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
 make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
 make k8s-issuer-apply    # deploys the demo issuer; open http://localhost:4000 for its form
+make laadpalen           # deploys examples/laadpalen (needs the issuer): page at http://localhost:4174
+make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
 
 Policies come from the ConfigMap `attesta-policies`, mounted at `/policies` (`ATTESTA_POLICIES_DIR`). The backend reads the directory every five seconds and

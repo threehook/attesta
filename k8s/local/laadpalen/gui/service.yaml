@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: laadpalen-gui
+  namespace: attesta
+# LoadBalancer: Docker Desktop auto-forwards this to localhost:4174, no port-forward needed.
+spec:
+  selector:
+    app: laadpalen-gui
+  ports:
+    - port: 4174
+      targetPort: 80
+  type: LoadBalancer

@@ -1,0 +1,27 @@
+# The page's nginx reaches the app backend here; nothing else needs to.
+apiVersion: v1
+kind: Service
+metadata:
+  name: laadpalen-api
+  namespace: attesta
+spec:
+  selector:
+    app: laadpalen-api
+  ports:
+    - port: 8787
+      targetPort: 8787
+---
+# How a wallet reaches attesta. LoadBalancer is a demo convenience: the demo wallet runs on the host, and Docker Desktop auto-forwards this to
+# localhost:4175 (ATTESTA_PUBLIC_URL in the deployment). A wallet running inside the organisation's cluster would use the internal address instead.
+apiVersion: v1
+kind: Service
+metadata:
+  name: laadpalen-attesta
+  namespace: attesta
+spec:
+  selector:
+    app: laadpalen-api
+  ports:
+    - port: 4175
+      targetPort: 8080
+  type: LoadBalancer

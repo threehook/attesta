@@ -16,6 +16,19 @@ ISSUER_IMAGE_REPO := attesta-issuer
 # Same unique-tag reasoning as IMAGE above.
 ISSUER_IMAGE := $(ISSUER_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 
+LAADPALEN_API_IMAGE := laadpalen-api:dev-$(shell date +%Y%m%d%H%M%S)
+LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
+# The laadpalen example's own policies; its sidecar serves exactly these (ConfigMap laadpalen-policies).
+LAADPALEN_POLICIES := $(wildcard examples/laadpalen/policies/*.gno)
+
+# put-configmap(name, files): writes a ConfigMap from the files and replaces whatever was there. kubectl apply would not do: it only removes keys that an
+# earlier apply wrote, so a key added with kubectl patch (k8s-policies-add) would stay. The YAML is piped, never echoed: sh's echo expands the \t and \n
+# escapes kubectl writes for Go source, which breaks the policy.
+define put-configmap
+if kubectl --context $(KUBE_CONTEXT) get configmap $(1) -n $(NAMESPACE) >/dev/null 2>&1; then verb=replace; else verb=create; fi; \
+kubectl --context $(KUBE_CONTEXT) create configmap $(1) -n $(NAMESPACE) $(addprefix --from-file=,$(2)) --dry-run=client -o yaml | kubectl --context $(KUBE_CONTEXT) $$verb -f -
+endef
+
 # POLICIES lists the .gno files the backend serves, e.g. POLICIES="a.gno b.gno"; each file's name without .gno is its policy ID. They go into the ConfigMap
 # attesta-policies, which the running backend watches. Left empty, k8s-apply keeps the ConfigMap as it is.
 POLICIES :=
@@ -24,13 +37,15 @@ SIMPLE_GUI_POLICIES := examples/simple-gui/policies/diploma_check.gno
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
 	docker-build-gui simple-gui k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs
+	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs \
+	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs
 
 build:
 	cd backend && go build ./...
 
 test:
 	cd backend && go test ./...
+	cd examples/laadpalen/api && go test ./...
 
 # Builds straight into Docker Desktop's local image store, which its bundled k8s reads from directly — no registry push needed for this inner dev
 # loop.
@@ -74,8 +89,7 @@ k8s-port-forward:
 k8s-policies:
 	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies POLICIES=\"path/to/a.gno path/to/b.gno\""; exit 1; fi
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE) $(addprefix --from-file=,$(POLICIES)) --dry-run=client -o yaml \
-		| kubectl --context $(KUBE_CONTEXT) apply -f -
+	@$(call put-configmap,attesta-policies,$(POLICIES))
 
 # Like k8s-policies, but only adds or updates the named files and leaves the other policies in the ConfigMap alone. Also live, no restart.
 # Usage: make k8s-policies-add POLICIES=examples/simple-gui/policies/diploma_check.gno
@@ -141,3 +155,45 @@ k8s-issuer-restart:
 
 k8s-issuer-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer -f
+
+# The laadpalen example: an app backend with attesta as its sidecar, and its page (examples/laadpalen). The page is at http://localhost:4174 and wallets
+# post to http://localhost:4175; the backend image is built here too, since the sidecar is that same image. The example needs the demo issuer (k8s-issuer-apply).
+docker-build-laadpalen-api:
+	docker build -t $(LAADPALEN_API_IMAGE) examples/laadpalen/api
+
+# Built with the repo root as context (see examples/laadpalen/gui/Dockerfile) — the pnpm workspace install needs the root manifests.
+docker-build-laadpalen-gui:
+	docker build -f examples/laadpalen/gui/Dockerfile -t $(LAADPALEN_GUI_IMAGE) .
+
+# Same pattern as k8s-apply. Applies the Secret and the policies before the pod that needs them. The two containers of laadpalen-api get their images in one go.
+laadpalen: docker-build docker-build-laadpalen-api docker-build-laadpalen-gui
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	$(MAKE) laadpalen-secret laadpalen-policies
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/laadpalen/api -f k8s/local/laadpalen/gui
+	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-api api=$(LAADPALEN_API_IMAGE) attesta=$(IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-gui laadpalen-gui=$(LAADPALEN_GUI_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/laadpalen-api -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/laadpalen-gui -n $(NAMESPACE)
+
+# The sidecar's admin token, random, created once. Only the sidecar itself can use it: its admin endpoint is not exposed.
+laadpalen-secret:
+	@kubectl --context $(KUBE_CONTEXT) get secret laadpalen-attesta -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic laadpalen-attesta -n $(NAMESPACE) \
+			--from-literal=admin-token=$$(openssl rand -hex 32)
+
+# Hot-deploys the example's policies: writes examples/laadpalen/policies/*.gno into the ConfigMap its sidecar watches, no restart. The app owns this
+# ConfigMap, so unlike k8s-policies there is nothing else in it to keep.
+laadpalen-policies:
+	@$(call put-configmap,laadpalen-policies,$(LAADPALEN_POLICIES))
+
+# Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it.
+laadpalen-delete:
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/laadpalen/api -f k8s/local/laadpalen/gui --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete secret laadpalen-attesta -n $(NAMESPACE) --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete configmap laadpalen-policies -n $(NAMESPACE) --ignore-not-found
+
+laadpalen-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c api -f
+
+laadpalen-attesta-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c attesta -f
