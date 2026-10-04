@@ -2,10 +2,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/config"
@@ -14,6 +16,9 @@ import (
 	"attesta/backend/internal/scripts"
 	"attesta/backend/internal/sdjwt"
 )
+
+// policyReloadInterval is how often the policy directory is read again; a ConfigMap mounted there changes in place within about a minute.
+const policyReloadInterval = 5 * time.Second
 
 func main() {
 	if err := run(); err != nil {
@@ -38,6 +43,19 @@ func run() error {
 		}
 	}
 	logger.Info("policies loaded", "dir", cfg.PoliciesDir, "ids", policies.IDs())
+	if cfg.PoliciesDir != "" {
+		go policies.Watch(context.Background(), cfg.PoliciesDir, policyReloadInterval, func(r scripts.SyncResult) {
+			if r.Err != nil {
+				logger.Error("policy reload failed", "error", r.Err)
+			}
+			for id, err := range r.Failed {
+				logger.Error("policy rejected, keeping the previous version", "id", id, "error", err)
+			}
+			if len(r.Installed) > 0 || len(r.Removed) > 0 {
+				logger.Info("policies reloaded", "installed", r.Installed, "removed", r.Removed)
+			}
+		})
+	}
 
 	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}})
 

@@ -7,7 +7,8 @@ import "os"
 type Config struct {
 	// Addr is the address the HTTP server listens on.
 	Addr string
-	// PoliciesDir is loaded into the policy store at startup when set; empty starts with no policies, to be hot-deployed via POST /admin/policies.
+	// PoliciesDir is loaded into the policy store at startup when set, and watched afterwards: a new, changed or removed file takes effect without a
+	// restart. Empty starts with no policies, to be hot-deployed via POST /admin/policies.
 	PoliciesDir string
 	// AdminToken gates POST /admin/policies. A static shared secret, fine for local development; revisit before this is exposed beyond it.
 	AdminToken string
