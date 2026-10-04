@@ -55,7 +55,7 @@ export default function App() {
         <h1>Laadpaal aanvraag</h1>
         <p>
           Medewerkers van de gemeente dienen hier een aanvraag in voor een laadpaal. Wie dat mag, bewijst de medewerker met een
-          GemeenteEmployee-bewijs uit de eigen wallet; <code>attesta</code> naast de laadpalen-API beslist.
+          medewerkers-ID uit de eigen wallet; <code>attesta</code> naast de laadpalen-API beslist.
         </p>
       </header>
 

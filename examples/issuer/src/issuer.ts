@@ -22,13 +22,13 @@ export interface DiplomaClaims {
 export type Department = 'burgerzaken' | 'secretariaat'
 export const DEPARTMENTS: Department[] = ['burgerzaken', 'secretariaat']
 
-/** A municipality employee: where they work, and the diploma that entitles them to act. */
+/** An employee of an organisation: where they work, and the diploma that entitles them to act. */
 export interface EmployeeClaims {
   name: string
   /** Identifies the person; verifiers ask for it. */
   email: string
   department: Department
-  gemeente: string
+  organisation: string
   /** The course the employee holds a diploma for. */
   diploma: string
   /** Last day the diploma is valid, as YYYY-MM-DD. The credential expires at the end of that day (UTC). */
@@ -49,7 +49,7 @@ export interface IssuerOptions {
 
 const ISSUER_ID = 'diploma'
 const DIPLOMA = 'Diploma'
-const EMPLOYEE = 'GemeenteEmployee'
+const EMPLOYEE = 'Employee'
 type CredentialType = typeof DIPLOMA | typeof EMPLOYEE
 
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
@@ -60,10 +60,10 @@ export function endOfDay(date: string): number {
 // What a credential holds: the payload that is signed, and which of its claims the holder may disclose selectively.
 function credentialContent(type: CredentialType, metadata: Record<string, string>) {
   if (type === EMPLOYEE) {
-    const { name, email, department, gemeente, diploma, diplomaValidUntil } = metadata
+    const { name, email, department, organisation, diploma, diplomaValidUntil } = metadata
     return {
-      payload: { vct: EMPLOYEE, name, email, department, gemeente, diploma, exp: endOfDay(diplomaValidUntil) },
-      sd: ['name', 'email', 'department', 'gemeente', 'diploma'],
+      payload: { vct: EMPLOYEE, name, email, department, organisation, diploma, exp: endOfDay(diplomaValidUntil) },
+      sd: ['name', 'email', 'department', 'organisation', 'diploma'],
     }
   }
   const { name, email, degree, university } = metadata
@@ -169,9 +169,9 @@ export async function startIssuer(options: IssuerOptions) {
     res.type('html').send(renderEmployeeForm(DEPARTMENTS))
   })
   app.post('/employee/offers', async (req, res) => {
-    const { name, email, department, gemeente, diploma, diplomaValidUntil } = req.body ?? {}
-    if (![name, email, department, gemeente, diploma, diplomaValidUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
-      res.status(400).json({ error: 'name, email, department, gemeente, diploma and diplomaValidUntil are required' })
+    const { name, email, department, organisation, diploma, diplomaValidUntil } = req.body ?? {}
+    if (![name, email, department, organisation, diploma, diplomaValidUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
+      res.status(400).json({ error: 'name, email, department, organisation, diploma and diplomaValidUntil are required' })
       return
     }
     if (!/^[^@\s]+@[^@\s]+$/.test(email)) {
@@ -190,7 +190,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    respondWithOffer(req, res, await createOffer(EMPLOYEE, { name, email, department, gemeente, diploma, diplomaValidUntil }))
+    respondWithOffer(req, res, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil }))
   })
 
   const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })

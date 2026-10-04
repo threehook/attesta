@@ -18,7 +18,7 @@ const employee: EmployeeClaims = {
   name: 'Jerry Smith',
   email: 'jerry@example.com',
   department: 'burgerzaken',
-  gemeente: 'Vlierdam',
+  organisation: 'Gemeente Vlierdam',
   diploma: 'laadpalen-management',
   diplomaValidUntil: '2031-06-30',
 }
@@ -120,13 +120,13 @@ describe('diploma issuer and wallet', () => {
     const accepted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
 
     expect(accepted).toHaveLength(1)
-    expect(accepted[0].type).toBe('GemeenteEmployee')
+    expect(accepted[0].type).toBe('Employee')
     expect(accepted[0].issuer).toBe(issuer.did)
     expect(accepted[0].claims).toMatchObject({
       name: 'Jerry Smith',
       email: 'jerry@example.com',
       department: 'burgerzaken',
-      gemeente: 'Vlierdam',
+      organisation: 'Gemeente Vlierdam',
       diploma: 'laadpalen-management',
       exp: endOfDay('2031-06-30'),
     })
@@ -135,7 +135,7 @@ describe('diploma issuer and wallet', () => {
   it('offers each credential type under its own name', async () => {
     const offer = await previewCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
 
-    expect(offer.types).toEqual(['GemeenteEmployee'])
+    expect(offer.types).toEqual(['Employee'])
   })
 
   it('creates employee offers over HTTP', async () => {
@@ -152,7 +152,7 @@ describe('diploma issuer and wallet', () => {
   })
 
   it.each([
-    ['a missing field', { ...employee, gemeente: '' }],
+    ['a missing field', { ...employee, organisation: '' }],
     ['an email that is not an address', { ...employee, email: 'nope' }],
     ['an unknown department', { ...employee, department: 'bestuursbureau' }],
     ['a date that is not a date', { ...employee, diplomaValidUntil: '30-06-2031' }],
@@ -187,7 +187,7 @@ describe('diploma issuer and wallet', () => {
       try {
         const diploma = await acceptCredentialOffer(wallet, await second.createOffer({ name: 'A', email: 'a@example.com', degree: 'D', university: 'U' }))
         const staff = await acceptCredentialOffer(wallet, await second.createEmployeeOffer(employee))
-        expect([diploma[0].type, staff[0].type]).toEqual(['Diploma', 'GemeenteEmployee'])
+        expect([diploma[0].type, staff[0].type]).toEqual(['Diploma', 'Employee'])
       } finally {
         await second.close()
       }

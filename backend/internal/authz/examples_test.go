@@ -17,7 +17,7 @@ func TestExamplePolicies(t *testing.T) {
 
 	laadpaal := func(mutate func(*Input)) Input {
 		in := Input{
-			Resource: "request_laadpaal", Type: "GemeenteEmployee", Issuer: demoIssuer,
+			Resource: "request_laadpaal", Type: "Employee", Issuer: demoIssuer,
 			Claims: map[string]string{"department": "burgerzaken", "diploma": "laadpalen-management", "email": "jerry@example.com"},
 		}
 		if mutate != nil {
@@ -52,7 +52,7 @@ func TestExamplePolicies(t *testing.T) {
 
 		{"diploma vault", "simple-gui/policies/diploma_check.gno", diploma(nil), true, "credential accepted for resource diploma-vault"},
 		{"diploma vault, untrusted issuer", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "issuer not trusted: did:key:z6Mkother"},
-		{"diploma vault, wrong type", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Type = "GemeenteEmployee" }), false, "unexpected credential type: GemeenteEmployee"},
+		{"diploma vault, wrong type", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Type = "Employee" }), false, "unexpected credential type: Employee"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source, err := os.ReadFile("../../../examples/" + tc.file)

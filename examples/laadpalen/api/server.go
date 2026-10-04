@@ -17,7 +17,7 @@ import (
 const (
 	resource       = "request_laadpaal"
 	policyID       = "request_laadpaal"
-	credentialType = "GemeenteEmployee"
+	credentialType = "Employee"
 	// submissionTTL is how long a submission is remembered; attesta forgets a request after five minutes, so a longer one only keeps finished results.
 	submissionTTL = 30 * time.Minute
 )

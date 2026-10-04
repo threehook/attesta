@@ -129,7 +129,7 @@ func TestGnoVMEvaluateSeesClaims(t *testing.T) {
 		"awkward value":  {claims: map[string]string{"department": "bur\"gers\n\u00e9"}, reason: "department bur\"gers\n\u00e9 may not request"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := vm.Evaluate(departmentPolicy, Input{Resource: "laadpaal", Type: "GemeenteEmployee", Issuer: "did:key:x", Claims: tc.claims})
+			got, err := vm.Evaluate(departmentPolicy, Input{Resource: "laadpaal", Type: "Employee", Issuer: "did:key:x", Claims: tc.claims})
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}

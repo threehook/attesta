@@ -9,7 +9,7 @@ Who may submit is attesta's decision, made from a credential in the employee's o
   may submit, and then applies its own address rules (unknown address, a laadpaal already there, no electric vehicle). It records every decided request
   with the employee's `subject` (issuer and email).
 - `gui/` is the page (Vite + React), in Dutch. The employee enters an address, opens the link it shows in the wallet, and sees the outcome.
-- `policies/request_laadpaal.gno` is the application's policy: a `GemeenteEmployee` credential from a trusted issuer, for the `burgerzaken` department and
+- `policies/request_laadpaal.gno` is the application's policy: an `Employee` credential from a trusted issuer, for the `burgerzaken` department and
   a `laadpalen-management` diploma. Secretariaat employees are refused. The credential's own expiry (the diploma's last day) is checked before the policy runs.
 
 ## How it fits together
@@ -21,7 +21,7 @@ wallet ────────────────────────�
 ```
 
 1. The page posts the address to `POST /api/request-laadpaal`. The backend asks attesta for a request (`policyId` and `resource` `request_laadpaal`,
-   credential `GemeenteEmployee`, claims `department` and `diploma`) and returns the `openid4vp://` link.
+   credential `Employee`, claims `department` and `diploma`) and returns the `openid4vp://` link.
 2. The employee opens the link in the wallet and confirms what is shared. The wallet posts its answer to attesta.
 3. The page polls `GET /api/request-laadpaal/{id}`. When attesta has decided, an authorized submission is carried out once: the address rules run and the
    outcome is recorded.

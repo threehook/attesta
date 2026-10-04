@@ -42,7 +42,7 @@ func (f *fakeAttesta) outcome(context.Context, string) (outcome, json.RawMessage
 	return f.answer, json.RawMessage(f.raw), f.outcomeErr
 }
 
-var jerry = &subject{Issuer: "did:key:gemeente", Email: "jerry@example.com"}
+var jerry = &subject{Issuer: "did:key:issuer", Email: "jerry@example.com"}
 
 func newTestServer(f *fakeAttesta) *server {
 	return newServer(f, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -89,7 +89,7 @@ func TestSubmitAsksAttestaForTheEmployeeCredential(t *testing.T) {
 	if len(f.started) != 1 {
 		t.Fatalf("attesta was asked %d times, want once", len(f.started))
 	}
-	want := startedWith{"request_laadpaal", "request_laadpaal", "GemeenteEmployee", []string{"department", "diploma"}}
+	want := startedWith{"request_laadpaal", "request_laadpaal", "Employee", []string{"department", "diploma"}}
 	if g := f.started[0]; g.resource != want.resource || g.policyID != want.policyID || g.credentialType != want.credentialType || strings.Join(g.claims, ",") != "department,diploma" {
 		t.Errorf("asked attesta for %+v, want %+v", g, want)
 	}
