@@ -15,6 +15,9 @@ spec:
       labels:
         app: attesta-issuer
     spec:
+      # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4000 for every Service in the namespace, which can
+      # collide with our own settings of the same name.
+      enableServiceLinks: false
       containers:
         - name: attesta-issuer
           image: attesta-issuer:dev

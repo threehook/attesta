@@ -6,6 +6,9 @@ import { startIssuer } from './issuer.js'
 const DEV_SEED = 'dev-only-insecure-issuer-seed'
 
 const port = Number(process.env.ATTESTA_ISSUER_PORT ?? 4000)
+if (!Number.isInteger(port) || port < 0 || port > 65535) {
+  throw new Error(`ATTESTA_ISSUER_PORT must be a port number, got "${process.env.ATTESTA_ISSUER_PORT}"`)
+}
 const publicUrl = process.env.ATTESTA_ISSUER_PUBLIC_URL ?? `http://localhost:${port}`
 
 const issuer = await startIssuer({
