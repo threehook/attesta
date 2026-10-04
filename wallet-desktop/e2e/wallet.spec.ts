@@ -152,6 +152,22 @@ test.describe.serial("desktop wallet", () => {
   });
 });
 
+test("starts with its data in a folder whose path has spaces, as the system app folders do", async () => {
+  const app = await electron.launch({
+    args: [appDir],
+    env: {
+      ...process.env,
+      ZKPUOI_WALLET_DATA_DIR: join(mkdtempSync(join(tmpdir(), "zk-puoi-wallet-")), "Application Support", "zk-puoi wallet"),
+      ZKPUOI_WALLET_KEY: "e2e-wallet-key-3",
+    },
+  });
+  try {
+    await expect((await app.firstWindow()).getByText("No credentials yet")).toBeVisible();
+  } finally {
+    await app.close();
+  }
+});
+
 test("opens a link handed to the app when it starts", async () => {
   const issuerPort = await freePort();
   const issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: "e2e-2", allowInsecureHttp: true });

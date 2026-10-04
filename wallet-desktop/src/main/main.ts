@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, ipcMain, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
 import { createWalletAgent, type WalletAgent } from "@zk-puoi/wallet";
 import { channels, type Result } from "../shared/api.js";
 import { devSwitches } from "./dev-switches.js";
@@ -78,13 +78,15 @@ function createWindow() {
   void window.loadFile(join(here, "../renderer/index.html"));
 }
 
-app.whenReady().then(async () => {
+async function start() {
   const userData = app.getPath("userData");
-  const storeKey = dev.storeKey ?? loadOrCreateStoreKey(join(userData, "store-key"), {
-        isAvailable: () => safeStorage.isEncryptionAvailable(),
-        encrypt: (plain) => safeStorage.encryptString(plain),
-        decrypt: (encrypted) => safeStorage.decryptString(encrypted),
-      });
+  const storeKey =
+    dev.storeKey ??
+    loadOrCreateStoreKey(join(userData, "store-key"), {
+      isAvailable: () => safeStorage.isEncryptionAvailable(),
+      encrypt: (plain) => safeStorage.encryptString(plain),
+      decrypt: (encrypted) => safeStorage.decryptString(encrypted),
+    });
   agent = await createWalletAgent({
     storeId: "wallet",
     storeKey,
@@ -103,7 +105,18 @@ app.whenReady().then(async () => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+}
+
+// A wallet that cannot open its store has nothing to show, so say why instead of failing silently.
+app
+  .whenReady()
+  .then(start)
+  .catch((error) => {
+    const message = error instanceof Error ? (error.cause instanceof Error ? `${error.message}\n\n${error.cause.message}` : error.message) : String(error);
+    console.error("zk-puoi wallet could not start:", error);
+    dialog.showErrorBox("zk-puoi wallet could not start", message);
+    app.quit();
+  });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

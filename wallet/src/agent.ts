@@ -19,6 +19,10 @@ export interface WalletOptions {
 }
 
 export async function createWalletAgent(options: WalletOptions) {
+  // Askar builds a database URL from the path, and an "@" in it is read as the start of a host, so the store cannot be created.
+  if (options.path?.includes('@')) {
+    throw new Error(`The wallet's data folder cannot have an "@" in its path (${options.path}); choose another folder.`)
+  }
   if (options.path) mkdirSync(options.path, { recursive: true })
   const agent = new Agent({
     config: { allowInsecureHttpUrls: options.allowInsecureHttp ?? false },
