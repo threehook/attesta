@@ -56,24 +56,28 @@ func NewGnoVM(output io.Writer) (*GnoVM, error) {
 // despite the shared path.
 const policyPkgPath = "zk-puoi/policy"
 
+// validationInput is the sample call Validate makes to prove the policy's Authorize has the expected signature; its values are never interpreted.
+var validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate"}
+
+// Validate checks that source compiles and that its Authorize function exists with the signature Evaluate calls, by running it once against
+// validationInput. A policy that panics on that call is rejected too.
 func (e *GnoVM) Validate(source string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	return e.withMachine(func(m *gno.Machine) error {
-		file, err := parseFile(m, source)
-		if err != nil {
-			return err
-		}
-		m.RunFiles(file)
-		return nil
-	})
+	_, err := e.evaluate(source, validationInput)
+	return err
 }
 
-func (e *GnoVM) Evaluate(source string, in Input) (result Result, err error) {
+func (e *GnoVM) Evaluate(source string, in Input) (Result, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
+	return e.evaluate(source, in)
+}
+
+// evaluate runs source's Authorize against in. Callers must hold e.mu.
+func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 	runErr := e.withMachine(func(m *gno.Machine) error {
 		file, err := parseFile(m, source)
 		if err != nil {
@@ -91,6 +95,9 @@ func (e *GnoVM) Evaluate(source string, in Input) (result Result, err error) {
 		results := m.Eval(ex)
 		if len(results) != 2 {
 			return fmt.Errorf("Authorize: expected 2 results, got %d", len(results))
+		}
+		if results[0].T == nil || results[0].T.Kind() != gno.BoolKind || results[1].T == nil || results[1].T.Kind() != gno.StringKind {
+			return fmt.Errorf("Authorize: want results (bool, string)")
 		}
 		result = Result{Allow: results[0].GetBool(), Reason: results[1].GetString()}
 		return nil

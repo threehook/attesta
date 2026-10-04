@@ -85,7 +85,17 @@ func TestGnoVMValidate(t *testing.T) {
 		t.Fatalf("Validate well-formed policy: %v", err)
 	}
 
-	if err := vm.Validate("package policy\n\nfunc Authorize( {"); err == nil {
-		t.Fatal("Validate malformed policy: want error, got nil")
+	for name, source := range map[string]string{
+		"malformed":       "package policy\n\nfunc Authorize( {",
+		"no Authorize":    "package policy",
+		"wrong arg count": "package policy\n\nfunc Authorize(resource string) (bool, string) { return true, \"\" }",
+		"wrong arg type":  "package policy\n\nfunc Authorize(a int, b int, c int) (bool, string) { return true, \"\" }",
+		"wrong results":   "package policy\n\nfunc Authorize(a string, b string, c string) bool { return true }",
+		"result types":    "package policy\n\nfunc Authorize(a string, b string, c string) (string, bool) { return \"\", true }",
+		"panics":          "package policy\n\nfunc Authorize(a string, b string, c string) (bool, string) { panic(\"boom\") }",
+	} {
+		if err := vm.Validate(source); err == nil {
+			t.Errorf("Validate %s policy: want error, got nil", name)
+		}
 	}
 }
