@@ -1,7 +1,10 @@
 import { createServer } from 'node:net'
 import { acceptCredentialOffer, createWalletAgent, listCredentials, previewCredentialOffer, type WalletAgent } from '@attesta/wallet'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { startIssuer } from './issuer.js'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { endOfDay, startIssuer, type EmployeeClaims } from './issuer.js'
 
 async function freePort(): Promise<number> {
   const server = createServer()
@@ -9,6 +12,15 @@ async function freePort(): Promise<number> {
   const { port } = server.address() as { port: number }
   await new Promise((resolve) => server.close(resolve))
   return port
+}
+
+const employee: EmployeeClaims = {
+  name: 'Jerry Smith',
+  email: 'jerry@example.com',
+  department: 'burgerzaken',
+  gemeente: 'Vlierdam',
+  diploma: 'laadpalen-management',
+  diplomaValidUntil: '2031-06-30',
 }
 
 describe('diploma issuer and wallet', () => {
@@ -102,5 +114,85 @@ describe('diploma issuer and wallet', () => {
     expect(await start('a seed')).toBe(first)
     expect(await start('another seed')).not.toBe(first)
     expect(await start()).not.toBe(first)
+  })
+
+  it('issues an employee credential that expires with the diploma', async () => {
+    const accepted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+
+    expect(accepted).toHaveLength(1)
+    expect(accepted[0].type).toBe('GemeenteEmployee')
+    expect(accepted[0].issuer).toBe(issuer.did)
+    expect(accepted[0].claims).toMatchObject({
+      name: 'Jerry Smith',
+      email: 'jerry@example.com',
+      department: 'burgerzaken',
+      gemeente: 'Vlierdam',
+      diploma: 'laadpalen-management',
+      exp: endOfDay('2031-06-30'),
+    })
+  })
+
+  it('offers each credential type under its own name', async () => {
+    const offer = await previewCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+
+    expect(offer.types).toEqual(['GemeenteEmployee'])
+  })
+
+  it('creates employee offers over HTTP', async () => {
+    const res = await fetch(`${baseUrl}/employee/offers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(employee),
+    })
+    expect(res.status).toBe(200)
+    const { offerUri } = (await res.json()) as { offerUri: string }
+
+    const accepted = await acceptCredentialOffer(wallet, offerUri)
+    expect(accepted[0].claims).toMatchObject({ department: 'burgerzaken' })
+  })
+
+  it.each([
+    ['a missing field', { ...employee, gemeente: '' }],
+    ['an email that is not an address', { ...employee, email: 'nope' }],
+    ['an unknown department', { ...employee, department: 'bestuursbureau' }],
+    ['a date that is not a date', { ...employee, diplomaValidUntil: '30-06-2031' }],
+    ['a day that does not exist', { ...employee, diplomaValidUntil: '2031-13-45' }],
+    ['a date in the past', { ...employee, diplomaValidUntil: '2020-01-01' }],
+  ])('rejects an employee offer with %s', async (_name, body) => {
+    const res = await fetch(`${baseUrl}/employee/offers`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(body),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it('serves the employee form', async () => {
+    const html = await (await fetch(`${baseUrl}/employee`)).text()
+
+    expect(html).toContain('name="diplomaValidUntil"')
+    expect(html).toContain('<option value="burgerzaken">Burgerzaken</option>')
+    expect(html).toContain('<option value="secretariaat">Secretariaat</option>')
+  })
+
+  it('still issues both credential types after a restart on the same store', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'issuer-'))
+    try {
+      const options = { storeKey: 'k', allowInsecureHttp: true, path: dir, seed: 'restart seed' }
+      const first = await startIssuer({ ...options, port: await freePort(), publicUrl: baseUrl })
+      await first.close()
+
+      const port = await freePort()
+      const second = await startIssuer({ ...options, port, publicUrl: `http://localhost:${port}` })
+      try {
+        const diploma = await acceptCredentialOffer(wallet, await second.createOffer({ name: 'A', email: 'a@example.com', degree: 'D', university: 'U' }))
+        const staff = await acceptCredentialOffer(wallet, await second.createEmployeeOffer(employee))
+        expect([diploma[0].type, staff[0].type]).toEqual(['Diploma', 'GemeenteEmployee'])
+      } finally {
+        await second.close()
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

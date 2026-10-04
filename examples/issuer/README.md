@@ -6,6 +6,9 @@ trust the issuer's DID.
 
 - `GET /` is a form for creating a credential offer (name, email, degree, university); `POST /offers` (JSON or form) does the same and returns the offer link
   as `{ "offerUri": ... }`. The email is what identifies the person to verifiers.
+- `GET /employee` and `POST /employee/offers` do the same for a `GemeenteEmployee` credential: a municipality employee (name, email, `department` of
+  `burgerzaken` or `secretariaat`, gemeente, diploma course and the date the diploma is valid until). The credential expires at the end of that day, and
+  a date in the past is refused. Both credential types are signed with the same DID.
 - The OpenID4VCI endpoints (issuer metadata, token, credential) are served under `/oid4vci`.
 - The issuer's identity is a `did:key` created on first start and kept in its store, so the DID is stable across restarts.
 
