@@ -1,4 +1,4 @@
-// Shared types for talking to the zk-puoi backend (see backend/internal/httpapi).
+// Shared types for talking to the attesta backend (see backend/internal/httpapi).
 
 // What an application asks the user's wallet for. The credential type, the issuer and the holder's email are always established; claims lists what
 // the wallet is asked to disclose on top of that.

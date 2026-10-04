@@ -1,13 +1,13 @@
 {
-  "name": "@zk-puoi/issuer",
+  "name": "@attesta/issuer",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo credential issuer for zk-puoi: issues SD-JWT diploma credentials through OpenID4VCI.",
+  "description": "Demo credential issuer for attesta: issues SD-JWT diploma credentials through OpenID4VCI.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",
     "typecheck": "tsc --noEmit",
-    "pretest": "pnpm --filter @zk-puoi/wallet build",
+    "pretest": "pnpm --filter @attesta/wallet build",
     "test": "vitest run"
   },
   "dependencies": {
@@ -22,7 +22,7 @@
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
-    "@zk-puoi/wallet": "workspace:*",
+    "@attesta/wallet": "workspace:*",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"

@@ -44,15 +44,15 @@ importers:
         specifier: ^0.2.2
         version: 0.2.2
     devDependencies:
+      '@attesta/wallet':
+        specifier: workspace:*
+        version: link:../../wallet
       '@types/express':
         specifier: ^5.0.6
         version: 5.0.6
       '@types/node':
         specifier: ^26.6.4
         version: 26.6.4
-      '@zk-puoi/wallet':
-        specifier: workspace:*
-        version: link:../../wallet
       tsx:
         specifier: ^4.23.15
         version: 4.23.15
@@ -65,7 +65,7 @@ importers:
 
   examples/simple-gui:
     dependencies:
-      '@zk-puoi/client':
+      '@attesta/client':
         specifier: workspace:*
         version: link:../../client-lib
       react:
@@ -133,7 +133,7 @@ importers:
 
   wallet-desktop:
     dependencies:
-      '@zk-puoi/wallet':
+      '@attesta/wallet':
         specifier: workspace:*
         version: link:../wallet
     devDependencies:

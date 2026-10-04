@@ -3,7 +3,7 @@ import { ResourceView } from "./components/ResourceView.js";
 function App() {
   return (
     <>
-      <h1>zk-puoi example GUI</h1>
+      <h1>attesta example GUI</h1>
       <ResourceView />
     </>
   );

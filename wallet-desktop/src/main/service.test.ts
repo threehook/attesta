@@ -1,4 +1,4 @@
-import type { WalletAgent } from "@zk-puoi/wallet";
+import type { WalletAgent } from "@attesta/wallet";
 import { describe, expect, it } from "vitest";
 import { WalletError, WalletService } from "./service.js";
 

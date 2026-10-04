@@ -46,9 +46,9 @@ test.describe.serial("desktop wallet", () => {
       args: [appDir],
       env: {
         ...process.env,
-        ZKPUOI_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "zk-puoi-wallet-")),
-        ZKPUOI_WALLET_KEY: "e2e-wallet-key",
-        ZKPUOI_ALLOW_INSECURE_HTTP: "1",
+        ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+        ATTESTA_WALLET_KEY: "e2e-wallet-key",
+        ATTESTA_ALLOW_INSECURE_HTTP: "1",
       },
     });
     window = await app.firstWindow();
@@ -88,7 +88,7 @@ test.describe.serial("desktop wallet", () => {
     await expect(card).toContainText("Diploma");
     await expect(card).toContainText("ada@example.com");
     await expect(card).toContainText("Mathematics");
-    await window.screenshot({ path: process.env.ZKPUOI_E2E_SCREENSHOT });
+    await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
 
   test("adds nothing when the user declines an offer", async () => {
@@ -157,8 +157,8 @@ test("starts with its data in a folder whose path has spaces, as the system app 
     args: [appDir],
     env: {
       ...process.env,
-      ZKPUOI_WALLET_DATA_DIR: join(mkdtempSync(join(tmpdir(), "zk-puoi-wallet-")), "Application Support", "zk-puoi wallet"),
-      ZKPUOI_WALLET_KEY: "e2e-wallet-key-3",
+      ATTESTA_WALLET_DATA_DIR: join(mkdtempSync(join(tmpdir(), "attesta-wallet-")), "Application Support", "attesta wallet"),
+      ATTESTA_WALLET_KEY: "e2e-wallet-key-3",
     },
   });
   try {
@@ -176,9 +176,9 @@ test("opens a link handed to the app when it starts", async () => {
     args: [appDir, offer],
     env: {
       ...process.env,
-      ZKPUOI_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "zk-puoi-wallet-")),
-      ZKPUOI_WALLET_KEY: "e2e-wallet-key-2",
-      ZKPUOI_ALLOW_INSECURE_HTTP: "1",
+      ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+      ATTESTA_WALLET_KEY: "e2e-wallet-key-2",
+      ATTESTA_ALLOW_INSECURE_HTTP: "1",
     },
   });
   try {

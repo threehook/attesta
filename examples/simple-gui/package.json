@@ -1,5 +1,5 @@
 {
-  "name": "@zk-puoi/simple-gui",
+  "name": "@attesta/simple-gui",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -10,7 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@zk-puoi/client": "workspace:*",
+    "@attesta/client": "workspace:*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

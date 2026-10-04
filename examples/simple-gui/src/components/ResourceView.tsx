@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { AuthorizationRequestResponse, Subject } from "@zk-puoi/client";
+import type { AuthorizationRequestResponse, Subject } from "@attesta/client";
 import { apiClient } from "../lib/clients.js";
 
 type Decision = { allow: boolean; reason: string; subject?: Subject };

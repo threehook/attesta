@@ -4,10 +4,10 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { acceptCredentialOffer, createWalletAgent, listCredentials, resolvePresentationRequest, submitPresentation } from './index.js'
 
-const dir = process.env.ZKPUOI_WALLET_DIR ?? join(homedir(), '.zk-puoi-wallet')
-const key = process.env.ZKPUOI_WALLET_KEY
+const dir = process.env.ATTESTA_WALLET_DIR ?? join(homedir(), '.attesta-wallet')
+const key = process.env.ATTESTA_WALLET_KEY
 if (!key) {
-  console.error('set ZKPUOI_WALLET_KEY to the key that encrypts the wallet store')
+  console.error('set ATTESTA_WALLET_KEY to the key that encrypts the wallet store')
   process.exit(1)
 }
 
@@ -21,7 +21,7 @@ const agent = await createWalletAgent({
   storeId: 'wallet',
   storeKey: key,
   path: dir,
-  allowInsecureHttp: process.env.ZKPUOI_ALLOW_INSECURE_HTTP === '1',
+  allowInsecureHttp: process.env.ATTESTA_ALLOW_INSECURE_HTTP === '1',
 })
 try {
   if (command === 'present') {

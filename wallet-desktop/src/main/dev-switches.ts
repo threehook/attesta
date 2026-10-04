@@ -15,8 +15,8 @@ export function devSwitches(env: NodeJS.ProcessEnv, packaged: boolean): DevSwitc
     return { allowInsecureHttp: false };
   }
   return {
-    dataDir: env.ZKPUOI_WALLET_DATA_DIR || undefined,
-    storeKey: env.ZKPUOI_WALLET_KEY || undefined,
-    allowInsecureHttp: env.ZKPUOI_ALLOW_INSECURE_HTTP === "1",
+    dataDir: env.ATTESTA_WALLET_DATA_DIR || undefined,
+    storeKey: env.ATTESTA_WALLET_KEY || undefined,
+    allowInsecureHttp: env.ATTESTA_ALLOW_INSECURE_HTTP === "1",
   };
 }

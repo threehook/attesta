@@ -8,7 +8,7 @@ import {
   type CredentialOffer,
   type PresentationRequest,
   type WalletAgent,
-} from "@zk-puoi/wallet";
+} from "@attesta/wallet";
 import type { Approved, HeldCredential, Pending } from "../shared/api.js";
 
 const OFFER_SCHEME = "openid-credential-offer://";

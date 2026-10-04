@@ -4,7 +4,7 @@
 import { writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { acceptCredentialOffer, createWalletAgent, resolvePresentationRequest, submitPresentation } from '@zk-puoi/wallet'
+import { acceptCredentialOffer, createWalletAgent, resolvePresentationRequest, submitPresentation } from '@attesta/wallet'
 import { startIssuer } from '../src/issuer.js'
 
 const output = process.argv[2]

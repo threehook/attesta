@@ -1,8 +1,8 @@
 {
-  "name": "@zk-puoi/wallet",
+  "name": "@attesta/wallet",
   "version": "0.1.0",
   "private": true,
-  "description": "zk-puoi credential wallet core: a Credo holder agent that accepts OpenID4VCI offers and stores SD-JWT VCs.",
+  "description": "attesta credential wallet core: a Credo holder agent that accepts OpenID4VCI offers and stores SD-JWT VCs.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

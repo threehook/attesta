@@ -14,8 +14,8 @@ it.
 ## Headless use
 
 ```sh
-export ZKPUOI_WALLET_KEY=<key that encrypts the store>   # ZKPUOI_WALLET_DIR defaults to ~/.zk-puoi-wallet
-pnpm cli accept '<offer uri from the issuer>'            # ZKPUOI_ALLOW_INSECURE_HTTP=1 for an issuer on plain http
+export ATTESTA_WALLET_KEY=<key that encrypts the store>   # ATTESTA_WALLET_DIR defaults to ~/.attesta-wallet
+pnpm cli accept '<offer uri from the issuer>'            # ATTESTA_ALLOW_INSECURE_HTTP=1 for an issuer on plain http
 pnpm cli present '<openid4vp link from an application>'
 pnpm cli list
 ```

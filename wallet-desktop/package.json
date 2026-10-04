@@ -1,20 +1,20 @@
 {
-  "name": "@zk-puoi/wallet-desktop",
-  "productName": "zk-puoi wallet",
+  "name": "@attesta/wallet-desktop",
+  "productName": "attesta wallet",
   "version": "0.1.0",
   "private": true,
-  "description": "zk-puoi desktop wallet: an Electron shell around the wallet core.",
+  "description": "attesta desktop wallet: an Electron shell around the wallet core.",
   "type": "module",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "pnpm --filter @zk-puoi/wallet build && tsc -p tsconfig.main.json && vite build",
+    "build": "pnpm --filter @attesta/wallet build && tsc -p tsconfig.main.json && vite build",
     "start": "pnpm build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "vitest run",
     "test:e2e": "pnpm build && playwright test"
   },
   "dependencies": {
-    "@zk-puoi/wallet": "workspace:*"
+    "@attesta/wallet": "workspace:*"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

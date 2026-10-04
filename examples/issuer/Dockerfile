@@ -7,7 +7,7 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY wallet/package.json wallet/package.json
 COPY examples/issuer/package.json examples/issuer/package.json
-RUN pnpm install --frozen-lockfile --filter @zk-puoi/issuer...
+RUN pnpm install --frozen-lockfile --filter @attesta/issuer...
 
 COPY wallet/ wallet/
 COPY examples/issuer/ examples/issuer/
@@ -15,7 +15,7 @@ COPY examples/issuer/ examples/issuer/
 USER node
 WORKDIR /src/examples/issuer
 # The signing key comes from the seed, so the issuer's DID survives a restart even though this store does not.
-ENV ZKPUOI_ISSUER_PORT=4000
-ENV ZKPUOI_ISSUER_DIR=/tmp/issuer
+ENV ATTESTA_ISSUER_PORT=4000
+ENV ATTESTA_ISSUER_DIR=/tmp/issuer
 EXPOSE 4000
 CMD ["./node_modules/.bin/tsx", "src/server.ts"]

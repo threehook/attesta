@@ -6,16 +6,16 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY client-lib/package.json client-lib/package.json
 COPY examples/simple-gui/package.json examples/simple-gui/package.json
-RUN pnpm install --frozen-lockfile --filter @zk-puoi/simple-gui...
+RUN pnpm install --frozen-lockfile --filter @attesta/simple-gui...
 
 COPY client-lib/ client-lib/
 COPY examples/simple-gui/ examples/simple-gui/
-RUN pnpm --filter @zk-puoi/client build
+RUN pnpm --filter @attesta/client build
 
 # Empty means same-origin requests, proxied to the backend by nginx.conf; override with --build-arg if bypassing that proxy.
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
-RUN pnpm --filter @zk-puoi/simple-gui build
+RUN pnpm --filter @attesta/simple-gui build
 
 FROM nginx:1.27-alpine
 COPY --from=builder /src/examples/simple-gui/dist /usr/share/nginx/html

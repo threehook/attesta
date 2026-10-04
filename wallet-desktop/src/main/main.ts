@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, dialog, ipcMain, safeStorage } from "electron";
-import { createWalletAgent, type WalletAgent } from "@zk-puoi/wallet";
+import { createWalletAgent, type WalletAgent } from "@attesta/wallet";
 import { channels, type Result } from "../shared/api.js";
 import { devSwitches } from "./dev-switches.js";
 import { loadOrCreateStoreKey } from "./keystore.js";
@@ -37,7 +37,7 @@ function deliverLink(link: string) {
 }
 
 // Registering as the handler for these schemes changes the user's system, so a development run only does it when asked.
-if (app.isPackaged || process.env.ZKPUOI_REGISTER_PROTOCOLS === "1") {
+if (app.isPackaged || process.env.ATTESTA_REGISTER_PROTOCOLS === "1") {
   for (const scheme of LINK_SCHEMES) app.setAsDefaultProtocolClient(scheme);
 }
 
@@ -113,8 +113,8 @@ app
   .then(start)
   .catch((error) => {
     const message = error instanceof Error ? (error.cause instanceof Error ? `${error.message}\n\n${error.cause.message}` : error.message) : String(error);
-    console.error("zk-puoi wallet could not start:", error);
-    dialog.showErrorBox("zk-puoi wallet could not start", message);
+    console.error("attesta wallet could not start:", error);
+    dialog.showErrorBox("attesta wallet could not start", message);
     app.quit();
   });
 

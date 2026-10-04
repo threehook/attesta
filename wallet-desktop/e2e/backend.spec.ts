@@ -1,5 +1,5 @@
 // The whole flow through the real app and the real backend: issuer -> wallet -> backend -> Gno policy. Needs a running backend whose
-// ZKPUOI_PUBLIC_URL is ZKPUOI_BACKEND_URL (and ZKPUOI_ADMIN_TOKEN for it); skipped otherwise.
+// ATTESTA_PUBLIC_URL is ATTESTA_BACKEND_URL (and ATTESTA_ADMIN_TOKEN for it); skipped otherwise.
 import { mkdtempSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -7,8 +7,8 @@ import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 import { startIssuer } from "../../examples/issuer/src/issuer.js";
 
-const backend = process.env.ZKPUOI_BACKEND_URL?.replace(/\/$/, "");
-const adminToken = process.env.ZKPUOI_ADMIN_TOKEN ?? "dev-only-insecure-admin-token";
+const backend = process.env.ATTESTA_BACKEND_URL?.replace(/\/$/, "");
+const adminToken = process.env.ATTESTA_ADMIN_TOKEN ?? "dev-only-insecure-admin-token";
 
 async function freePort(): Promise<number> {
   const server = createServer();
@@ -21,7 +21,7 @@ async function freePort(): Promise<number> {
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   fetch(`${backend}${path}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
 
-test.skip(!backend, "set ZKPUOI_BACKEND_URL to run against a backend");
+test.skip(!backend, "set ATTESTA_BACKEND_URL to run against a backend");
 
 for (const trusted of [true, false]) {
   test(`${trusted ? "allows" : "denies"} a diploma from an issuer the policy ${trusted ? "trusts" : "does not trust"}`, async () => {
@@ -51,9 +51,9 @@ func Authorize(resource string, credType string, issuer string) (bool, string) {
       args: [join(import.meta.dirname, "..")],
       env: {
         ...process.env,
-        ZKPUOI_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "zk-puoi-wallet-")),
-        ZKPUOI_WALLET_KEY: "e2e-wallet-key-b",
-        ZKPUOI_ALLOW_INSECURE_HTTP: "1",
+        ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+        ATTESTA_WALLET_KEY: "e2e-wallet-key-b",
+        ATTESTA_ALLOW_INSECURE_HTTP: "1",
       },
     });
     try {

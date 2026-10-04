@@ -1,5 +1,5 @@
 import { createServer } from 'node:net'
-import { acceptCredentialOffer, createWalletAgent, listCredentials, previewCredentialOffer, type WalletAgent } from '@zk-puoi/wallet'
+import { acceptCredentialOffer, createWalletAgent, listCredentials, previewCredentialOffer, type WalletAgent } from '@attesta/wallet'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startIssuer } from './issuer.js'
 

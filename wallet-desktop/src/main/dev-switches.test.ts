@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { devSwitches } from "./dev-switches.js";
 
-const env = { ZKPUOI_WALLET_DATA_DIR: "/tmp/wallet", ZKPUOI_WALLET_KEY: "a-key", ZKPUOI_ALLOW_INSECURE_HTTP: "1" };
+const env = { ATTESTA_WALLET_DATA_DIR: "/tmp/wallet", ATTESTA_WALLET_KEY: "a-key", ATTESTA_ALLOW_INSECURE_HTTP: "1" };
 
 describe("devSwitches", () => {
   it("honours the environment when running from source", () => {
@@ -17,7 +17,7 @@ describe("devSwitches", () => {
   });
 
   it("treats empty values as unset and only 1 as enabling plain http", () => {
-    expect(devSwitches({ ZKPUOI_WALLET_KEY: "", ZKPUOI_WALLET_DATA_DIR: "", ZKPUOI_ALLOW_INSECURE_HTTP: "true" }, false)).toEqual({
+    expect(devSwitches({ ATTESTA_WALLET_KEY: "", ATTESTA_WALLET_DATA_DIR: "", ATTESTA_ALLOW_INSECURE_HTTP: "true" }, false)).toEqual({
       dataDir: undefined,
       storeKey: undefined,
       allowInsecureHttp: false,

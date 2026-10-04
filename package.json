@@ -1,7 +1,7 @@
 {
-  "name": "zk-puoi",
+  "name": "attesta",
   "private": true,
-  "description": "Monorepo root for the zk-puoi TypeScript packages (client-lib, examples/simple-gui). The Go backend is not part of this workspace; see backend/go.mod.",
+  "description": "Monorepo root for the attesta TypeScript packages (client-lib, examples/simple-gui). The Go backend is not part of this workspace; see backend/go.mod.",
   "engines": {
     "node": ">=20"
   }

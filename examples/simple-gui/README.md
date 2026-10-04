@@ -1,6 +1,6 @@
 # simple-gui
 
-The relying application in the demo: a web page that wants proof of a diploma before it gives access to a resource. It asks the zk-puoi backend to start
+The relying application in the demo: a web page that wants proof of a diploma before it gives access to a resource. It asks the attesta backend to start
 an authorization, shows the user a link for their wallet, and displays the decision once the wallet has answered. It never sees the credential, only
 the allow or deny and the reason.
 
@@ -19,7 +19,7 @@ map; it lists the demo issuer (`examples/issuer`, started with its default seed)
 
 ## Running it
 
-The backend needs `ZKPUOI_PUBLIC_URL` set to the address the wallet reaches it at (`k8s/local/backend/deployment.yaml` sets
+The backend needs `ATTESTA_PUBLIC_URL` set to the address the wallet reaches it at (`k8s/local/backend/deployment.yaml` sets
 `http://localhost:4173`, the page's LoadBalancer, which proxies to the backend). Deploy the policy into it, start the issuer, get a credential into the
 wallet, then run the page:
 
@@ -27,17 +27,17 @@ wallet, then run the page:
 make k8s-gui-apply            # the page and its policy in Docker Desktop's k8s, or deploy the policy with `make k8s-deploy-policy`
 make k8s-issuer-apply         # the demo issuer in k8s (or `cd examples/issuer && pnpm start`); it prints its DID
                               # open http://localhost:4000, fill the form, copy the offer link
-ZKPUOI_ALLOW_INSECURE_HTTP=1 pnpm --filter @zk-puoi/wallet-desktop start   # the wallet: paste the offer link and confirm
+ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start   # the wallet: paste the offer link and confirm
 cd examples/simple-gui && pnpm dev            # http://localhost:5173
                                               # paste the link the page shows into the wallet and confirm
 ```
 
-`pnpm dev` talks to the backend at `http://localhost:8080`; set `VITE_API_BASE_URL` to change that. The page needs the workspace's `@zk-puoi/client`
-built after changes to it (`pnpm --filter @zk-puoi/client build`), because Vite doesn't watch across the package boundary.
+`pnpm dev` talks to the backend at `http://localhost:8080`; set `VITE_API_BASE_URL` to change that. The page needs the workspace's `@attesta/client`
+built after changes to it (`pnpm --filter @attesta/client build`), because Vite doesn't watch across the package boundary.
 
 ## Getting an allow and a deny
 
 - **Allow:** present a diploma from the demo issuer. Its DID is in the policy.
-- **Deny, untrusted issuer:** start a second issuer with another seed (`ZKPUOI_ISSUER_SEED=other ZKPUOI_ISSUER_PORT=4001 pnpm start`), accept a
+- **Deny, untrusted issuer:** start a second issuer with another seed (`ATTESTA_ISSUER_SEED=other ATTESTA_ISSUER_PORT=4001 pnpm start`), accept a
   diploma from it into the wallet, and present that one. The presentation is valid, but the policy replies `issuer not trusted: did:key:...`.
 - **Deny, other resource:** request any resource other than `diploma-vault`; the policy replies `unknown resource: <name>`.

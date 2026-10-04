@@ -14,15 +14,15 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 ## Running it
 
 ```sh
-pnpm --filter @zk-puoi/wallet-desktop start     # builds, then starts Electron
+pnpm --filter @attesta/wallet-desktop start     # builds, then starts Electron
 ```
 
-Three environment variables are for development and tests only: `ZKPUOI_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
-http, `ZKPUOI_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, and `ZKPUOI_WALLET_KEY` supplies the store key
+Three environment variables are for development and tests only: `ATTESTA_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
+http, `ATTESTA_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, and `ATTESTA_WALLET_KEY` supplies the store key
 directly. An installed (packaged) app ignores all three (`src/main/dev-switches.ts`).
 
 A development run does not register itself as the handler for `openid-credential-offer://` and `openid4vp://` links, because that changes the system's
-defaults; set `ZKPUOI_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,
+defaults; set `ATTESTA_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,
 and one passed to a second launch goes to the running instance.
 
 ## Keys and storage
@@ -33,7 +33,7 @@ system's secure storage is not available the wallet refuses to start.
 
 ## How it is built
 
-- **Main process** (`src/main`, Node, ESM): runs the Credo agent through `@zk-puoi/wallet`, owns the window and the links, and exposes four
+- **Main process** (`src/main`, Node, ESM): runs the Credo agent through `@attesta/wallet`, owns the window and the links, and exposes four
   operations over IPC: list, prepare, approve, decline. Preparing a link only reads it; nothing is fetched into the wallet or sent to a verifier until
   approve.
 - **Preload** (`src/preload`, CommonJS): exposes those operations to the page through `contextBridge` and nothing else.
@@ -43,11 +43,11 @@ system's secure storage is not available the wallet refuses to start.
 ## Tests
 
 ```sh
-pnpm --filter @zk-puoi/wallet-desktop test        # key storage and link handling
-pnpm --filter @zk-puoi/wallet-desktop test:e2e    # the real app, driven like a user, against a real issuer and a stand-in verifier
+pnpm --filter @attesta/wallet-desktop test        # key storage and link handling
+pnpm --filter @attesta/wallet-desktop test:e2e    # the real app, driven like a user, against a real issuer and a stand-in verifier
 ```
 
-Setting `ZKPUOI_BACKEND_URL` (a backend whose `ZKPUOI_PUBLIC_URL` is that address, and `ZKPUOI_ADMIN_TOKEN` if not the dev default) also runs the whole
+Setting `ATTESTA_BACKEND_URL` (a backend whose `ATTESTA_PUBLIC_URL` is that address, and `ATTESTA_ADMIN_TOKEN` if not the dev default) also runs the whole
 flow against it: issuer, wallet, backend and the Gno policy, for a trusted and an untrusted issuer.
 
 Electron 40 and later no longer download their binary during `pnpm install`: the first `electron` run (or first `require('electron')`, which is what the
