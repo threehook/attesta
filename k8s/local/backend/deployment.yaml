@@ -33,6 +33,13 @@ spec:
                 secretKeyRef:
                   name: attesta-backend
                   key: admin-token
+            # The backend loads every *.gno file here and reloads it when the ConfigMap changes: no restart (make k8s-policies).
+            - name: ATTESTA_POLICIES_DIR
+              value: /policies
+          volumeMounts:
+            - name: policies
+              mountPath: /policies
+              readOnly: true
           readinessProbe:
             httpGet:
               path: /healthz
@@ -45,3 +52,8 @@ spec:
               port: 8080
             initialDelaySeconds: 5
             periodSeconds: 10
+      volumes:
+        - name: policies
+          configMap:
+            name: attesta-policies
+            optional: true

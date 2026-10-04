@@ -5,9 +5,6 @@ IMAGE_REPO := attesta-backend
 IMAGE := $(IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 NAMESPACE := attesta
 KUBE_CONTEXT := docker-desktop
-# Lazily expanded (= not :=): only read from the cluster when a target that actually uses it (k8s-deploy-policy) expands it, not on every `make` invocation.
-ADMIN_TOKEN = $(shell kubectl --context $(KUBE_CONTEXT) get secret attesta-backend -n $(NAMESPACE) -o jsonpath='{.data.admin-token}' 2>/dev/null | base64 -d)
-LOCAL_PORT := 18080
 
 GUI_IMAGE_REPO := attesta-gui
 # Same unique-tag reasoning as IMAGE above.
@@ -19,13 +16,14 @@ ISSUER_IMAGE_REPO := attesta-issuer
 # Same unique-tag reasoning as IMAGE above.
 ISSUER_IMAGE := $(ISSUER_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 
-# POLICY=path/to/file.gno is the policy k8s-deploy-policy hot-deploys into the running backend. POLICY_ID
-# defaults to the filename without its .gno extension, e.g. diploma_check.gno -> diploma_check.
-POLICY :=
-POLICY_ID := $(basename $(notdir $(POLICY)))
+# POLICIES lists the .gno files the backend serves, e.g. POLICIES="a.gno b.gno"; each file's name without .gno is its policy ID. They go into the ConfigMap
+# attesta-policies, which the running backend watches. Left empty, k8s-apply keeps the ConfigMap as it is.
+POLICIES :=
+# The policy examples/simple-gui asks of the backend; `make simple-gui` adds it.
+SIMPLE_GUI_POLICIES := examples/simple-gui/policies/diploma_check.gno
 
-.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-deploy-policy \
-	docker-build-gui k8s-gui-apply k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward \
+.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
+	docker-build-gui simple-gui k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward \
 	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs
 
 build:
@@ -43,7 +41,7 @@ docker-build:
 # rollout, unlike re-applying a manifest whose image: field never changes.
 k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	$(MAKE) k8s-secret
+	$(MAKE) k8s-secret k8s-ensure-policies
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-backend attesta-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-backend -n $(NAMESPACE)
@@ -70,33 +68,43 @@ k8s-logs:
 k8s-port-forward:
 	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/attesta-backend 8080:8080
 
-# Hot-deploys a .gno policy file into the already-running backend via POST /admin/policies — no rebuild or restart.
-# Usage: make k8s-deploy-policy POLICY=examples/simple-gui/policies/diploma_check.gno [POLICY_ID=name]
-k8s-deploy-policy:
-	@if [ -z "$(POLICY)" ]; then echo "usage: make k8s-deploy-policy POLICY=path/to/file.gno [POLICY_ID=name]"; exit 1; fi
-	@if [ ! -f "$(POLICY)" ]; then echo "no such file: $(POLICY)"; exit 1; fi
-	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/attesta-backend $(LOCAL_PORT):8080 \
-		>/tmp/attesta-port-forward.log 2>&1 & echo $$! >/tmp/attesta-port-forward.pid
-	@for i in 1 2 3 4 5; do curl -sf -o /dev/null http://localhost:$(LOCAL_PORT)/healthz && break; sleep 1; done
-	python3 -c "import json,sys; print(json.dumps({'id': sys.argv[1], 'source': open(sys.argv[2]).read()}))" \
-			"$(POLICY_ID)" "$(POLICY)" \
-		| curl -sf -X POST http://localhost:$(LOCAL_PORT)/admin/policies \
-			-H "X-Admin-Token: $(ADMIN_TOKEN)" -H "Content-Type: application/json" --data-binary @- \
-		&& echo "\npolicy '$(POLICY_ID)' deployed" || echo "policy deploy failed"
-	@kill $$(cat /tmp/attesta-port-forward.pid) 2>/dev/null; rm -f /tmp/attesta-port-forward.pid
+# Hot-deploys policies: writes POLICIES into the ConfigMap the backend reads, and the running backend picks the change up (within about a minute, as
+# Kubernetes updates the mounted files) without a restart. Files left out of POLICIES are removed from the backend.
+# Usage: make k8s-policies POLICIES="examples/simple-gui/policies/diploma_check.gno other.gno"
+k8s-policies:
+	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies POLICIES=\"path/to/a.gno path/to/b.gno\""; exit 1; fi
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE) $(addprefix --from-file=,$(POLICIES)) --dry-run=client -o yaml \
+		| kubectl --context $(KUBE_CONTEXT) apply -f -
+
+# Like k8s-policies, but only adds or updates the named files and leaves the other policies in the ConfigMap alone. Also live, no restart.
+# Usage: make k8s-policies-add POLICIES=examples/simple-gui/policies/diploma_check.gno
+k8s-policies-add:
+	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies-add POLICIES=\"path/to/a.gno\""; exit 1; fi
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	@kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) patch configmap attesta-policies -n $(NAMESPACE) --type merge -p "$$(kubectl create configmap attesta-policies \
+		$(addprefix --from-file=,$(POLICIES)) --dry-run=client -o json | python3 -c 'import json,sys; print(json.dumps({"data": json.load(sys.stdin)["data"]}))')"
+
+# Makes sure the ConfigMap exists before the backend starts: from POLICIES when given, empty when it does not exist yet, as it is when POLICIES is omitted.
+k8s-ensure-policies:
+	@if [ -n "$(POLICIES)" ]; then $(MAKE) k8s-policies POLICIES="$(POLICIES)"; \
+	else kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE); fi
 
 # Built with the repo root as context (see examples/simple-gui/Dockerfile) — the pnpm workspace install needs client-lib's package.json too.
 docker-build-gui:
 	docker build -f examples/simple-gui/Dockerfile -t $(GUI_IMAGE) .
 
-# Same pattern as k8s-apply, then hot-deploys the example's own policy into the backend (the backend itself ships none). Depends on the backend
-# already being applied (shares its namespace). Policies are in-memory only, so re-run this after a backend rollout.
-k8s-gui-apply: docker-build-gui
+# Same pattern as k8s-apply, then adds the page's policy (SIMPLE_GUI_POLICIES) to the backend's, leaving its other policies alone. Depends on the
+# backend already being applied (shares its namespace).
+simple-gui: docker-build-gui
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/gui/deployment.yaml -f k8s/local/gui/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-gui attesta-gui=$(GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-gui -n $(NAMESPACE)
-	$(MAKE) k8s-deploy-policy POLICY=examples/simple-gui/policies/diploma_check.gno
+	$(MAKE) k8s-policies-add POLICIES="$(SIMPLE_GUI_POLICIES)"
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it.
 k8s-gui-delete:

@@ -56,7 +56,7 @@ backend/
     sdjwt/             verifies SD-JWT VC presentations: issuer signature, disclosures, key binding; resolves did:key issuers
     presentation/      OpenID4VP verifier: builds requests, checks the wallet's answer, keeps the decision for polling
     authz/             Evaluator backed by an embedded gnovm interpreter
-    scripts/           policy source store (startup load + admin hot-deploy)
+    scripts/           policy source store (loaded from a directory that is watched, plus admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
   Dockerfile
 client-lib/                TypeScript package @attesta/client: typed client for the backend API (authorization requests, outcome polling, policy deploy)
@@ -66,7 +66,7 @@ examples/
   issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
   simple-gui/              Vite + React relying page: asks the backend for a Diploma presentation and shows the decision
     policies/                diploma_check.gno, the Gno policy this example requests; deploy it with
-                             `make k8s-deploy-policy` (the backend ships with no policies)
+                             `make simple-gui` adds it (the backend ships with no policies)
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
@@ -102,11 +102,18 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make k8s-gui-apply       # deploys examples/simple-gui, then hot-deploys its policy into the backend
+make simple-gui          # deploys examples/simple-gui and adds its policy diploma_check.gno to the backend's
+make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
+make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
 make k8s-issuer-apply    # deploys the demo issuer; open http://localhost:4000 for its form
 ```
 
-Policies are held in memory only, so a backend restart empties the store; `make k8s-deploy-policy POLICY=<file.gno>` puts one back.
+Policies come from the ConfigMap `attesta-policies`, mounted at `/policies` (`ATTESTA_POLICIES_DIR`). The backend reads the directory every five seconds and
+applies what changed without a restart: a new or changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file
+is rejected (logged once) while the previous version stays in use. `make k8s-policies POLICIES="a.gno b.gno"` writes the whole ConfigMap (policies not listed are removed) and `make k8s-policies-add` adds or updates
+files only, and Kubernetes updates the mounted files within about a minute; `make k8s-apply` keeps the ConfigMap unless it is given `POLICIES` too. The policy ID is the file name
+without `.gno`. `POST /admin/policies` hot-deploys a single policy directly and keeps working; it is held in memory until the backend restarts, and the
+directory never removes it. With `k8s-policies` and `k8s-apply POLICIES=...` the list must hold every policy the backend should serve.
 
 ### TypeScript packages
 

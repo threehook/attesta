@@ -24,7 +24,8 @@ The backend needs `ATTESTA_PUBLIC_URL` set to the address the wallet reaches it 
 wallet, then run the page:
 
 ```sh
-make k8s-gui-apply            # the page and its policy in Docker Desktop's k8s, or deploy the policy with `make k8s-deploy-policy`
+make k8s-apply               # the backend (applies the policy set from its ConfigMap)
+make simple-gui              # the page in Docker Desktop's k8s, and its policy diploma_check.gno added to the backend, live
 make k8s-issuer-apply         # the demo issuer in k8s (or `cd examples/issuer && pnpm start`); it prints its DID
                               # open http://localhost:4000, fill the form, copy the offer link
 ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start   # the wallet: paste the offer link and confirm
