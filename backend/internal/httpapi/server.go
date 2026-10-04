@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/scripts"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/scripts"
 )
 
 // Server holds the HTTP handlers' dependencies; call Routes to get an http.Handler.

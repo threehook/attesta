@@ -29,7 +29,7 @@ func run(resource, credType, issuer string) error {
 	output := test.OutputWithError(os.Stdout, os.Stderr)
 	_, store := test.ProdStore(rootDir, output, nil)
 
-	const pkgPath = "zk-puoi/policy" // not a realm path: evaluated in-memory, no persistence
+	const pkgPath = "attesta/policy" // not a realm path: evaluated in-memory, no persistence
 	ctx := test.Context("", pkgPath, nil)
 
 	m := gno.NewMachineWithOptions(gno.MachineOptions{

@@ -1,9 +1,9 @@
-// Package config loads zk-puoi's runtime configuration from the environment.
+// Package config loads attesta's runtime configuration from the environment.
 package config
 
 import "os"
 
-// Config holds zk-puoi's runtime configuration; see FromEnv.
+// Config holds attesta's runtime configuration; see FromEnv.
 type Config struct {
 	// Addr is the address the HTTP server listens on.
 	Addr string
@@ -19,11 +19,11 @@ type Config struct {
 
 func FromEnv() Config {
 	return Config{
-		Addr:        getenv("ZKPUOI_ADDR", ":8080"),
-		PoliciesDir: getenv("ZKPUOI_POLICIES_DIR", ""),
-		AdminToken:  getenv("ZKPUOI_ADMIN_TOKEN", "dev-only-insecure-admin-token"),
-		PublicURL:   getenv("ZKPUOI_PUBLIC_URL", "http://localhost:8080"),
-		CORSOrigins: getenv("ZKPUOI_CORS_ORIGINS", "http://localhost:5173"),
+		Addr:        getenv("ATTESTA_ADDR", ":8080"),
+		PoliciesDir: getenv("ATTESTA_POLICIES_DIR", ""),
+		AdminToken:  getenv("ATTESTA_ADMIN_TOKEN", "dev-only-insecure-admin-token"),
+		PublicURL:   getenv("ATTESTA_PUBLIC_URL", "http://localhost:8080"),
+		CORSOrigins: getenv("ATTESTA_CORS_ORIGINS", "http://localhost:5173"),
 	}
 }
 

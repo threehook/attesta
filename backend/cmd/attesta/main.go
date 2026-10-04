@@ -1,4 +1,4 @@
-// Command zk-puoi runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
+// Command attesta runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
 package main
 
 import (
@@ -7,17 +7,17 @@ import (
 	"net/http"
 	"os"
 
-	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/config"
-	"zk-puoi/backend/internal/httpapi"
-	"zk-puoi/backend/internal/presentation"
-	"zk-puoi/backend/internal/scripts"
-	"zk-puoi/backend/internal/sdjwt"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/config"
+	"attesta/backend/internal/httpapi"
+	"attesta/backend/internal/presentation"
+	"attesta/backend/internal/scripts"
+	"attesta/backend/internal/sdjwt"
 )
 
 func main() {
 	if err := run(); err != nil {
-		fmt.Fprintln(os.Stderr, "zk-puoi:", err)
+		fmt.Fprintln(os.Stderr, "attesta:", err)
 		os.Exit(1)
 	}
 }

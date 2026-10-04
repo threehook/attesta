@@ -1,4 +1,4 @@
-module zk-puoi/backend
+module attesta/backend
 
 go 1.27.1
 

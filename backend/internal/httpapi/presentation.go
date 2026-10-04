@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/presentation"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/presentation"
 )
 
 // maxResponseBytes bounds a wallet's answer; an SD-JWT presentation is a few KB.

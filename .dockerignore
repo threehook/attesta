@@ -1,6 +1,6 @@
 .git
 .idea
 **/node_modules
-backend/zk-puoi
+backend/attesta
 backend/spike
 **/*.test

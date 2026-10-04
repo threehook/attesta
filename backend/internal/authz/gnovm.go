@@ -11,8 +11,8 @@ import (
 	"github.com/gnolang/gno/gnovm/pkg/test"
 )
 
-// Input is what gets passed into a policy's Authorize function. Type and Issuer are the credential claims a ZK proof disclosed (see
-// DecodePublicSignals) — the policy decides whether that combination is acceptable for Resource, it never sees anything the proof kept private.
+// Input is what gets passed into a policy's Authorize function. Type and Issuer are the credential type and issuer that a verified presentation
+// established — the policy decides whether that combination is acceptable for Resource.
 type Input struct {
 	Resource string
 	Type     string
@@ -54,7 +54,7 @@ func NewGnoVM(output io.Writer) (*GnoVM, error) {
 
 // policyPkgPath is reused for every call: each call runs against its own transaction-store fork (see withMachine), so there's no cross-call collision
 // despite the shared path.
-const policyPkgPath = "zk-puoi/policy"
+const policyPkgPath = "attesta/policy"
 
 // validationInput is the sample call Validate makes to prove the policy's Authorize has the expected signature; its values are never interpreted.
 var validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate"}

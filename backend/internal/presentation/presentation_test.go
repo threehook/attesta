@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"zk-puoi/backend/internal/sdjwt"
+	"attesta/backend/internal/sdjwt"
 )
 
 // recorded is a presentation captured from a Credo wallet (see internal/sdjwt/testdata): the session below is built to match its audience, nonce

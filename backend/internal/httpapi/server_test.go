@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/scripts"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/scripts"
 )
 
 // fakeEvaluator isolates httpapi's own routing/decoding/status-code logic from the real gnovm implementation, which has its own tests

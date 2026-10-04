@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"zk-puoi/backend/internal/sdjwt"
+	"attesta/backend/internal/sdjwt"
 )
 
 // queryID names the one credential query in every request.

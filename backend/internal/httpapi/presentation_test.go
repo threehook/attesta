@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"zk-puoi/backend/internal/authz"
-	"zk-puoi/backend/internal/presentation"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/presentation"
 )
 
 // fakePresenter isolates httpapi's routing and status codes from the real verifier, which internal/presentation tests with a recorded wallet answer.
