@@ -15,14 +15,17 @@ import (
 	"time"
 )
 
-// What this app asks attesta: the policy that decides who may submit, the credential it wants shown, and the claims the policy reads.
+// What this app asks attesta. Signing in asks for the employee credential and nothing beyond the email that identifies them; a laadpaal request asks
+// for the claims its policy reads.
 const (
+	signInResource = "sign_in"
+	signInPolicyID = "sign_in"
 	resource       = "request_laadpaal"
 	policyID       = "request_laadpaal"
 	credentialType = "Employee"
 	// submissionTTL is how long a submission is remembered; attesta forgets a request after five minutes, so a longer one only keeps finished results.
 	submissionTTL = 30 * time.Minute
-	// sessionTTL is how long an employee who proved themselves with the wallet need not do so again. It runs from that proof and is not extended by use.
+	// sessionTTL is how long an employee who signed in with the wallet stays signed in. It runs from the sign-in and is not extended by use.
 	sessionTTL    = 30 * time.Minute
 	sessionCookie = "laadpalen_session"
 )
@@ -31,7 +34,11 @@ var claimsAsked = []string{"department", "diploma"}
 
 var postcodePattern = regexp.MustCompile(`^[0-9]{4}[A-Z]{2}$`)
 
+// submission is a sign-in or a laadpaal request that was handed to attesta.
 type submission struct {
+	signIn bool
+	// by is the signed-in employee a laadpaal request was made for; the credential shown for it must be theirs.
+	by          subject
 	postcode    string
 	houseNumber int
 	created     time.Time
@@ -40,7 +47,7 @@ type submission struct {
 	view     submissionView
 }
 
-// session is an employee who was authorized by attesta; until it expires their submissions skip the wallet.
+// session is an employee who signed in with the wallet; a laadpaal request can only be made in one.
 type session struct {
 	subject subject
 	expires time.Time
@@ -74,6 +81,8 @@ type server struct {
 	attesta authorizer
 	logger  *slog.Logger
 	now     func() time.Time
+	// application is the origin wallets know this app by (where they answer attesta); the page gives it to the wallet to ask about this app.
+	application string
 
 	mu          sync.Mutex
 	submissions map[string]*submission
@@ -88,6 +97,9 @@ func newServer(attesta authorizer, logger *slog.Logger) *server {
 func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
+	mux.HandleFunc("GET /api/config", s.handleConfig)
+	mux.HandleFunc("POST /api/sign-in", s.handleSignIn)
+	mux.HandleFunc("GET /api/sign-in/{id}", s.handleSignInStatus)
 	mux.HandleFunc("POST /api/request-laadpaal", s.handleSubmit)
 	mux.HandleFunc("GET /api/request-laadpaal/{id}", s.handleStatus)
 	mux.HandleFunc("GET /api/session", s.handleSession)
@@ -102,13 +114,48 @@ type submitRequest struct {
 
 type submitResponse struct {
 	RequestID string `json:"requestId"`
-	// Link is what the employee opens in their wallet; empty when a session made the wallet unnecessary.
+	// Link is what the employee opens in their wallet.
 	Link string `json:"authorizationRequest"`
 }
 
-// handleSubmit starts a submission: the employee wants to request a laadpaal for an address. What the employee is allowed to do is attesta's decision,
-// so this only checks the input and asks attesta for the wallet link, unless the employee already has a session from an earlier proof.
+type configView struct {
+	Application string `json:"application"`
+}
+
+func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, configView{Application: s.application})
+}
+
+// handleSignIn starts a sign-in: attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
+func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
+	started, err := s.attesta.start(r.Context(), signInResource, signInPolicyID, credentialType, nil)
+	if err != nil {
+		s.logger.Error("starting the sign-in failed", "error", err)
+		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon het aanmelden niet starten"})
+		return
+	}
+	s.mu.Lock()
+	s.forget()
+	s.submissions[started.RequestID] = &submission{
+		signIn: true, created: s.now(), view: submissionView{Status: "pending", Debug: debugView{AuthorizationRequest: started.Link}},
+	}
+	s.mu.Unlock()
+
+	s.logger.Info("sign-in started", "requestId", started.RequestID)
+	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
+}
+
+// handleSubmit starts a laadpaal request for a signed-in employee. What the employee may submit is attesta's decision, so this only checks the input
+// and asks attesta for the wallet link.
 func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	sess, signedIn := s.currentSession(r)
+	s.mu.Unlock()
+	if !signedIn {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "u bent niet aangemeld"})
+		return
+	}
+
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
 	var in submitRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
@@ -122,11 +169,6 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if id, ok := s.submitInSession(r, postcode, houseNumber); ok {
-		writeJSON(w, http.StatusOK, submitResponse{RequestID: id})
-		return
-	}
-
 	started, err := s.attesta.start(r.Context(), resource, policyID, credentialType, claimsAsked)
 	if err != nil {
 		s.logger.Error("starting the authorization failed", "error", err)
@@ -137,24 +179,28 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	s.forget()
 	s.submissions[started.RequestID] = &submission{
-		postcode: postcode, houseNumber: houseNumber, created: s.now(),
+		by: sess.subject, postcode: postcode, houseNumber: houseNumber, created: s.now(),
 		view: submissionView{Status: "pending", Debug: debugView{AuthorizationRequest: started.Link}},
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("submission started", "requestId", started.RequestID, "postcode", postcode, "houseNumber", houseNumber)
+	s.logger.Info("submission started", "requestId", started.RequestID, "email", sess.subject.Email, "postcode", postcode, "houseNumber", houseNumber)
 	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
 }
 
-// handleStatus reports on a submission. Once the wallet has answered and attesta has decided, an authorized submission is carried out exactly once:
-// the address rules run, and the outcome is recorded with the employee that submitted it.
-func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
+func (s *server) handleSignInStatus(w http.ResponseWriter, r *http.Request) { s.status(w, r, true) }
+
+func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) { s.status(w, r, false) }
+
+// status reports on a sign-in or a submission. Once the wallet has answered and attesta has decided, an authorized sign-in starts the session and an
+// authorized submission is carried out exactly once: the address rules run, and the outcome is recorded with the employee that submitted it.
+func (s *server) status(w http.ResponseWriter, r *http.Request, signIn bool) {
 	id := r.PathValue("id")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sub, ok := s.submissions[id]
-	if !ok {
+	if !ok || sub.signIn != signIn {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekende aanvraag"})
 		return
 	}
@@ -164,35 +210,11 @@ func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon de beslissing niet ophalen"})
 			return
 		}
-		// The wallet proof just succeeded: remember the employee, so the next submission needs no wallet.
-		if sub.answered && sub.view.Authorized && sub.view.Subject != nil {
+		if signIn && sub.answered && sub.view.Authorized && sub.view.Subject != nil {
 			s.startSession(w, r, *sub.view.Subject)
 		}
 	}
 	writeJSON(w, http.StatusOK, sub.view)
-}
-
-// submitInSession carries out a submission for an employee with a valid session, without asking attesta: the wallet proof they gave earlier still
-// counts. It reports false when there is no valid session, and the submission then goes through attesta.
-func (s *server) submitInSession(r *http.Request, postcode string, houseNumber int) (string, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	sess, ok := s.currentSession(r)
-	if !ok {
-		return "", false
-	}
-
-	id := newToken()
-	decided := decideRequest(postcode, houseNumber)
-	s.forget()
-	s.submissions[id] = &submission{
-		postcode: postcode, houseNumber: houseNumber, created: s.now(), answered: true,
-		view: submissionView{Status: "done", Authorized: true, Reason: "Geautoriseerd", Subject: &sess.subject, Result: &decided},
-	}
-	s.records = append(s.records, recorded{Subject: sess.subject, Postcode: postcode, HouseNumber: houseNumber, Result: decided})
-	s.logger.Info("submission decided in session", "requestId", id, "email", sess.subject.Email, "issuer", sess.subject.Issuer,
-		"postcode", postcode, "houseNumber", houseNumber, "granted", decided.Granted, "reason", decided.Reason)
-	return id, true
 }
 
 // currentSession returns the employee's session if the request carries a valid one. Callers hold s.mu.
@@ -227,7 +249,7 @@ type sessionView struct {
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 }
 
-// handleSession tells the page who is signed in, so it can show that no wallet is needed.
+// handleSession tells the page who is signed in.
 func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -239,7 +261,7 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, sessionView{Active: true, Subject: &sess.subject, ExpiresAt: sess.expires})
 }
 
-// handleSignOut ends the session, so the next submission asks for the wallet again.
+// handleSignOut ends the session, so the employee has to sign in again.
 func (s *server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.mu.Lock()
@@ -280,6 +302,18 @@ func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 	if !got.Allow || got.Subject == nil {
 		sub.view.Authorized = false
 		s.logger.Info("submission not authorized", "requestId", id, "reason", got.Reason)
+		return nil
+	}
+
+	if sub.signIn {
+		sub.view.Subject = got.Subject
+		s.logger.Info("sign-in decided", "requestId", id, "email", got.Subject.Email, "issuer", got.Subject.Issuer)
+		return nil
+	}
+	if *got.Subject != sub.by {
+		sub.view.Authorized = false
+		sub.view.Reason = "Het bewijs hoort niet bij de aangemelde medewerker"
+		s.logger.Info("submission not authorized", "requestId", id, "reason", sub.view.Reason, "email", got.Subject.Email, "signedInAs", sub.by.Email)
 		return nil
 	}
 

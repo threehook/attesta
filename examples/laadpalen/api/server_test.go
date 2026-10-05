@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -13,12 +14,14 @@ import (
 	"time"
 )
 
-// fakeAttesta stands in for the sidecar.
+// fakeAttesta stands in for the sidecar. Its requests are numbered req-1, req-2, ... in the order they were started.
 type fakeAttesta struct {
 	startErr   error
 	outcomeErr error
 	answer     outcome
-	raw        string
+	// answers overrides answer for a request id.
+	answers map[string]outcome
+	raw     string
 
 	started      []startedWith
 	outcomeCalls int
@@ -34,36 +37,86 @@ func (f *fakeAttesta) start(_ context.Context, resource, policyID, credentialTyp
 	if f.startErr != nil {
 		return authorizationRequest{}, f.startErr
 	}
-	return authorizationRequest{RequestID: "req-1", Link: "openid4vp://?x=1"}, nil
+	return authorizationRequest{RequestID: fmt.Sprintf("req-%d", len(f.started)), Link: "openid4vp://?x=1"}, nil
 }
 
-func (f *fakeAttesta) outcome(context.Context, string) (outcome, json.RawMessage, error) {
+func (f *fakeAttesta) outcome(_ context.Context, id string) (outcome, json.RawMessage, error) {
 	f.outcomeCalls++
+	if a, ok := f.answers[id]; ok {
+		return a, json.RawMessage(f.raw), f.outcomeErr
+	}
 	return f.answer, json.RawMessage(f.raw), f.outcomeErr
 }
 
-var jerry = &subject{Issuer: "did:key:issuer", Email: "jerry@example.com"}
+var (
+	jerry = &subject{Issuer: "did:key:issuer", Email: "jerry@example.com"}
+	tom   = &subject{Issuer: "did:key:issuer", Email: "tom@example.com"}
+)
+
+const freeAddress = `{"postcode":"1111BB","huisnummer":"2"}`
+
+func authorizedAttesta() *fakeAttesta {
+	return &fakeAttesta{answer: outcome{Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: jerry}}
+}
 
 func newTestServer(f *fakeAttesta) *server {
 	return newServer(f, slog.New(slog.NewTextHandler(io.Discard, nil)))
 }
 
-func call(s *server, method, path, body string) *httptest.ResponseRecorder {
+// withCookies is like call, but the request carries the given cookies and extra headers.
+func withCookies(s *server, method, path, body string, cookies []*http.Cookie, headers map[string]string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	for _, c := range cookies {
+		req.AddCookie(c)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
 	rec := httptest.NewRecorder()
-	s.routes().ServeHTTP(rec, httptest.NewRequest(method, path, strings.NewReader(body)))
+	s.routes().ServeHTTP(rec, req)
 	return rec
 }
 
-func submit(t *testing.T, s *server, body string) {
-	t.Helper()
-	if rec := call(s, "POST", "/api/request-laadpaal", body); rec.Code != http.StatusOK {
-		t.Fatalf("submit: status = %d: %s", rec.Code, rec.Body)
-	}
+func call(s *server, method, path, body string) *httptest.ResponseRecorder {
+	return withCookies(s, method, path, body, nil, nil)
 }
 
-func status(t *testing.T, s *server) submissionView {
+func sessionOf(rec *httptest.ResponseRecorder) *http.Cookie {
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookie {
+			return c
+		}
+	}
+	return nil
+}
+
+// signedIn runs the sign-in for the answer the fake gives, and returns the session cookie. The sign-in is the next request the fake numbers.
+func signedIn(t *testing.T, s *server, f *fakeAttesta) *http.Cookie {
 	t.Helper()
-	rec := call(s, "GET", "/api/request-laadpaal/req-1", "")
+	rec := call(s, "POST", "/api/sign-in", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sign-in: status = %d: %s", rec.Code, rec.Body)
+	}
+	id := fmt.Sprintf("req-%d", len(f.started))
+	c := sessionOf(call(s, "GET", "/api/sign-in/"+id, ""))
+	if c == nil {
+		t.Fatal("the authorized sign-in did not start a session")
+	}
+	return c
+}
+
+// submitAs makes a laadpaal request in the session and returns its id.
+func submitAs(t *testing.T, s *server, f *fakeAttesta, c *http.Cookie, body string) string {
+	t.Helper()
+	if rec := withCookies(s, "POST", "/api/request-laadpaal", body, []*http.Cookie{c}, nil); rec.Code != http.StatusOK {
+		t.Fatalf("submit: status = %d: %s", rec.Code, rec.Body)
+	}
+	return fmt.Sprintf("req-%d", len(f.started))
+}
+
+func statusOf(t *testing.T, s *server, id string) submissionView {
+	t.Helper()
+	rec := call(s, "GET", "/api/request-laadpaal/"+id, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: %d: %s", rec.Code, rec.Body)
 	}
@@ -74,11 +127,11 @@ func status(t *testing.T, s *server) submissionView {
 	return v
 }
 
-func TestSubmitAsksAttestaForTheEmployeeCredential(t *testing.T) {
+func TestSignInAsksAttestaForTheIdentityOnly(t *testing.T) {
 	f := &fakeAttesta{}
 	s := newTestServer(f)
 
-	rec := call(s, "POST", "/api/request-laadpaal", `{"postcode":" 1111 bb ","huisnummer":"2"}`)
+	rec := call(s, "POST", "/api/sign-in", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
@@ -89,9 +142,53 @@ func TestSubmitAsksAttestaForTheEmployeeCredential(t *testing.T) {
 	if len(f.started) != 1 {
 		t.Fatalf("attesta was asked %d times, want once", len(f.started))
 	}
-	want := startedWith{"request_laadpaal", "request_laadpaal", "Employee", []string{"department", "diploma"}}
-	if g := f.started[0]; g.resource != want.resource || g.policyID != want.policyID || g.credentialType != want.credentialType || strings.Join(g.claims, ",") != "department,diploma" {
-		t.Errorf("asked attesta for %+v, want %+v", g, want)
+	if g := f.started[0]; g.resource != "sign_in" || g.policyID != "sign_in" || g.credentialType != "Employee" || len(g.claims) != 0 {
+		t.Errorf("asked attesta for %+v, want the Employee identity for sign_in and no other claims", g)
+	}
+}
+
+func TestSignInWhenAttestaFails(t *testing.T) {
+	s := newTestServer(&fakeAttesta{startErr: errors.New("connection refused")})
+	if rec := call(s, "POST", "/api/sign-in", ""); rec.Code != http.StatusBadGateway {
+		t.Errorf("status = %d, want 502", rec.Code)
+	}
+}
+
+func TestSubmitNeedsASignIn(t *testing.T) {
+	f := &fakeAttesta{}
+	s := newTestServer(f)
+	forged := &http.Cookie{Name: sessionCookie, Value: "guess"}
+
+	for name, cookies := range map[string][]*http.Cookie{"no cookie": nil, "forged cookie": {forged}} {
+		t.Run(name, func(t *testing.T) {
+			if rec := withCookies(s, "POST", "/api/request-laadpaal", freeAddress, cookies, nil); rec.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401: %s", rec.Code, rec.Body)
+			}
+		})
+	}
+	if len(f.started) != 0 {
+		t.Error("attesta was asked for a request nobody was signed in for")
+	}
+}
+
+func TestSubmitAsksAttestaForTheEmployeeClaims(t *testing.T) {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+
+	rec := withCookies(s, "POST", "/api/request-laadpaal", `{"postcode":" 1111 bb ","huisnummer":"2"}`, []*http.Cookie{c}, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	var got submitResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil || got.RequestID != "req-2" || got.Link != "openid4vp://?x=1" {
+		t.Errorf("response = %s", rec.Body)
+	}
+	if len(f.started) != 2 {
+		t.Fatalf("attesta was asked %d times, want a sign-in and a request", len(f.started))
+	}
+	if g := f.started[1]; g.resource != "request_laadpaal" || g.policyID != "request_laadpaal" || g.credentialType != "Employee" || strings.Join(g.claims, ",") != "department,diploma" {
+		t.Errorf("asked attesta for %+v, want the Employee department and diploma for request_laadpaal", g)
 	}
 }
 
@@ -105,11 +202,13 @@ func TestSubmitRejectsBadInput(t *testing.T) {
 		"house number zero": `{"postcode":"1111AA","huisnummer":"0"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
-			f := &fakeAttesta{}
-			if rec := call(newTestServer(f), "POST", "/api/request-laadpaal", body); rec.Code != http.StatusBadRequest {
+			f := authorizedAttesta()
+			s := newTestServer(f)
+			c := signedIn(t, s, f)
+			if rec := withCookies(s, "POST", "/api/request-laadpaal", body, []*http.Cookie{c}, nil); rec.Code != http.StatusBadRequest {
 				t.Errorf("status = %d, want 400: %s", rec.Code, rec.Body)
 			}
-			if len(f.started) != 0 {
+			if len(f.started) != 1 {
 				t.Error("attesta was asked for a request with bad input")
 			}
 		})
@@ -117,18 +216,23 @@ func TestSubmitRejectsBadInput(t *testing.T) {
 }
 
 func TestSubmitWhenAttestaFails(t *testing.T) {
-	s := newTestServer(&fakeAttesta{startErr: errors.New("connection refused")})
-	if rec := call(s, "POST", "/api/request-laadpaal", `{"postcode":"1111AA","huisnummer":"1"}`); rec.Code != http.StatusBadGateway {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+	f.startErr = errors.New("connection refused")
+	if rec := withCookies(s, "POST", "/api/request-laadpaal", freeAddress, []*http.Cookie{c}, nil); rec.Code != http.StatusBadGateway {
 		t.Errorf("status = %d, want 502", rec.Code)
 	}
 }
 
 func TestStatusIsPendingUntilTheWalletAnswers(t *testing.T) {
-	f := &fakeAttesta{answer: outcome{Status: "pending"}}
+	f := authorizedAttesta()
 	s := newTestServer(f)
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+	c := signedIn(t, s, f)
+	f.answers = map[string]outcome{"req-2": {Status: "pending"}}
+	id := submitAs(t, s, f, c, freeAddress)
 
-	v := status(t, s)
+	v := statusOf(t, s, id)
 	if v.Status != "pending" || v.Result != nil || v.Debug.AuthorizationRequest != "openid4vp://?x=1" {
 		t.Errorf("view = %+v, want pending with the wallet link", v)
 	}
@@ -138,12 +242,15 @@ func TestStatusIsPendingUntilTheWalletAnswers(t *testing.T) {
 }
 
 func TestAuthorizedSubmissionIsCarriedOutOnceAndRecorded(t *testing.T) {
-	f := &fakeAttesta{answer: outcome{Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: jerry}, raw: `{"status":"done"}`}
+	f := authorizedAttesta()
+	f.raw = `{"status":"done"}`
 	s := newTestServer(f)
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+	c := signedIn(t, s, f)
+	id := submitAs(t, s, f, c, freeAddress)
+	callsBefore := f.outcomeCalls
 
 	for i := 0; i < 3; i++ {
-		v := status(t, s)
+		v := statusOf(t, s, id)
 		if v.Status != "done" || !v.Authorized || v.Subject == nil || v.Subject.Email != "jerry@example.com" ||
 			v.Result == nil || !v.Result.Granted || v.Result.Reason != "Toegekend" || string(v.Debug.Outcome) != `{"status":"done"}` {
 			t.Fatalf("poll %d: view = %+v", i, v)
@@ -155,8 +262,8 @@ func TestAuthorizedSubmissionIsCarriedOutOnceAndRecorded(t *testing.T) {
 	if r := s.records[0]; r.Subject != *jerry || r.Postcode != "1111BB" || r.HouseNumber != 2 || !r.Result.Granted {
 		t.Errorf("record = %+v", r)
 	}
-	if f.outcomeCalls != 1 {
-		t.Errorf("attesta was asked for the decision %d times, want once: it is final", f.outcomeCalls)
+	if n := f.outcomeCalls - callsBefore; n != 1 {
+		t.Errorf("attesta was asked for the decision %d times, want once: it is final", n)
 	}
 }
 
@@ -173,10 +280,11 @@ func TestAuthorizedSubmissionAppliesTheAddressRules(t *testing.T) {
 		"lower case, spaced in": {`{"postcode":"1111 bb","huisnummer":" 2 "}`, true, "Toegekend"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			s := newTestServer(&fakeAttesta{answer: outcome{Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: jerry}})
-			submit(t, s, tc.body)
+			f := authorizedAttesta()
+			s := newTestServer(f)
+			id := submitAs(t, s, f, signedIn(t, s, f), tc.body)
 
-			v := status(t, s)
+			v := statusOf(t, s, id)
 			if !v.Authorized || v.Result == nil || v.Result.Granted != tc.granted || v.Result.Reason != tc.reason {
 				t.Errorf("view = %+v, want granted=%v reason=%q", v, tc.granted, tc.reason)
 			}
@@ -185,10 +293,13 @@ func TestAuthorizedSubmissionAppliesTheAddressRules(t *testing.T) {
 }
 
 func TestSubmissionAttestaDeniesGetsNoResult(t *testing.T) {
-	s := newTestServer(&fakeAttesta{answer: outcome{Status: "done", Allow: false, Reason: "Niet geautoriseerd vanwege afdeling"}})
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+	f.answers = map[string]outcome{"req-2": {Status: "done", Allow: false, Reason: "Niet geautoriseerd vanwege afdeling"}}
+	id := submitAs(t, s, f, c, freeAddress)
 
-	v := status(t, s)
+	v := statusOf(t, s, id)
 	if v.Status != "done" || v.Authorized || v.Reason != "Niet geautoriseerd vanwege afdeling" || v.Result != nil || v.Subject != nil {
 		t.Errorf("view = %+v, want a denial with no result and no subject", v)
 	}
@@ -197,37 +308,70 @@ func TestSubmissionAttestaDeniesGetsNoResult(t *testing.T) {
 	}
 }
 
-func TestStatusWhenAttestaForgotTheRequest(t *testing.T) {
-	s := newTestServer(&fakeAttesta{outcomeErr: errUnknownRequest})
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+func TestSubmissionWithAnotherEmployeesCredentialIsDenied(t *testing.T) {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+	f.answers = map[string]outcome{"req-2": {Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: tom}}
+	id := submitAs(t, s, f, c, freeAddress)
 
-	if v := status(t, s); v.Status != "expired" || v.Result != nil {
+	v := statusOf(t, s, id)
+	if v.Status != "done" || v.Authorized || v.Result != nil || v.Subject != nil || v.Reason == "" {
+		t.Errorf("view = %+v, want a denial: the credential is not the signed-in employee's", v)
+	}
+	if len(s.records) != 0 {
+		t.Error("a request with another employee's credential was recorded")
+	}
+}
+
+func TestStatusWhenAttestaForgotTheRequest(t *testing.T) {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+	f.answers = map[string]outcome{}
+	f.outcomeErr = errUnknownRequest
+	id := submitAs(t, s, f, c, freeAddress)
+
+	if v := statusOf(t, s, id); v.Status != "expired" || v.Result != nil {
 		t.Errorf("view = %+v, want expired", v)
 	}
 }
 
 func TestStatusErrors(t *testing.T) {
-	s := newTestServer(&fakeAttesta{})
-	if rec := call(s, "GET", "/api/request-laadpaal/nope", ""); rec.Code != http.StatusNotFound {
-		t.Errorf("unknown id: status = %d, want 404", rec.Code)
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	c := signedIn(t, s, f)
+	id := submitAs(t, s, f, c, freeAddress)
+
+	for name, path := range map[string]string{
+		"unknown id":                 "/api/request-laadpaal/nope",
+		"a sign-in is not a request": "/api/request-laadpaal/req-1",
+		"a request is not a sign-in": "/api/sign-in/" + id,
+		"unknown id for a sign-in":   "/api/sign-in/nope",
+	} {
+		if rec := call(s, "GET", path, ""); rec.Code != http.StatusNotFound {
+			t.Errorf("%s: status = %d, want 404", name, rec.Code)
+		}
 	}
 
-	s = newTestServer(&fakeAttesta{outcomeErr: errors.New("connection refused")})
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
-	if rec := call(s, "GET", "/api/request-laadpaal/req-1", ""); rec.Code != http.StatusBadGateway {
+	down := &fakeAttesta{outcomeErr: errors.New("connection refused")}
+	s = newTestServer(down)
+	call(s, "POST", "/api/sign-in", "")
+	if rec := call(s, "GET", "/api/sign-in/req-1", ""); rec.Code != http.StatusBadGateway {
 		t.Errorf("attesta down: status = %d, want 502", rec.Code)
 	}
 }
 
 func TestOldSubmissionsAreForgotten(t *testing.T) {
 	clock := time.Now()
-	f := &fakeAttesta{}
+	f := authorizedAttesta()
 	s := newTestServer(f)
 	s.now = func() time.Time { return clock }
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+	c := signedIn(t, s, f)
+	submitAs(t, s, f, c, freeAddress)
 
 	clock = clock.Add(submissionTTL + time.Minute)
-	submit(t, s, `{"postcode":"1111BB","huisnummer":"2"}`)
+	call(s, "POST", "/api/sign-in", "")
 
 	if len(s.submissions) != 1 {
 		t.Errorf("%d submissions are kept, want only the new one", len(s.submissions))

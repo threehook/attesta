@@ -28,6 +28,9 @@ spec:
               value: ":8787"
             - name: ATTESTA_URL
               value: http://127.0.0.1:8080
+            # The origin wallets know this app by: the page asks the wallet about it. The same address the sidecar below is reached at.
+            - name: ATTESTA_PUBLIC_URL
+              value: https://api.attesta.corbencreatives.nl
           ports:
             - containerPort: 8787
           readinessProbe:

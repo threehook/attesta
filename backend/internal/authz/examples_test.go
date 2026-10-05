@@ -25,6 +25,13 @@ func TestExamplePolicies(t *testing.T) {
 		}
 		return in
 	}
+	signIn := func(mutate func(*Input)) Input {
+		in := Input{Resource: "sign_in", Type: "Employee", Issuer: demoIssuer, Claims: map[string]string{"email": "jerry@example.com"}}
+		if mutate != nil {
+			mutate(&in)
+		}
+		return in
+	}
 	diploma := func(mutate func(*Input)) Input {
 		in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: demoIssuer, Claims: map[string]string{"email": "ada@example.com"}}
 		if mutate != nil {
@@ -49,6 +56,11 @@ func TestExamplePolicies(t *testing.T) {
 		{"another credential type", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Type = "Diploma" }), false, "Onverwacht bewijs: Diploma"},
 		{"another resource", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Resource = "diploma-vault" }), false, "Onbekende bron: diploma-vault"},
 		{"department claim cannot stand in for the issuer", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Issuer = "burgerzaken" }), false, "Uitgever niet vertrouwd: burgerzaken"},
+
+		{"sign in", "laadpalen/policies/sign_in.gno", signIn(nil), true, "Aangemeld"},
+		{"sign in, untrusted issuer", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "Uitgever niet vertrouwd: did:key:z6Mkother"},
+		{"sign in, another credential type", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Type = "Diploma" }), false, "Onverwacht bewijs: Diploma"},
+		{"sign in, another resource", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Resource = "request_laadpaal" }), false, "Onbekende bron: request_laadpaal"},
 
 		{"diploma vault", "simple-gui/policies/diploma_check.gno", diploma(nil), true, "credential accepted for resource diploma-vault"},
 		{"diploma vault, untrusted issuer", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "issuer not trusted: did:key:z6Mkother"},
