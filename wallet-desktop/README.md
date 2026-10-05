@@ -27,7 +27,7 @@ and one passed to a second launch goes to the running instance.
 
 `pnpm --filter @attesta/wallet-desktop package` builds an unsigned macOS app into `release/mac-arm64/attesta wallet.app` (electron-builder, settings in
 `package.json`). It lists the two schemes in its `Info.plist`, so a link opens it. It ignores the dev switches, so it refuses the plain `http` of the local
-demo; it only works with https issuers and verifiers. Unsigned, Gatekeeper asks you to allow it on a copy that was downloaded; one built here opens normally.
+demo; it only works with https issuers and verifiers. The app is not packed into an asar archive (`asar: false`): Askar looks for its native library next to its own code, and `dlopen` cannot read from inside an archive. Unsigned, Gatekeeper asks you to allow it on a copy that was downloaded; one built here opens normally.
 
 ## Keys and storage
 
