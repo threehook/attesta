@@ -155,8 +155,15 @@ export default function App() {
       {submitted && (
         <details>
           <summary>Toon API-aanroep</summary>
-          <pre>{JSON.stringify({ requestId: submitted.requestId, authorizationRequest: submitted.authorizationRequest }, null, 2)}</pre>
-          <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van attesta.'}</pre>
+          {submitted.authorizationRequest ? (
+            <>
+              <pre>{JSON.stringify({ requestId: submitted.requestId, authorizationRequest: submitted.authorizationRequest }, null, 2)}</pre>
+              <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van attesta.'}</pre>
+            </>
+          ) : (
+            <pre>{JSON.stringify({ requestId: submitted.requestId }, null, 2)}</pre>
+          )}
+          {!submitted.authorizationRequest && <p className="muted">Aangemeld via de sessie: voor deze aanvraag is attesta niet gevraagd en de wallet niet nodig.</p>}
         </details>
       )}
     </main>
