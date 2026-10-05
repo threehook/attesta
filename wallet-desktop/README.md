@@ -26,21 +26,17 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 
 ## Running it
 
-```sh
-pnpm --filter @attesta/wallet-desktop start     # builds, then starts Electron
-```
-
-Four environment variables are for development and tests only: `ATTESTA_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
-http, `ATTESTA_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, `ATTESTA_WALLET_KEY` supplies the store key
-directly, and `ATTESTA_WALLET_PORT` moves the port pages find the wallet on. An installed (packaged) app ignores all four (`src/main/dev-switches.ts`).
-
-A development run does not register itself as the handler for `openid-credential-offer://` and `openid4vp://` links, because that changes the system's
-defaults; set `ATTESTA_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,
-and one passed to a second launch goes to the running instance.
-
 `pnpm --filter @attesta/wallet-desktop package` builds an unsigned macOS app into `release/mac-arm64/attesta wallet.app` (electron-builder, settings in
-`package.json`). It lists the two schemes in its `Info.plist`, so a link opens it. It ignores the dev switches, so it refuses the plain `http` of the local
-demo; it only works with https issuers and verifiers. The app is not packed into an asar archive (`asar: false`): Askar looks for its native library next to its own code, and `dlopen` cannot read from inside an archive. Unsigned, Gatekeeper asks you to allow it on a copy that was downloaded; one built here opens normally.
+`package.json`). Open it once: the app registers itself as the handler for `openid-credential-offer://` and `openid4vp://` links, which it lists in its
+`Info.plist`. A link passed on the command line is opened when the app starts, and one passed to a second launch goes to the running instance. Quit and
+reopen the app after a new package.
+
+Four environment variables exist for the end-to-end tests, which launch the app from source: `ATTESTA_ALLOW_INSECURE_HTTP=1` lets the wallet talk to
+issuers and verifiers on plain http, `ATTESTA_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder,
+`ATTESTA_WALLET_KEY` supplies the store key directly, and `ATTESTA_WALLET_PORT` moves the port pages find the wallet on. An installed (packaged) app
+ignores all four (`src/main/dev-switches.ts`).
+
+The packaged app ignores the dev switches, so it refuses plain `http`; it only works with https issuers and verifiers. The app is not packed into an asar archive (`asar: false`): Askar looks for its native library next to its own code, and `dlopen` cannot read from inside an archive. Unsigned, Gatekeeper asks you to allow it on a copy that was downloaded; one built here opens normally.
 
 ## Keys and storage
 

@@ -28,7 +28,7 @@ make k8s-apply               # the backend (applies the policy set from its Conf
 make simple-gui              # the page in Docker Desktop's k8s, and its policy diploma_check.gno added to the backend, live
 make k8s-issuer-apply         # the demo issuer in k8s (or `cd examples/issuer && pnpm start`); it prints its DID
                               # open http://localhost:4000, fill the form, copy the offer link
-ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start   # the wallet: paste the offer link and confirm
+pnpm --filter @attesta/wallet-desktop package         # the wallet: open the app, paste the offer link and confirm (needs https)
 cd examples/simple-gui && pnpm dev            # http://localhost:5173
                                               # paste the link the page shows into the wallet and confirm
 ```

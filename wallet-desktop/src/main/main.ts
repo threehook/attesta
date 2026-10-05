@@ -101,8 +101,8 @@ function announce(shared: Shared) {
   new Notification({ title: sent ? "Shared" : "Not shared", body: sent ? `${shared.claims.join(", ")} with ${who}` : `${who} did not accept the answer` }).show();
 }
 
-// Registering as the handler for these schemes changes the user's system, so a development run only does it when asked.
-if (app.isPackaged || process.env.ATTESTA_REGISTER_PROTOCOLS === "1") {
+// Registering as the handler for these schemes changes the user's system, so only an installed app does it.
+if (app.isPackaged) {
   for (const scheme of LINK_SCHEMES) app.setAsDefaultProtocolClient(scheme);
 }
 

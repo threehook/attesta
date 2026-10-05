@@ -46,7 +46,7 @@ Docker Desktop's Kubernetes, with the shared namespace. The demo issuer must be 
 ```sh
 make k8s-issuer-apply     # the demo issuer; form at http://localhost:4000, employee credentials at /employee
 make laadpalen            # builds and deploys the backend with its sidecar, and the page: http://localhost:4174
-ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start
+pnpm --filter @attesta/wallet-desktop package    # the wallet: open the app once; it needs https, see CLAUDE.md for the names
 ```
 
 Get a credential: open http://localhost:4000/employee, fill in the form (department Burgerzaken or Secretariaat; the diploma date must be in the future),

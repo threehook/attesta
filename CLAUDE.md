@@ -37,8 +37,7 @@ make k8s-policies-add POLICIES=<a.gno>           # hot deploy of one policy, the
 make laadpalen                                   # the laadpalen app + its attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 
-Manual test, plain http: issuer form http://localhost:4000, page http://localhost:4173, wallet `ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start`.
-Manual test, https with the packaged wallet (it refuses plain http): `pnpm --filter @attesta/wallet-desktop package`, open `release/mac-arm64/attesta wallet.app` once so it becomes
+Manual test, with the packaged wallet (it refuses plain http, and is the only way to run the desktop wallet by hand): `pnpm --filter @attesta/wallet-desktop package`, open `release/mac-arm64/attesta wallet.app` once so it becomes
 the `openid4vp://` handler, then use https://laadpalen.attesta.corbencreatives.nl and https://issuer.attesta.corbencreatives.nl. Setup: `make k8s-traefik k8s-ingress` (Traefik in
 namespace `ingress`, Ingress in `k8s/local/ingress`); the names are in the deSEC zone `attesta.corbencreatives.nl` and resolve to 127.0.0.1, so a router with DNS rebind protection needs
 that domain as an exception. The wildcard certificate is from `lego` (DNS-01 at deSEC, files in `~/.config/attesta/lego`; renew by hand every 90 days); `make k8s-tls` loads it.

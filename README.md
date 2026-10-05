@@ -122,7 +122,7 @@ deployed:
 
 ```sh
 cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000 (or `make k8s-issuer-apply`)
-ATTESTA_ALLOW_INSECURE_HTTP=1 pnpm --filter @attesta/wallet-desktop start    # the wallet: paste the offer link from the issuer form, confirm
+pnpm --filter @attesta/wallet-desktop package                  # the wallet: open the app, paste the offer link from the issuer form, confirm (needs https)
 cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Request access", then paste the page's link into the wallet and confirm
 ```
 
