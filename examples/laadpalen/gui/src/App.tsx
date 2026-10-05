@@ -83,7 +83,11 @@ export default function App() {
       {submitted && waiting && (
         <div className="card wallet-link" style={{ marginTop: 16 }}>
           <h2>Bevestig in je wallet</h2>
-          <p className="muted">Open deze link in de wallet en bevestig het delen van je gegevens.</p>
+          <p className="muted">Open de wallet en bevestig het delen van je gegevens.</p>
+          <a className="open-wallet" href={submitted.authorizationRequest}>
+            Open in wallet
+          </a>
+          <p className="muted">Opent de wallet niet? Plak dan deze link erin:</p>
           <code>{submitted.authorizationRequest}</code>
         </div>
       )}
