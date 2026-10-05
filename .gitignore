@@ -1,6 +1,7 @@
 # Go
 /backend/attesta
 /backend/spike
+/examples/laadpalen/api/api
 *.exe
 
 # Node / pnpm
