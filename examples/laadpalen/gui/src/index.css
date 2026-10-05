@@ -192,41 +192,10 @@ pre {
   word-break: break-word;
 }
 
-.wallet-link {
-  margin-top: 0;
-}
-
-.wallet-link .open-wallet {
-  display: inline-block;
-  background: var(--orange);
-  color: #fff;
-  border-radius: 6px;
-  padding: 10px 18px;
-  font-size: 0.95rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.wallet-link code {
-  display: block;
-  margin-top: 8px;
-  padding: 8px 10px;
-  background: #eef2f6;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  word-break: break-all;
-}
-
 .result.warn {
   background: #fff4e5;
   border: 1px solid var(--orange);
   color: #7a4300;
-}
-
-.who {
-  margin: 8px 0 0;
-  font-size: 0.85rem;
-  color: var(--muted);
 }
 
 .session {
@@ -241,4 +210,24 @@ button.link {
   font: inherit;
   text-decoration: underline;
   cursor: pointer;
+}
+
+.toast {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  max-width: 360px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 12px 16px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--green);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.toast.error {
+  border-left-color: var(--red);
 }

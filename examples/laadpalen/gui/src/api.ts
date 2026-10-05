@@ -7,7 +7,7 @@ export interface Subject {
 
 export interface Submitted {
   requestId: string
-  // The openid4vp:// link the employee opens in their wallet; empty when a session made the wallet unnecessary.
+  // The openid4vp:// link the employee opens in their wallet.
   authorizationRequest: string
 }
 
@@ -32,6 +32,18 @@ async function json<T>(res: Response): Promise<T> {
   const body = (await res.json().catch(() => ({}))) as { error?: string }
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`)
   return body as T
+}
+
+export async function config(): Promise<{ application: string }> {
+  return json(await fetch('/api/config'))
+}
+
+export async function signIn(): Promise<Submitted> {
+  return json(await fetch('/api/sign-in', { method: 'POST' }))
+}
+
+export async function signInStatus(requestId: string): Promise<Status> {
+  return json(await fetch(`/api/sign-in/${encodeURIComponent(requestId)}`))
 }
 
 export async function submit(postcode: string, huisnummer: string): Promise<Submitted> {
