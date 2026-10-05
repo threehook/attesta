@@ -33,6 +33,8 @@ function deliverLink(link: string) {
     window.focus();
   } else {
     queuedLinks.push(link);
+    // On macOS the app outlives its window; a link then needs a new one, which sends the queued links when it has loaded.
+    if (!window && agent) createWindow();
   }
 }
 
@@ -72,6 +74,9 @@ function createWindow() {
     webPreferences: { preload: join(here, "../preload/preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
   window.once("ready-to-show", () => window?.show());
+  window.once("closed", () => {
+    window = undefined;
+  });
   window.webContents.on("did-finish-load", () => {
     for (const link of queuedLinks.splice(0)) window?.webContents.send(channels.link, link);
   });

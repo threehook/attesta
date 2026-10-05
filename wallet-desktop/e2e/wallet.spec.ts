@@ -189,3 +189,31 @@ test("opens a link handed to the app when it starts", async () => {
     await issuer.close();
   }
 });
+
+test("opens a new window for a link that arrives after its window was closed", async () => {
+  test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
+  const issuerPort = await freePort();
+  const issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: "e2e-4", allowInsecureHttp: true });
+  const offer = await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  const app = await electron.launch({
+    args: [appDir],
+    env: {
+      ...process.env,
+      ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+      ATTESTA_WALLET_KEY: "e2e-wallet-key-4",
+      ATTESTA_ALLOW_INSECURE_HTTP: "1",
+    },
+  });
+  try {
+    const first = await app.firstWindow();
+    await expect(first.getByText("No credentials yet")).toBeVisible();
+    await first.close();
+    // What macOS sends when a link is opened while the app runs without a window.
+    await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), offer);
+    const next = await app.waitForEvent("window");
+    await expect(next.getByRole("dialog")).toContainText("Add a credential?");
+  } finally {
+    await app.close();
+    await issuer.close();
+  }
+});
