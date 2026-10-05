@@ -33,12 +33,17 @@ endef
 # attesta-policies, which the running backend watches. Left empty, k8s-apply keeps the ConfigMap as it is.
 POLICIES :=
 # The policy examples/simple-gui asks of the backend; `make simple-gui` adds it.
+# The wildcard certificate lego obtained for the demo names (see k8s/local/ingress/ingress.yaml); never in git.
+DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
+DEMO_CERT_NAME := _.attesta.corbencreatives.nl
+
 SIMPLE_GUI_POLICIES := examples/simple-gui/policies/diploma_check.gno
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
 	docker-build-gui simple-gui k8s-gui-delete k8s-gui-restart k8s-gui-logs k8s-gui-port-forward \
 	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs \
-	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs
+	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
+	k8s-traefik k8s-tls k8s-ingress
 
 build:
 	cd backend && go build ./...
@@ -139,7 +144,7 @@ docker-build-issuer:
 	docker build -f examples/issuer/Dockerfile -t $(ISSUER_IMAGE) .
 
 # Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one examples/simple-gui's
-# policy trusts. Reachable from the host at http://localhost:4000 through the LoadBalancer.
+# policy trusts. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.
 k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/deployment.yaml -f k8s/local/issuer/service.yaml
@@ -156,8 +161,8 @@ k8s-issuer-restart:
 k8s-issuer-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer -f
 
-# The laadpalen example: an app backend with attesta as its sidecar, and its page (examples/laadpalen). The page is at http://localhost:4174 and wallets
-# post to http://localhost:4175; the backend image is built here too, since the sidecar is that same image. The example needs the demo issuer (k8s-issuer-apply).
+# The laadpalen example: an app backend with attesta as its sidecar, and its page (examples/laadpalen). The page is at https://laadpalen.attesta.corbencreatives.nl and wallets
+# post to https://api.attesta.corbencreatives.nl (k8s-ingress); the backend image is built here too, since the sidecar is that same image. The example needs the demo issuer (k8s-issuer-apply).
 docker-build-laadpalen-api:
 	docker build -t $(LAADPALEN_API_IMAGE) examples/laadpalen/api
 
@@ -197,3 +202,17 @@ laadpalen-logs:
 
 laadpalen-attesta-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c attesta -f
+
+# https for the demo: Traefik on host ports 80/443, the certificate Secret, and the Ingress for laadpalen.attesta.corbencreatives.nl,
+# api.attesta.corbencreatives.nl and issuer.attesta.corbencreatives.nl.
+k8s-traefik:
+	helm upgrade --install traefik traefik/traefik --kube-context $(KUBE_CONTEXT) -n ingress --create-namespace \
+		--set ingressClass.enabled=true --set ingressClass.isDefaultClass=true --wait
+
+k8s-tls:
+	kubectl --context $(KUBE_CONTEXT) create secret tls attesta-tls -n $(NAMESPACE) \
+		--cert=$(DEMO_CERT_DIR)/$(DEMO_CERT_NAME).crt --key=$(DEMO_CERT_DIR)/$(DEMO_CERT_NAME).key --dry-run=client -o yaml \
+		| kubectl --context $(KUBE_CONTEXT) apply -f -
+
+k8s-ingress: k8s-tls
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/ingress

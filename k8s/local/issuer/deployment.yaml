@@ -25,9 +25,9 @@ spec:
           ports:
             - containerPort: 4000
           env:
-            # Wallets on the host reach the issuer through the LoadBalancer on localhost:4000; this address is written into every offer.
+            # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into every offer.
             - name: ATTESTA_ISSUER_PUBLIC_URL
-              value: http://localhost:4000
+              value: https://issuer.attesta.corbencreatives.nl
           readinessProbe:
             httpGet:
               path: /

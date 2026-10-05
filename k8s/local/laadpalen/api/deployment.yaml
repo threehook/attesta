@@ -48,9 +48,9 @@ spec:
           env:
             - name: ATTESTA_ADDR
               value: ":8080"
-            # Where the wallet reaches attesta. The demo wallet runs on the host, through the laadpalen-attesta LoadBalancer on localhost:4175.
+            # Where the wallet reaches attesta: the https Ingress (k8s/local/ingress), so the packaged wallet, which refuses plain http, can answer.
             - name: ATTESTA_PUBLIC_URL
-              value: http://localhost:4175
+              value: https://api.attesta.corbencreatives.nl
             - name: ATTESTA_ADMIN_TOKEN
               valueFrom:
                 secretKeyRef:

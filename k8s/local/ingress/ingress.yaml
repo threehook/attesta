@@ -1,0 +1,43 @@
+# https for the local demo. The three names resolve to 127.0.0.1 (A records in the deSEC zone attesta.corbencreatives.nl) and Traefik answers on host ports
+# 80/443. The Secret attesta-tls holds the Let's Encrypt wildcard certificate (make k8s-tls), which a packaged wallet trusts without any setting.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: attesta-demo
+  namespace: attesta
+spec:
+  tls:
+    - secretName: attesta-tls
+      hosts:
+        - "*.attesta.corbencreatives.nl"
+  rules:
+    - host: laadpalen.attesta.corbencreatives.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: laadpalen-gui
+                port:
+                  number: 4174
+    - host: api.attesta.corbencreatives.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: laadpalen-attesta
+                port:
+                  number: 4175
+    - host: issuer.attesta.corbencreatives.nl
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: attesta-issuer
+                port:
+                  number: 4000
