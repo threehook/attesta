@@ -25,6 +25,10 @@ wallet ────────────────────────�
 2. The employee opens the link in the wallet and confirms what is shared. The wallet posts its answer to attesta.
 3. The page polls `GET /api/request-laadpaal/{id}`. When attesta has decided, an authorized submission is carried out once: the address rules run and the
    outcome is recorded.
+4. An authorized outcome also starts a **session**: the status response sets an HttpOnly cookie, and for 30 minutes (from the proof, not extended by use)
+   the employee's next submissions skip attesta and the wallet. The backend applies the address rules and records them with the same `subject`. The page
+   shows who is signed in (`GET /api/session`) and has "Afmelden" (`DELETE /api/session`) to ask for the wallet again. Sessions live in memory, so a restart
+   signs everyone out. Authorization is decided when the session starts: a credential that changes or expires afterwards is not noticed until it ends.
 
 This is a workforce setup: the employees, their wallets, the application and attesta all belong to one organisation and run inside its network. attesta
 has a single API and does not tell callers apart; which workloads may reach which is the platform's concern (network rules, service identity). The Service

@@ -228,3 +228,17 @@ pre {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+.session {
+  margin: 0 0 16px;
+}
+
+button.link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--orange);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}

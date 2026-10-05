@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { status as fetchStatus, submit, type Status, type Submitted } from './api.ts'
+import { session as fetchSession, signOut, status as fetchStatus, submit, type Session, type Status, type Submitted } from './api.ts'
 
 const POLL_MS = 1000
 
@@ -10,6 +10,18 @@ export default function App() {
   const [submitted, setSubmitted] = useState<Submitted | null>(null)
   const [state, setState] = useState<Status | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+
+  const refreshSession = () => fetchSession().then(setSession, () => setSession(null))
+
+  useEffect(() => {
+    void refreshSession()
+  }, [])
+
+  async function afmelden() {
+    await signOut()
+    await refreshSession()
+  }
 
   async function dienIn() {
     setError(null)
@@ -36,6 +48,7 @@ export default function App() {
         if (stopped) return
         setState(next)
         if (next.status === 'pending') timer = setTimeout(poll, POLL_MS)
+        else void refreshSession()
       } catch (err) {
         if (!stopped) setError(err instanceof Error ? err.message : String(err))
       }
@@ -61,6 +74,18 @@ export default function App() {
 
       {error && <div className="error show">{error}</div>}
 
+      <p className="muted session">
+        {session?.active && session.subject ? (
+          <>
+            Aangemeld als {session.subject.email}
+            {session.expiresAt && ` tot ${new Date(session.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`}: de wallet is
+            niet nodig. <button className="link" onClick={afmelden}>Afmelden</button>
+          </>
+        ) : (
+          'Nog niet aangemeld: bij de eerste aanvraag bevestig je in de wallet wie je bent.'
+        )}
+      </p>
+
       <div className="card">
         <h2>Voor welk adres?</h2>
         <div className="row">
@@ -80,7 +105,7 @@ export default function App() {
         {busy ? 'Bezig...' : waiting ? 'Wacht op de wallet...' : 'Dien aanvraag in'}
       </button>
 
-      {submitted && waiting && (
+      {submitted && submitted.authorizationRequest && waiting && (
         <div className="card wallet-link" style={{ marginTop: 16 }}>
           <h2>Bevestig in je wallet</h2>
           <p className="muted">Open de wallet en bevestig het delen van je gegevens.</p>

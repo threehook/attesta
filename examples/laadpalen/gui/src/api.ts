@@ -7,8 +7,14 @@ export interface Subject {
 
 export interface Submitted {
   requestId: string
-  // The openid4vp:// link the employee opens in their wallet.
+  // The openid4vp:// link the employee opens in their wallet; empty when a session made the wallet unnecessary.
   authorizationRequest: string
+}
+
+export interface Session {
+  active: boolean
+  subject?: Subject
+  expiresAt?: string
 }
 
 export interface Status {
@@ -40,4 +46,12 @@ export async function submit(postcode: string, huisnummer: string): Promise<Subm
 
 export async function status(requestId: string): Promise<Status> {
   return json(await fetch(`/api/request-laadpaal/${encodeURIComponent(requestId)}`))
+}
+
+export async function session(): Promise<Session> {
+  return json(await fetch('/api/session'))
+}
+
+export async function signOut(): Promise<void> {
+  await fetch('/api/session', { method: 'DELETE' })
 }
