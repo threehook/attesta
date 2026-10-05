@@ -7,9 +7,22 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 - **Holds credentials.** The main window lists them with the claims they carry.
 - **Takes an issuer's offer.** An `openid-credential-offer://` link, from a link the system hands to the app or pasted into the box, opens a
   confirmation showing who offers what. The credential is fetched and stored only when the user agrees.
-- **Answers a verifier.** An `openid4vp://` link opens a confirmation showing who asks, which credential and which claims; the issuer is always
-  shown to the verifier. The wallet discloses exactly the requested claims and nothing else, and only when the user agrees. If it holds nothing that
-  answers the request, sharing is disabled.
+- **Answers a verifier.** An `openid4vp://` link that the system hands to the app never opens the window. The wallet discloses exactly the requested
+  claims and nothing else (the issuer is always shown to the verifier), and a small popup asks first: Share, Always share, or Decline. "Always share" makes
+  that application, kept as the origin it answers to, get answers with no popup at all; a notification says what was shared. If the wallet holds nothing
+  that answers the request, a popup says so and nothing is shared. A link pasted into the window is confirmed in the window instead, with the same
+  "Always share with <application>" choice.
+- **Signs in.** A request that asks for nothing but the email is a sign-in. The link can name the identity to answer with (`login_hint` for the email,
+  `issuer_hint` for the issuer's DID); the wallet narrows the request to that credential and takes the parameters off. The popup says who the user
+  would sign in as (email and DID) and offers Bevestigen or Annuleren, with a checkbox "Altijd aanmelden, zonder de knop Aanmelden". Ticked, that
+  identity signs in to that application with no popup; its other requests are still asked about, and "Always share" does not sign in.
+- **Tells pages who the user is.** The wallet listens on `127.0.0.1:47653` (`ATTESTA_WALLET_PORT` in a development run) and answers
+  `GET /identities?type=<credential type>&application=<origin>` with the email and issuer of each credential of that type, and whether that identity
+  signs in automatically to that application. Any page in a browser on this machine can read this; nothing else of the wallet is exposed. If the
+  port is taken the wallet still works, and a page cannot offer the choice.
+- **Sharing settings.** The "Sharing" section lists the identities that sign in automatically (with the application) and the applications the user
+  always shares with, each with a Remove button. There is no switch to share with every application: any page could then read what a request asks for. Offers from an issuer are always
+  confirmed in the window. The lists are kept in `settings.json` in the wallet's data folder; a missing or damaged file means asking every time.
 
 ## Running it
 
@@ -17,9 +30,9 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 pnpm --filter @attesta/wallet-desktop start     # builds, then starts Electron
 ```
 
-Three environment variables are for development and tests only: `ATTESTA_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
-http, `ATTESTA_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, and `ATTESTA_WALLET_KEY` supplies the store key
-directly. An installed (packaged) app ignores all three (`src/main/dev-switches.ts`).
+Four environment variables are for development and tests only: `ATTESTA_ALLOW_INSECURE_HTTP=1` lets the wallet talk to issuers and verifiers on plain
+http, `ATTESTA_WALLET_DATA_DIR` keeps its data somewhere other than the system's per-user app folder, `ATTESTA_WALLET_KEY` supplies the store key
+directly, and `ATTESTA_WALLET_PORT` moves the port pages find the wallet on. An installed (packaged) app ignores all four (`src/main/dev-switches.ts`).
 
 A development run does not register itself as the handler for `openid-credential-offer://` and `openid4vp://` links, because that changes the system's
 defaults; set `ATTESTA_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,

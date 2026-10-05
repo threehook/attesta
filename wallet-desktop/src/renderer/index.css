@@ -25,3 +25,4 @@ dd { margin: 0; }
 .dialog h2 { margin-top: 0; }
 .dialog strong { word-break: break-all; }
 .buttons { display: flex; justify-content: end; gap: 0.5rem; margin-top: 1rem; }
+.remember { display: block; margin: 12px 0; font-size: 0.9rem; }

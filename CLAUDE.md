@@ -12,7 +12,7 @@ the rename commits, still uses that name and contains ZK-era code). There is no 
   it watches, and hot-deployed through `POST /admin/policies`; hot deployment without a restart is a requirement), `internal/httpapi` is the HTTP layer.
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
-- `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer and every disclosure.
+- `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/simple-gui/`: relying page. Its policy is `policies/diploma_check.gno`.
   `examples/laadpalen/`: relying app with attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,gui,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
