@@ -16,3 +16,5 @@ playwright-report/
 
 # OS
 .DS_Store
+
+wallet-desktop/release/

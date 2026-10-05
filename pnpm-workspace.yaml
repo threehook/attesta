@@ -14,3 +14,4 @@ allowBuilds:
   # Their install scripts only verify or speed up optional prebuilt binaries that arrive as separate platform packages.
   cbor-extract: false
   esbuild: false
+  electron-winstaller: false

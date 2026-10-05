@@ -25,6 +25,10 @@ A development run does not register itself as the handler for `openid-credential
 defaults; set `ATTESTA_REGISTER_PROTOCOLS=1` to do so. A packaged app registers them. A link passed on the command line is opened when the app starts,
 and one passed to a second launch goes to the running instance.
 
+`pnpm --filter @attesta/wallet-desktop package` builds an unsigned macOS app into `release/mac-arm64/attesta wallet.app` (electron-builder, settings in
+`package.json`). It lists the two schemes in its `Info.plist`, so a link opens it. It ignores the dev switches, so it refuses the plain `http` of the local
+demo; it only works with https issuers and verifiers. Unsigned, Gatekeeper asks you to allow it on a copy that was downloaded; one built here opens normally.
+
 ## Keys and storage
 
 The wallet store (Askar, SQLite) is encrypted with a random key that is generated on first start and kept in the app's data folder, encrypted with

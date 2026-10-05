@@ -11,7 +11,8 @@
     "start": "pnpm build && electron .",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json --noEmit",
     "test": "vitest run",
-    "test:e2e": "pnpm build && playwright test"
+    "test:e2e": "pnpm build && playwright test",
+    "package": "pnpm build && electron-builder --mac --dir"
   },
   "dependencies": {
     "@attesta/wallet": "workspace:*"
@@ -23,10 +24,40 @@
     "@types/react-dom": "^19.2.7",
     "@vitejs/plugin-react": "^6.1.1",
     "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "typescript": "^7.0.2",
     "vite": "^8.3.0",
     "vitest": "^5.0.3"
+  },
+  "build": {
+    "appId": "dev.attesta.wallet",
+    "productName": "attesta wallet",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "OpenID4VCI credential offer",
+        "schemes": [
+          "openid-credential-offer"
+        ]
+      },
+      {
+        "name": "OpenID4VP presentation request",
+        "schemes": [
+          "openid4vp"
+        ]
+      }
+    ],
+    "mac": {
+      "target": "dir",
+      "identity": null
+    }
   }
 }
