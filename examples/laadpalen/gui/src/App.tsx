@@ -74,17 +74,15 @@ export default function App() {
 
       {error && <div className="error show">{error}</div>}
 
-      <p className="muted session">
-        {session?.active && session.subject ? (
-          <>
-            Aangemeld als {session.subject.email}
-            {session.expiresAt && ` tot ${new Date(session.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`}: de wallet is
-            niet nodig. <button className="link" onClick={afmelden}>Afmelden</button>
-          </>
-        ) : (
-          'Nog niet aangemeld: bij de eerste aanvraag bevestig je in de wallet wie je bent.'
-        )}
-      </p>
+      {session?.active && session.subject && (
+        <p className="muted session">
+          Aangemeld als {session.subject.email}
+          {session.expiresAt && ` tot ${new Date(session.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`}.{' '}
+          <button className="link" onClick={afmelden}>
+            Afmelden
+          </button>
+        </p>
+      )}
 
       <div className="card">
         <h2>Voor welk adres?</h2>
@@ -163,7 +161,6 @@ export default function App() {
           ) : (
             <pre>{JSON.stringify({ requestId: submitted.requestId }, null, 2)}</pre>
           )}
-          {!submitted.authorizationRequest && <p className="muted">Aangemeld via de sessie: voor deze aanvraag is attesta niet gevraagd en de wallet niet nodig.</p>}
         </details>
       )}
     </main>

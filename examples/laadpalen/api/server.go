@@ -187,7 +187,7 @@ func (s *server) submitInSession(r *http.Request, postcode string, houseNumber i
 	s.forget()
 	s.submissions[id] = &submission{
 		postcode: postcode, houseNumber: houseNumber, created: s.now(), answered: true,
-		view: submissionView{Status: "done", Authorized: true, Reason: "Geautoriseerd via de sessie", Subject: &sess.subject, Result: &decided},
+		view: submissionView{Status: "done", Authorized: true, Reason: "Geautoriseerd", Subject: &sess.subject, Result: &decided},
 	}
 	s.records = append(s.records, recorded{Subject: sess.subject, Postcode: postcode, HouseNumber: houseNumber, Result: decided})
 	s.logger.Info("submission decided in session", "requestId", id, "email", sess.subject.Email, "issuer", sess.subject.Issuer,
