@@ -17,7 +17,7 @@ Who may submit is attesta's decision, made from a credential in the employee's o
 ```
 browser ──► page (nginx) ──► laadpalen-api ──► attesta (sidecar, 127.0.0.1:8080)      one pod: laadpalen-api
                                                     ▲
-wallet ─────────────────────────────────────────────┘ :8080 (the demo wallet: localhost:4175)
+wallet ─────────────────────────────────────────────┘ :8080 (wallets: https://api.attesta.corbencreatives.nl)
 ```
 
 1. The page posts the address to `POST /api/request-laadpaal`. The backend asks attesta for a request (`policyId` and `resource` `request_laadpaal`,

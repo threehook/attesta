@@ -11,8 +11,8 @@ spec:
     - port: 8787
       targetPort: 8787
 ---
-# How a wallet reaches attesta. LoadBalancer is a demo convenience: the demo wallet runs on the host, and Docker Desktop auto-forwards this to
-# localhost:4175 (ATTESTA_PUBLIC_URL in the deployment). A wallet running inside the organisation's cluster would use the internal address instead.
+# How a wallet reaches attesta: through the https Ingress (k8s/local/ingress), which routes api.attesta.corbencreatives.nl here. The LoadBalancer is a
+# plain-http convenience on localhost:4175 for a dev wallet; ATTESTA_PUBLIC_URL in the deployment is the https name, so links point there.
 apiVersion: v1
 kind: Service
 metadata:
