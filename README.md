@@ -3,9 +3,9 @@
 A Go backend that authorizes requests based on verifiable credentials that users present from their own wallet. An application asks the backend to
 start an authorization; the user's wallet answers with an SD-JWT presentation that discloses only what was asked for; the backend verifies it and
 runs the result through an **authorization policy written in Gno**, evaluated in-process by [gnovm](https://github.com/gnolang/gno), gno.land's VM,
-embedded directly in the backend (no blockchain involved).
+embedded directly in the backend.
 
-Presentations use selective disclosure (SD-JWT), not zero-knowledge proofs: the holder reveals only the requested claims, but the issuer's signature
+Presentations use selective disclosure (SD-JWT): the holder reveals only the requested claims, but the issuer's signature
 and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
 
 This is a monorepo: the backend, a TypeScript client library, a wallet core, and two examples (a demo issuer and a relying web page).

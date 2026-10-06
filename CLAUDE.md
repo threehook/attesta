@@ -1,8 +1,7 @@
 # attesta
 
 Authorization with verifiable credentials. An application asks the backend to start an authorization; the user's wallet answers with an SD-JWT
-presentation that discloses only what was asked; the backend verifies it and a Gno policy decides. Formerly named zk-puoi (the git history, before
-the rename commits, still uses that name and contains ZK-era code). There is no zero-knowledge in it: presentations are selective disclosure.
+presentation that discloses only what was asked; the backend verifies it and a Gno policy decides.
 
 ## Components
 
