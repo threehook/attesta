@@ -57,7 +57,7 @@ export function Shell(props: { title: string; crumbs: Crumb[]; active: string; f
 export function Blocks() {
   return (
     <>
-      <p className="intro">Kies in het menu waarvoor u hier bent.</p>
+      <p className="intro">Maak een keuze in het menu om verder te gaan.</p>
       <div className="blocks">
         {MENU.flatMap((group) =>
           group.items.map((item) => (

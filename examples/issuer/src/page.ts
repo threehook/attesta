@@ -23,7 +23,7 @@ export function renderWelcome(chrome: Chrome): string {
     title: 'Home',
     active: 'home',
     crumbs: [],
-    body: `<p class="intro">Kies in het menu een verifiable credential om uit te geven aan een medewerker.</p><div class="blocks">${blocks}</div>`,
+    body: `<p class="intro">Maak een keuze in het menu om verder te gaan.</p><div class="blocks">${blocks}</div>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
   })
