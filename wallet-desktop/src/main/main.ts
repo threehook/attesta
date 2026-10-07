@@ -43,7 +43,7 @@ async function handleLink(wallet: WalletService, link: string) {
   const result = await handled(() => wallet.prepare(link));
   const presentation = link.trim().startsWith("openid4vp:");
   if (!result.ok) {
-    if (presentation) dialog.showErrorBox("Could not read the request", result.error);
+    if (presentation) dialog.showErrorBox("Kan het verzoek niet lezen", result.error);
     else show(result);
   } else if (result.value.kind === "shared") {
     announce(result.value);
@@ -78,7 +78,7 @@ async function askToShare(wallet: WalletService, request: Extract<Pending, { kin
   }
   const done = await handled(() => wallet.approve(request.id, answer === "always"));
   if (answer === "always") window?.webContents.send(channels.settingsChanged);
-  if (!done.ok) dialog.showErrorBox("Could not share", done.error);
+  if (!done.ok) dialog.showErrorBox("Kan niet delen", done.error);
   else if (done.value.kind === "presentation") announce({ kind: "shared", verifier: request.verifier, claims: request.requested.flatMap((r) => r.claims), status: done.value.status });
 }
 
@@ -98,7 +98,7 @@ function announce(shared: Shared) {
   if (!Notification.isSupported()) return;
   const who = applicationOf(shared.verifier) ?? shared.verifier;
   const sent = shared.status < 400;
-  new Notification({ title: sent ? "Shared" : "Not shared", body: sent ? `${shared.claims.join(", ")} with ${who}` : `${who} did not accept the answer` }).show();
+  new Notification({ title: sent ? "Gedeeld" : "Niet gedeeld", body: sent ? `${shared.claims.join(", ")} met ${who}` : `${who} heeft het antwoord niet geaccepteerd` }).show();
 }
 
 // Registering as the handler for these schemes changes the user's system, so only an installed app does it.

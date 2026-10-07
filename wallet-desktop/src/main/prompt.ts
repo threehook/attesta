@@ -12,7 +12,7 @@ export interface Prompt {
   buttons: string[];
   /** Whether the user can make this automatic for the application, which needs an application the user can trust. */
   canRemember: boolean;
-  /** For a sign-in, remembering is a checkbox next to the buttons; otherwise it is the "Always share" button. */
+  /** For a sign-in, remembering is a checkbox next to the buttons; otherwise it is the "Altijd delen" button. */
   checkboxLabel?: string;
   signIn: boolean;
 }
@@ -38,12 +38,12 @@ export function signInPrompt(request: PresentationRequest): Prompt {
 
 export function sharePrompt(request: PresentationRequest): Prompt {
   const who = request.application ?? request.verifier;
-  const lines = request.requested.flatMap((r) => ["who issued it", ...r.claims]);
+  const lines = request.requested.flatMap((r) => ["wie het heeft uitgegeven", ...r.claims]);
   const canRemember = request.application !== undefined;
   return {
-    message: `Share information with ${who}?`,
+    message: `Informatie delen met ${who}?`,
     detail: [...new Set(lines)].map((line) => `• ${line}`).join("\n"),
-    buttons: canRemember ? ["Share", "Always share", "Decline"] : ["Share", "Decline"],
+    buttons: canRemember ? ["Delen", "Altijd delen", "Weigeren"] : ["Delen", "Weigeren"],
     canRemember,
     signIn: false,
   };
@@ -51,7 +51,7 @@ export function sharePrompt(request: PresentationRequest): Prompt {
 
 // What to say when the wallet holds nothing that answers the request.
 export function nothingToShare(request: PresentationRequest): { message: string; detail: string } {
-  return { message: `${request.application ?? request.verifier} asks for something you do not have`, detail: "You hold no credential that answers this request." };
+  return { message: `${request.application ?? request.verifier} vraagt om iets wat u niet hebt`, detail: "U hebt geen credential dat op dit verzoek past." };
 }
 
 // What an answer to the popup means; checked is the state of its checkbox, if it has one.

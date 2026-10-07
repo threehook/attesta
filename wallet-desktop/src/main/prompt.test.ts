@@ -15,12 +15,12 @@ describe("sharePrompt", () => {
   it("names the application and lists what would be shared, once each", () => {
     const p = sharePrompt({ ...request("https://api.example"), requested: [{ type: ["A"], claims: ["email"] }, { type: ["B"], claims: ["email", "diploma"] }] });
     expect(p.message).toContain("https://api.example");
-    expect(p.detail).toBe("• who issued it\n• email\n• diploma");
+    expect(p.detail).toBe("• wie het heeft uitgegeven\n• email\n• diploma");
   });
 
-  it("offers Always share only for an application the user can trust", () => {
-    expect(sharePrompt(request("https://api.example")).buttons).toEqual(["Share", "Always share", "Decline"]);
-    expect(sharePrompt(request(undefined)).buttons).toEqual(["Share", "Decline"]);
+  it("offers Altijd delen only for an application the user can trust", () => {
+    expect(sharePrompt(request("https://api.example")).buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
+    expect(sharePrompt(request(undefined)).buttons).toEqual(["Delen", "Weigeren"]);
   });
 });
 
@@ -41,7 +41,7 @@ describe("decision", () => {
 
 describe("nothingToShare", () => {
   it("says the wallet holds nothing that answers the request", () => {
-    expect(nothingToShare(request("https://api.example")).detail).toContain("no credential");
+    expect(nothingToShare(request("https://api.example")).detail).toContain("geen credential");
   });
 });
 
@@ -63,7 +63,7 @@ describe("signInPrompt", () => {
 
   it("is what a sign-in gets, and other requests keep their popup", () => {
     expect(promptFor(signIn("https://api.example")).signIn).toBe(true);
-    expect(promptFor(request("https://api.example")).buttons).toEqual(["Share", "Always share", "Decline"]);
+    expect(promptFor(request("https://api.example")).buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
   });
 
   it("offers to sign in without the button next time only for an application the user can trust and an identity it knows", () => {

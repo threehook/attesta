@@ -64,7 +64,7 @@ export class WalletService {
       this.waiting.set(id, { kind: "presentation", request, identity, expires });
       return { id, kind: "presentation", verifier: request.verifier, application, requested: request.requested, signIn, identity, satisfiable: request.satisfiable };
     }
-    throw new WalletError("This is not a credential offer or a presentation request.");
+    throw new WalletError("Dit is geen credential-aanbod of presentatieverzoek.");
   }
 
   async approve(id: string, remember = false): Promise<Approved> {
@@ -130,7 +130,7 @@ export class WalletService {
     const item = this.waiting.get(id);
     this.waiting.delete(id);
     if (!item || item.expires < this.now()) {
-      throw new WalletError("This request has expired. Open the link again.");
+      throw new WalletError("Dit verzoek is verlopen. Open de link opnieuw.");
     }
     return item;
   }

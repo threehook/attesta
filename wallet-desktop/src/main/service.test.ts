@@ -34,11 +34,11 @@ beforeEach(() => {
 describe("WalletService", () => {
   it("rejects a link that is neither an offer nor a presentation request", async () => {
     await expect(service().prepare("https://example.com")).rejects.toThrow(WalletError);
-    await expect(service().prepare("")).rejects.toThrow("not a credential offer");
+    await expect(service().prepare("")).rejects.toThrow("geen credential-aanbod");
   });
 
   it("rejects approving something it never prepared", async () => {
-    await expect(service().approve("unknown")).rejects.toThrow("expired");
+    await expect(service().approve("unknown")).rejects.toThrow("verlopen");
   });
 
   it("forgets what was declined", async () => {
