@@ -75,6 +75,13 @@ breadcrumb. The welcome page has a block per menu item that explains what it doe
 
 ![The issuer, with "Aanvragen laadpalen" chosen](docs/images/issuer-aanvragen-laadpalen.png)
 
+### Laadpalen page
+
+The same layout, with the employee's own menu: "Laadpaal aanvragen" is where the employee signs in with the wallet and submits an address. The footer shows who
+is signed in, with "Afmelden".
+
+![The laadpalen page, home](docs/images/laadpalen-home.png)
+
 ## Development workflow
 
 The dev/deploy/test cycle for the backend and the example page runs through Docker Desktop's built-in Kubernetes, driven by the root `Makefile`.
