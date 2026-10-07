@@ -123,7 +123,7 @@ deployed:
 ```sh
 cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000 (or `make k8s-issuer-apply`)
 pnpm --filter @attesta/wallet-desktop package                  # the wallet: open the app, paste the offer link from the issuer form, confirm (needs https)
-cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Request access", then paste the page's link into the wallet and confirm
+cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Toegang vragen", then paste the page's link into the wallet and confirm
 ```
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.

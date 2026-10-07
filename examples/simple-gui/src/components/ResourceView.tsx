@@ -46,26 +46,26 @@ export function ResourceView() {
       <form onSubmit={handleSubmit}>
         <fieldset>
           <label>
-            Resource
+            Bron
             <input value={resource} onChange={(e) => setResource(e.target.value)} required />
           </label>
           <label>
-            Credential type
+            Soort bewijs
             <input value={credentialType} onChange={(e) => setCredentialType(e.target.value)} required />
           </label>
           <label>
-            Claims to disclose besides the email (comma-separated)
+            Te delen gegevens naast het e-mailadres (kommagescheiden)
             <input value={claims} onChange={(e) => setClaims(e.target.value)} />
           </label>
         </fieldset>
         <button type="submit" disabled={pending}>
-          {pending ? "Waiting for the wallet…" : "Request access"}
+          {pending ? "Wachten op de wallet…" : "Toegang vragen"}
         </button>
       </form>
 
       {request && !decision && (
         <p>
-          Open this link in your wallet: <a href={request.authorizationRequest}>open in wallet</a>
+          Open deze link in uw wallet: <a href={request.authorizationRequest}>open in wallet</a>
           <br />
           <code>{request.authorizationRequest}</code>
         </p>
@@ -75,10 +75,10 @@ export function ResourceView() {
 
       {decision && (
         <div className={`result ${decision.allow ? "allow" : "deny"}`}>
-          <strong>{decision.allow ? "Allowed" : "Denied"}</strong>: {decision.reason}
+          <strong>{decision.allow ? "Toegestaan" : "Geweigerd"}</strong>: {decision.reason}
           {decision.subject && (
             <p>
-              Signed in as <strong>{decision.subject.email}</strong> (vouched for by <code>{decision.subject.issuer}</code>)
+              Aangemeld als <strong>{decision.subject.email}</strong> (bevestigd door <code>{decision.subject.issuer}</code>)
             </p>
           )}
         </div>

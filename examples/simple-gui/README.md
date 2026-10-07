@@ -6,12 +6,12 @@ the allow or deny and the reason.
 
 ## How it works
 
-1. You fill in the resource, the credential type (`Diploma`) and the claims to ask for besides the email (`degree`), then press **Request access**.
+1. You fill in the resource, the credential type (`Diploma`) and the claims to ask for besides the email (`degree`), then press **Toegang vragen**.
 2. The page calls the backend (`POST /v1/authorize/requests`) and shows an `openid4vp://` link. It then polls the backend for the decision.
 3. You open the link in your wallet (`wallet-desktop`). The wallet shows who is asking and for what, and answers the backend directly with a presentation that discloses
    only the requested claims. The email, which identifies the holder, is always among them.
 4. The backend verifies the presentation, runs the Gno policy [`policies/diploma_check.gno`](policies/diploma_check.gno) with the resource, the
-   credential type and the issuer's DID, and the page shows **Allowed** or **Denied** with the policy's reason. When allowed it also shows the email the holder was identified by and the issuer that
+   credential type and the issuer's DID, and the page shows **Toegestaan** or **Geweigerd** with the policy's reason. When allowed it also shows the email the holder was identified by and the issuer that
    vouched for it.
 
 The policy allows the `diploma-vault` resource for a `Diploma` credential from a trusted issuer. Trusted issuers are the DIDs in its `trustedIssuers`
