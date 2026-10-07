@@ -2,9 +2,14 @@ import { useCallback, useEffect, useState } from "react";
 import type { HeldCredential, Pending } from "../shared/api.js";
 import { Consent } from "./Consent.js";
 import { CredentialList } from "./CredentialList.js";
+import { Blocks, Shell } from "./Layout.js";
+import { HOME, MENU } from "./menu.js";
 import { SharingSettings } from "./SharingSettings.js";
 
 type Notice = { kind: "info" | "error"; text: string };
+
+const items = MENU.flatMap((group) => group.items);
+const routeOf = () => items.find((item) => item.href === window.location.hash) ?? HOME;
 
 export function App() {
   const [credentials, setCredentials] = useState<HeldCredential[]>([]);
@@ -13,6 +18,17 @@ export function App() {
   const [link, setLink] = useState("");
   const [busy, setBusy] = useState(false);
   const [settingsVersion, setSettingsVersion] = useState(0);
+  const [route, setRoute] = useState(routeOf);
+
+  useEffect(() => {
+    const onChange = () => setRoute(routeOf());
+    window.addEventListener("hashchange", onChange);
+    return () => window.removeEventListener("hashchange", onChange);
+  }, []);
+
+  useEffect(() => {
+    document.title = route === HOME ? "attesta wallet" : `${route.label} – attesta wallet`;
+  }, [route]);
 
   const refresh = useCallback(async () => {
     const result = await window.wallet.list();
@@ -26,7 +42,7 @@ export function App() {
     try {
       const result = await window.wallet.prepare(value);
       if (!result.ok) setNotice({ kind: "error", text: result.error });
-      else if (result.value.kind === "shared") setNotice({ kind: "info", text: `Shared ${result.value.claims.join(", ")} with ${result.value.verifier}.` });
+      else if (result.value.kind === "shared") setNotice({ kind: "info", text: `Gedeeld: ${result.value.claims.join(", ")} met ${result.value.verifier}.` });
       else setPending(result.value);
     } finally {
       setBusy(false);
@@ -52,10 +68,10 @@ export function App() {
       if (!result.ok) {
         setNotice({ kind: "error", text: result.error });
       } else if (result.value.kind === "offer") {
-        setNotice({ kind: "info", text: `Added ${result.value.credentials.length} credential(s) to your wallet.` });
+        setNotice({ kind: "info", text: `${result.value.credentials.length} credential(s) toegevoegd aan uw wallet.` });
         await refresh();
       } else {
-        setNotice({ kind: "info", text: "Your answer was sent." });
+        setNotice({ kind: "info", text: "Uw antwoord is verstuurd." });
       }
     } finally {
       setBusy(false);
@@ -76,35 +92,37 @@ export function App() {
   }
 
   return (
-    <main>
-      <h1>Wallet</h1>
-
-      <form onSubmit={submit}>
-        <label>
-          Open a link
-          <input
-            value={link}
-            onChange={(e) => setLink(e.target.value)}
-            placeholder="openid-credential-offer://… or openid4vp://…"
-            aria-label="Link"
-          />
-        </label>
-        <button type="submit" disabled={busy}>
-          Open
-        </button>
-      </form>
-
+    <Shell
+      title={route.label}
+      crumbs={route === HOME ? [] : [{ label: HOME.label, href: HOME.href }]}
+      active={route.id}
+      footer={credentials.length > 0 ? `${credentials.length} credential(s) in uw wallet` : undefined}
+    >
       {notice && (
-        <p role="status" className={notice.kind}>
+        <p role="status" className={`notice ${notice.kind}`}>
           {notice.text}
         </p>
       )}
 
-      <CredentialList credentials={credentials} />
+      {route === HOME && <Blocks />}
 
-      <SharingSettings version={settingsVersion} />
+      {route.id === "credentials" && <CredentialList credentials={credentials} />}
+
+      {route.id === "link" && (
+        <form className="card" onSubmit={submit}>
+          <label>
+            Link
+            <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="openid-credential-offer://… of openid4vp://…" aria-label="Link" />
+          </label>
+          <button type="submit" className="primary" disabled={busy}>
+            Openen
+          </button>
+        </form>
+      )}
+
+      {route.id === "delen" && <SharingSettings version={settingsVersion} />}
 
       {pending && <Consent pending={pending} busy={busy} onApprove={approve} onDecline={decline} />}
-    </main>
+    </Shell>
   );
 }

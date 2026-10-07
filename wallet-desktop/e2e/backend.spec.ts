@@ -59,18 +59,20 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
     try {
       const window = await app.firstWindow();
       const open = async (link: string, button: string) => {
+        await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Link openen", exact: true }).click();
         await window.getByLabel("Link").fill(link);
-        await window.getByRole("button", { name: "Open" }).click();
+        await window.getByRole("button", { name: "Openen" }).click();
         await window.getByRole("dialog").getByRole("button", { name: button }).click();
       };
 
-      await open(await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" }), "Add");
+      await open(await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" }), "Toevoegen");
+      await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Credentials", exact: true }).click();
       await expect(window.getByRole("region", { name: "Credentials" })).toContainText("ada@example.com");
 
       const started = await post("/v1/authorize/requests", { resource: "diploma-vault", policyId, credentialType: "Diploma", claims: ["degree"] });
       const { requestId, authorizationRequest } = (await started.json()) as { requestId: string; authorizationRequest: string };
-      await open(authorizationRequest, "Share");
-      await expect(window.getByRole("status")).toContainText("Your answer was sent");
+      await open(authorizationRequest, "Delen");
+      await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
 
       const outcome = (await (await fetch(`${backend}/v1/authorize/requests/${requestId}`)).json()) as {
         status: string;

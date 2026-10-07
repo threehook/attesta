@@ -22,33 +22,32 @@ export function SharingSettings({ version }: { version: number }) {
   if (!settings) return error ? <p className="error">{error}</p> : null;
 
   return (
-    <section aria-label="Sharing">
-      <h2>Sharing</h2>
-      <h3>Applications I sign in to automatically</h3>
+    <section aria-label="Delen">
+      <h3>Applicaties waarbij ik automatisch aanmeld</h3>
       {settings.signIns.length === 0 ? (
-        <p>None.</p>
+        <p>Geen.</p>
       ) : (
         <ul>
           {settings.signIns.map((choice) => (
             <li key={`${choice.application} ${choice.email} ${choice.issuer}`}>
-              {choice.application} as {choice.email} ({choice.issuer}){" "}
+              {choice.application} als {choice.email} ({choice.issuer}){" "}
               <button type="button" onClick={() => void window.wallet.forgetSignIn(choice).then(apply)}>
-                Remove
+                Verwijderen
               </button>
             </li>
           ))}
         </ul>
       )}
-      <h3>Applications I always share with</h3>
+      <h3>Applicaties waarmee ik altijd deel</h3>
       {settings.trustedApplications.length === 0 ? (
-        <p>None.</p>
+        <p>Geen.</p>
       ) : (
         <ul>
           {settings.trustedApplications.map((application) => (
             <li key={application}>
               {application}{" "}
               <button type="button" onClick={() => void window.wallet.forgetApplication(application).then(apply)}>
-                Remove
+                Verwijderen
               </button>
             </li>
           ))}

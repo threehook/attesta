@@ -9,6 +9,8 @@ import { startIssuer } from "../../examples/issuer/src/issuer.js";
 
 const appDir = join(import.meta.dirname, "..");
 
+const showCredentials = (page: Page) => page.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Credentials", exact: true }).click();
+
 async function freePort(): Promise<number> {
   const server = createServer();
   await new Promise<void>((resolve) => server.listen(0, resolve));
@@ -81,18 +83,23 @@ test.describe.serial("desktop wallet", () => {
       }),
     })}`;
 
+  // The wallet's menu: each part of the wallet is a page of its own.
+  const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
+
   const openLink = async (link: string) => {
+    await goTo("Link openen");
     await window.getByLabel("Link").fill(link);
-    await window.getByRole("button", { name: "Open" }).click();
+    await window.getByRole("button", { name: "Openen" }).click();
   };
 
   test("starts empty", async () => {
-    await expect(window.getByText("No credentials yet")).toBeVisible();
+    await goTo("Credentials");
+    await expect(window.getByText("Nog geen credentials")).toBeVisible();
   });
 
   test("rejects a link it does not understand", async () => {
     await openLink("https://example.com");
-    await expect(window.getByRole("status")).toContainText("not a credential offer");
+    await expect(window.getByRole("status")).toContainText("geen credential-aanbod");
   });
 
   test("shows an offer, and adds the credential only once the user agrees", async () => {
@@ -100,11 +107,12 @@ test.describe.serial("desktop wallet", () => {
 
     await openLink(offer);
     const dialog = window.getByRole("dialog");
-    await expect(dialog).toContainText("Add a credential?");
+    await expect(dialog).toContainText("Credential toevoegen?");
     await expect(dialog).toContainText("Diploma");
-    await expect(window.getByText("No credentials yet")).toBeVisible();
+    await expect(window.locator("footer")).not.toContainText("credential");
 
-    await dialog.getByRole("button", { name: "Add" }).click();
+    await dialog.getByRole("button", { name: "Toevoegen" }).click();
+    await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
     await expect(card).toContainText("Diploma");
     await expect(card).toContainText("ada@example.com");
@@ -116,8 +124,9 @@ test.describe.serial("desktop wallet", () => {
     const offer = await issuer.createOffer({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" });
 
     await openLink(offer);
-    await window.getByRole("dialog").getByRole("button", { name: "Decline" }).click();
+    await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
 
+    await goTo("Credentials");
     await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
   });
 
@@ -139,14 +148,14 @@ test.describe.serial("desktop wallet", () => {
 
     await openLink(`openid4vp://?${request}`);
     const dialog = window.getByRole("dialog");
-    await expect(dialog).toContainText("Share information?");
+    await expect(dialog).toContainText("Informatie delen?");
     await expect(dialog).toContainText(responseUri);
     await expect(dialog).toContainText("degree");
     await expect(dialog).toContainText("email");
     expect(answers).toHaveLength(0);
 
-    await dialog.getByRole("button", { name: "Share" }).click();
-    await expect(window.getByRole("status")).toContainText("Your answer was sent");
+    await dialog.getByRole("button", { name: "Delen", exact: true }).click();
+    await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
 
     expect(answers).toHaveLength(1);
     expect(answers[0].get("state")).toBe("s-1");
@@ -167,9 +176,9 @@ test.describe.serial("desktop wallet", () => {
 
     await openLink(`openid4vp://?${request}`);
     const dialog = window.getByRole("dialog");
-    await expect(dialog).toContainText("You hold no credential that answers this request");
-    await expect(dialog.getByRole("button", { name: "Share" })).toBeDisabled();
-    await dialog.getByRole("button", { name: "Decline" }).click();
+    await expect(dialog).toContainText("U hebt geen credential dat op dit verzoek past");
+    await expect(dialog.getByRole("button", { name: "Delen", exact: true })).toBeDisabled();
+    await dialog.getByRole("button", { name: "Weigeren" }).click();
   });
 
   test("shares without asking with an application the user chose to always share with, until it is removed", async () => {
@@ -178,26 +187,27 @@ test.describe.serial("desktop wallet", () => {
 
     await openLink(diplomaRequest("s-3"));
     const dialog = window.getByRole("dialog");
-    await dialog.getByLabel(`Always share with ${application}`).check();
-    await dialog.getByRole("button", { name: "Share" }).click();
-    await expect(window.getByRole("status")).toContainText("Your answer was sent");
+    await dialog.getByLabel(`Altijd delen met ${application}`).check();
+    await dialog.getByRole("button", { name: "Delen", exact: true }).click();
+    await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
     expect(answers).toHaveLength(before + 1);
 
     await openLink(diplomaRequest("s-4"));
-    await expect(window.getByRole("status")).toContainText(`Shared degree, email with redirect_uri:${responseUri}`);
+    await expect(window.getByRole("status")).toContainText(`Gedeeld: degree, email met redirect_uri:${responseUri}`);
     await expect(window.getByRole("dialog")).toHaveCount(0);
     expect(answers).toHaveLength(before + 2);
     expect(answers[before + 1].get("state")).toBe("s-4");
 
-    const sharing = window.getByRole("region", { name: "Sharing" });
+    await goTo("Delen");
+    const sharing = window.getByRole("region", { name: "Delen" });
     await expect(sharing).toContainText(application);
-    await sharing.getByRole("button", { name: "Remove" }).click();
+    await sharing.getByRole("button", { name: "Verwijderen" }).click();
     await expect(sharing).not.toContainText(application);
 
     await openLink(diplomaRequest("s-5"));
-    await expect(window.getByRole("dialog")).toContainText("Share information?");
+    await expect(window.getByRole("dialog")).toContainText("Informatie delen?");
     expect(answers).toHaveLength(before + 2);
-    await window.getByRole("dialog").getByRole("button", { name: "Decline" }).click();
+    await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
   });
 
   test("asks in a popup, never in the window, for a request the system hands over", async () => {
@@ -221,8 +231,8 @@ test.describe.serial("desktop wallet", () => {
     await expect.poll(() => answers.length).toBe(before + 1);
     const [first] = await popups();
     expect(first.message).toContain(application);
-    expect(first.detail).toBe("• who issued it\n• degree\n• email");
-    expect(first.buttons).toEqual(["Share", "Always share", "Decline"]);
+    expect(first.detail).toBe("• wie het heeft uitgegeven\n• degree\n• email");
+    expect(first.buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
     await expect(window.getByRole("dialog")).toHaveCount(0);
 
     await answerPopupsWith(2);
@@ -241,8 +251,9 @@ test.describe.serial("desktop wallet", () => {
     expect(answers[before + 2].get("state")).toBe("p-4");
     await expect(window.getByRole("dialog")).toHaveCount(0);
 
-    const sharing = window.getByRole("region", { name: "Sharing" });
-    await sharing.getByRole("button", { name: "Remove" }).click();
+    await goTo("Delen");
+    const sharing = window.getByRole("region", { name: "Delen" });
+    await sharing.getByRole("button", { name: "Verwijderen" }).click();
     await expect(sharing).not.toContainText(application);
 
     await answerPopupsWith(0);
@@ -299,12 +310,13 @@ test.describe.serial("desktop wallet", () => {
     await answerPopupsWith(2, false);
     await handOver(diplomaRequest("si-5"));
     await expect.poll(async () => (await popups()).length).toBe(1);
-    expect((await popups())[0].buttons).toEqual(["Share", "Always share", "Decline"]);
+    expect((await popups())[0].buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
     expect(answers).toHaveLength(before + 3);
 
-    const sharing = window.getByRole("region", { name: "Sharing" });
+    await goTo("Delen");
+    const sharing = window.getByRole("region", { name: "Delen" });
     await expect(sharing).toContainText(application);
-    await sharing.getByRole("button", { name: "Remove" }).click();
+    await sharing.getByRole("button", { name: "Verwijderen" }).click();
     await expect(sharing).not.toContainText(application);
   });
 
@@ -360,9 +372,10 @@ test.describe.serial("desktop wallet", () => {
     await expect.poll(async () => (await popups()).length).toBe(1);
     expect(answers).toHaveLength(before + 2);
 
-    const sharing = window.getByRole("region", { name: "Sharing" });
+    await goTo("Delen");
+    const sharing = window.getByRole("region", { name: "Delen" });
     await expect(sharing).toContainText(identity.email);
-    await sharing.getByRole("button", { name: "Remove" }).click();
+    await sharing.getByRole("button", { name: "Verwijderen" }).click();
     await expect(sharing).not.toContainText(identity.email);
   });
 
@@ -392,7 +405,9 @@ test("starts with its data in a folder whose path has spaces, as the system app 
     },
   });
   try {
-    await expect((await app.firstWindow()).getByText("No credentials yet")).toBeVisible();
+    const window = await app.firstWindow();
+    await showCredentials(window);
+    await expect(window.getByText("Nog geen credentials")).toBeVisible();
   } finally {
     await app.close();
   }
@@ -413,7 +428,7 @@ test("opens a link handed to the app when it starts", async () => {
   });
   try {
     const window = await app.firstWindow();
-    await expect(window.getByRole("dialog")).toContainText("Add a credential?");
+    await expect(window.getByRole("dialog")).toContainText("Credential toevoegen?");
   } finally {
     await app.close();
     await issuer.close();
@@ -436,12 +451,13 @@ test("opens a new window for a link that arrives after its window was closed", a
   });
   try {
     const first = await app.firstWindow();
-    await expect(first.getByText("No credentials yet")).toBeVisible();
+    await showCredentials(first);
+    await expect(first.getByText("Nog geen credentials")).toBeVisible();
     await first.close();
     // What macOS sends when a link is opened while the app runs without a window.
     await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), offer);
     const next = await app.waitForEvent("window");
-    await expect(next.getByRole("dialog")).toContainText("Add a credential?");
+    await expect(next.getByRole("dialog")).toContainText("Credential toevoegen?");
   } finally {
     await app.close();
     await issuer.close();

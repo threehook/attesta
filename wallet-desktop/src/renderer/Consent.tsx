@@ -13,12 +13,12 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
   const signIn = pending.kind === "presentation" && pending.signIn;
   return (
     <div className="backdrop">
-      <div role="dialog" aria-modal="true" aria-label="Confirm" className="dialog">
+      <div role="dialog" aria-modal="true" aria-label="Bevestigen" className="dialog">
         {pending.kind === "offer" ? (
           <>
-            <h2>Add a credential?</h2>
+            <h2>Credential toevoegen?</h2>
             <p>
-              <strong>{pending.issuer}</strong> offers you:
+              <strong>{pending.issuer}</strong> biedt u aan:
             </p>
             <ul>
               {pending.types.map((type) => (
@@ -50,36 +50,36 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
           </>
         ) : (
           <>
-            <h2>Share information?</h2>
+            <h2>Informatie delen?</h2>
             <p>
-              <strong>{pending.verifier}</strong> asks for:
+              <strong>{pending.verifier}</strong> vraagt om:
             </p>
             {pending.requested.map((request, i) => (
               <div key={i}>
-                <p>A {request.type.join(" or ") || "credential"}, showing:</p>
+                <p>Een {request.type.join(" of ") || "credential"}, met:</p>
                 <ul>
-                  <li>who issued it</li>
+                  <li>wie het heeft uitgegeven</li>
                   {request.claims.map((claim) => (
                     <li key={claim}>{claim}</li>
                   ))}
                 </ul>
               </div>
             ))}
-            {!pending.satisfiable && <p className="error">You hold no credential that answers this request.</p>}
+            {!pending.satisfiable && <p className="error">U hebt geen credential dat op dit verzoek past.</p>}
             {pending.satisfiable && pending.application && (
               <label className="remember">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
-                Always share with {pending.application}
+                Altijd delen met {pending.application}
               </label>
             )}
           </>
         )}
         <div className="buttons">
           <button type="button" onClick={onDecline} disabled={busy}>
-            {signIn ? "Annuleren" : "Decline"}
+            {signIn ? "Annuleren" : "Weigeren"}
           </button>
-          <button type="button" onClick={() => onApprove(remember)} disabled={busy || (pending.kind === "presentation" && !pending.satisfiable)}>
-            {pending.kind === "offer" ? "Add" : signIn ? "Bevestigen" : "Share"}
+          <button type="button" className="primary" onClick={() => onApprove(remember)} disabled={busy || (pending.kind === "presentation" && !pending.satisfiable)}>
+            {pending.kind === "offer" ? "Toevoegen" : signIn ? "Bevestigen" : "Delen"}
           </button>
         </div>
       </div>
