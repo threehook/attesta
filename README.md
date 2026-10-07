@@ -82,6 +82,13 @@ is signed in, with "Afmelden".
 
 ![The laadpalen page, with "Laadpaal aanvragen" chosen](docs/images/laadpalen-laadpaal-aanvragen.png)
 
+### Wallet
+
+The same layout, with the pages of the wallet in the menu: the credentials it holds, opening a link by hand, and the applications the user signs in to or shares with
+automatically. Confirmations stay in a dialog or a popup. The footer shows how many credentials the wallet holds.
+
+![The wallet, with Credentials chosen](docs/images/wallet-credentials.png)
+
 ## Development workflow
 
 The dev/deploy/test cycle for the backend and the example page runs through Docker Desktop's built-in Kubernetes, driven by the root `Makefile`.
