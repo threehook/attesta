@@ -80,7 +80,7 @@ breadcrumb. The welcome page has a block per menu item that explains what it doe
 The same layout, with the employee's own menu: "Laadpaal aanvragen" is where the employee signs in with the wallet and submits an address. The footer shows who
 is signed in, with "Afmelden".
 
-![The laadpalen page, home](docs/images/laadpalen-home.png)
+![The laadpalen page, with "Laadpaal aanvragen" chosen](docs/images/laadpalen-laadpaal-aanvragen.png)
 
 ## Development workflow
 
