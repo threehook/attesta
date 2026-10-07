@@ -11,12 +11,17 @@ import {
   type Status,
   type Submitted,
 } from './api.ts'
+import { Blocks, Shell } from './layout.tsx'
+import { HOME, MENU } from './menu.ts'
 import { identities as fetchIdentities, shortDid, withIdentity, type Identity } from './wallet.ts'
 
 const POLL_MS = 1000
 const TOAST_MS = 5000
 
 type Flow = 'signIn' | 'request'
+
+const LAADPAAL = MENU[0].items[0]
+const routeOf = () => (window.location.hash === LAADPAAL.href ? 'laadpaal' : 'home')
 
 export default function App() {
   const [postcode, setPostcode] = useState('1111BB')
@@ -133,122 +138,138 @@ export default function App() {
     }
   }, [submitted, flow])
 
+  const [route, setRoute] = useState(routeOf)
+  useEffect(() => {
+    const onChange = () => setRoute(routeOf())
+    window.addEventListener('hashchange', onChange)
+    return () => window.removeEventListener('hashchange', onChange)
+  }, [])
+  const page = route === 'laadpaal' ? { title: LAADPAAL.label, crumbs: [{ label: HOME.label, href: HOME.href }], active: LAADPAAL.id } : { title: HOME.label, crumbs: [], active: HOME.id }
+  useEffect(() => {
+    document.title = page.title
+  }, [page.title])
+
   const waiting = submitted !== null && (state === null || state.status === 'pending')
 
+  const footer =
+    session?.active && session.subject ? (
+      <>
+        Aangemeld als {session.subject.email}
+        {session.expiresAt && ` tot ${new Date(session.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`}.{' '}
+        <button className="link" onClick={afmelden}>
+          Afmelden
+        </button>
+      </>
+    ) : undefined
+
   return (
-    <main>
-      <header>
-        <h1>Laadpaal aanvraag</h1>
-        <p>
-          Medewerkers van de gemeente dienen hier een aanvraag in voor een laadpaal.
-          <br />U logt in door middel van het kiezen van uw medewerkers-ID gekoppeld aan uw emailadres.
-        </p>
-      </header>
-
-      {error && <div className="error show">{error}</div>}
-
-      {session?.active && session.subject && (
-        <p className="muted session">
-          Aangemeld als {session.subject.email}
-          {session.expiresAt && ` tot ${new Date(session.expiresAt).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' })}`}.{' '}
-          <button className="link" onClick={afmelden}>
-            Afmelden
-          </button>
+    <Shell {...page} footer={footer}>
+      {route === 'home' && <Blocks />}
+      {route === 'laadpaal' && (
+        <p className="intro">
+          Medewerkers van de gemeente dienen hier een aanvraag in voor een laadpaal. U logt in door middel van het kiezen van uw medewerkers-ID gekoppeld aan
+          uw emailadres.
         </p>
       )}
 
-      {session?.active ? (
+      {route === 'laadpaal' && (
         <>
+        {error && <div className="error show">{error}</div>}
+
+        {session?.active ? (
+          <>
+            <div className="card">
+              <h2>Voor welk adres?</h2>
+              <div className="row">
+                <div className="field">
+                  <label htmlFor="postcode">Postcode</label>
+                  <input type="text" id="postcode" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
+                </div>
+                <div className="field narrow">
+                  <label htmlFor="huisnummer">Huisnummer</label>
+                  <input type="text" id="huisnummer" value={huisnummer} onChange={(e) => setHuisnummer(e.target.value)} />
+                </div>
+              </div>
+              <p className="muted">Bekende adressen: 1111BB 2 (vrij), 1111AA 1 (laadpaal aanwezig), 1111DD 4 (geen elektrisch voertuig).</p>
+            </div>
+
+            <button className="primary" onClick={dienIn} disabled={busy}>
+              {busy ? 'Bezig...' : waiting && flow === 'request' ? 'Opnieuw indienen' : 'Dien aanvraag in'}
+            </button>
+          </>
+        ) : (
           <div className="card">
-            <h2>Voor welk adres?</h2>
-            <div className="row">
+            <h2>Aanmelden</h2>
+            {typeof wallet === 'object' && wallet.found.length > 0 ? (
               <div className="field">
-                <label htmlFor="postcode">Postcode</label>
-                <input type="text" id="postcode" value={postcode} onChange={(e) => setPostcode(e.target.value)} />
+                <label htmlFor="identity">E-mailadres</label>
+                <select id="identity" value={Math.min(chosen, wallet.found.length - 1)} onChange={(e) => setChosen(Number(e.target.value))}>
+                  {wallet.found.map((found, i) => (
+                    <option key={`${found.email} ${found.issuer}`} value={i} title={found.issuer}>
+                      {found.email} ({shortDid(found.issuer)})
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="field narrow">
-                <label htmlFor="huisnummer">Huisnummer</label>
-                <input type="text" id="huisnummer" value={huisnummer} onChange={(e) => setHuisnummer(e.target.value)} />
-              </div>
-            </div>
-            <p className="muted">Bekende adressen: 1111BB 2 (vrij), 1111AA 1 (laadpaal aanwezig), 1111DD 4 (geen elektrisch voertuig).</p>
+            ) : (
+              <p className="muted">
+                {wallet === 'searching'
+                  ? 'Uw wallet wordt gezocht...'
+                  : wallet === 'missing'
+                    ? 'Uw wallet is niet gevonden.'
+                    : 'Uw wallet bevat nog geen medewerker-ID.'}
+              </p>
+            )}
+            <button className="primary" onClick={meldAan} disabled={busy || (wallet !== 'missing' && !identity)}>
+              {busy ? 'Bezig...' : waiting && flow === 'signIn' ? 'Opnieuw aanmelden' : 'Aanmelden'}
+            </button>
           </div>
+        )}
 
-          <button className="primary" onClick={dienIn} disabled={busy}>
-            {busy ? 'Bezig...' : waiting && flow === 'request' ? 'Opnieuw indienen' : 'Dien aanvraag in'}
-          </button>
+        {waiting && submitted && (
+          <p className="muted">
+            Wacht op de wallet. <a href={submitted.authorizationRequest}>Open in wallet</a>
+          </p>
+        )}
+
+        {state?.status === 'expired' && (
+          <div className="result show warn">
+            <span className="badge">⏱</span>
+            <span className="text">
+              <strong>Verlopen</strong>
+              <span>{state.reason}</span>
+            </span>
+          </div>
+        )}
+
+        {flow === 'request' && state?.status === 'done' && !state.authorized && (
+          <div className="result show deny">
+            <span className="badge">⛔</span>
+            <span className="text">
+              <strong>Niet bevoegd om een aanvraag in te dienen</strong>
+              <span>{state.reason}</span>
+            </span>
+          </div>
+        )}
+
+        {flow === 'request' && state?.status === 'done' && state.authorized && state.result && (
+          <div className={`result show ${state.result.granted ? 'allow' : 'deny'}`}>
+            <span className="badge">{state.result.granted ? '✅' : '❌'}</span>
+            <span className="text">
+              <strong>{state.result.granted ? 'Toegekend' : 'Niet toegekend'}</strong>
+              <span>{state.result.reason}</span>
+            </span>
+          </div>
+        )}
+
+        {submitted && (
+          <details>
+            <summary>Toon API-aanroep</summary>
+            <pre>{JSON.stringify({ requestId: submitted.requestId, authorizationRequest: submitted.authorizationRequest }, null, 2)}</pre>
+            <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van attesta.'}</pre>
+          </details>
+        )}
         </>
-      ) : (
-        <div className="card">
-          <h2>Aanmelden</h2>
-          {typeof wallet === 'object' && wallet.found.length > 0 ? (
-            <div className="field">
-              <label htmlFor="identity">E-mailadres</label>
-              <select id="identity" value={Math.min(chosen, wallet.found.length - 1)} onChange={(e) => setChosen(Number(e.target.value))}>
-                {wallet.found.map((found, i) => (
-                  <option key={`${found.email} ${found.issuer}`} value={i} title={found.issuer}>
-                    {found.email} ({shortDid(found.issuer)})
-                  </option>
-                ))}
-              </select>
-            </div>
-          ) : (
-            <p className="muted">
-              {wallet === 'searching'
-                ? 'Uw wallet wordt gezocht...'
-                : wallet === 'missing'
-                  ? 'Uw wallet is niet gevonden.'
-                  : 'Uw wallet bevat nog geen medewerker-ID.'}
-            </p>
-          )}
-          <button className="primary" onClick={meldAan} disabled={busy || (wallet !== 'missing' && !identity)}>
-            {busy ? 'Bezig...' : waiting && flow === 'signIn' ? 'Opnieuw aanmelden' : 'Aanmelden'}
-          </button>
-        </div>
-      )}
-
-      {waiting && submitted && (
-        <p className="muted">
-          Wacht op de wallet. <a href={submitted.authorizationRequest}>Open in wallet</a>
-        </p>
-      )}
-
-      {state?.status === 'expired' && (
-        <div className="result show warn">
-          <span className="badge">⏱</span>
-          <span className="text">
-            <strong>Verlopen</strong>
-            <span>{state.reason}</span>
-          </span>
-        </div>
-      )}
-
-      {flow === 'request' && state?.status === 'done' && !state.authorized && (
-        <div className="result show deny">
-          <span className="badge">⛔</span>
-          <span className="text">
-            <strong>Niet bevoegd om een aanvraag in te dienen</strong>
-            <span>{state.reason}</span>
-          </span>
-        </div>
-      )}
-
-      {flow === 'request' && state?.status === 'done' && state.authorized && state.result && (
-        <div className={`result show ${state.result.granted ? 'allow' : 'deny'}`}>
-          <span className="badge">{state.result.granted ? '✅' : '❌'}</span>
-          <span className="text">
-            <strong>{state.result.granted ? 'Toegekend' : 'Niet toegekend'}</strong>
-            <span>{state.result.reason}</span>
-          </span>
-        </div>
-      )}
-
-      {submitted && (
-        <details>
-          <summary>Toon API-aanroep</summary>
-          <pre>{JSON.stringify({ requestId: submitted.requestId, authorizationRequest: submitted.authorizationRequest }, null, 2)}</pre>
-          <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van attesta.'}</pre>
-        </details>
       )}
 
       {toast && (
@@ -261,6 +282,6 @@ export default function App() {
           )}
         </div>
       )}
-    </main>
+    </Shell>
   )
 }
