@@ -8,7 +8,7 @@ embedded directly in the backend.
 Presentations use selective disclosure (SD-JWT): the holder reveals only the requested claims, but the issuer's signature
 and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
 
-This is a monorepo: the backend, a TypeScript client library, a wallet core, and two examples (a demo issuer and a relying web page).
+This is a monorepo: the backend, a TypeScript client library, a wallet core, and two examples (a demo issuer and the laadpalen app, a relying application).
 
 ## Architecture
 
@@ -25,7 +25,7 @@ Key design decisions:
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string) (bool, string)`; `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every offer, and every disclosure unless they chose to always share with that application |
-| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer` and `examples/simple-gui` |
+| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer` and `examples/laadpalen/gui` |
 
 ## Repo layout
 
@@ -48,14 +48,10 @@ wallet/                    @attesta/wallet: the wallet core — a Credo holder a
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
   issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
-  simple-gui/              Vite + React relying page: asks the backend for a Diploma presentation and shows the decision
-    policies/                diploma_check.gno, the Gno policy this example requests; `make simple-gui` adds it
-                             to the backend (the backend ships with no policies)
   laadpalen/               a relying application with attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    gui/              deployment/service for examples/simple-gui
     issuer/           deployment/service for examples/issuer (https://issuer.attesta.corbencreatives.nl, and LoadBalancer on localhost:4000)
     laadpalen/        the laadpalen app: one pod with its backend and the attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach attesta at https://api.attesta.corbencreatives.nl)
     ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
@@ -63,6 +59,21 @@ k8s/
 pnpm-workspace.yaml   client-lib + wallet + wallet-desktop + examples
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
+
+## GUIs
+
+| GUI | Where | Used for |
+|---|---|---|
+| Issuer | `examples/issuer` | The organisation's staff creates a verifiable credential for an employee and gets the offer link for the employee's wallet. The pages are in Dutch. |
+| Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. attesta decides from the credential in the wallet. |
+| Wallet | `wallet-desktop` | The employee's wallet: confirms every offer, and every disclosure unless the employee chose to always share with that application. |
+
+### Issuer
+
+The menu on the left lists the credentials the issuer can create, grouped under a label; the page opened from the menu is shown in the header, under a
+breadcrumb. The welcome page has a block per menu item that explains what it does. The footer shows which issuer the credentials are issued as.
+
+![The issuer, with "Aanvragen laadpalen" chosen](docs/images/issuer-aanvragen-laadpalen.png)
 
 ## Development workflow
 
@@ -89,7 +100,6 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make simple-gui          # deploys examples/simple-gui and adds its policy diploma_check.gno to the backend's
 make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
 make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
 make k8s-issuer-apply    # deploys the demo issuer; open http://localhost:4000 for its form
@@ -117,13 +127,11 @@ Askar, the wallet's storage, ships a native library that its install script down
 
 ### Trying the whole flow
 
-With the backend running (`ATTESTA_PUBLIC_URL` set to its address, for example `http://localhost:8080`) and `examples/simple-gui/policies/diploma_check.gno`
-deployed:
+The laadpalen app and its policies are in [examples/laadpalen](examples/laadpalen/README.md):
 
 ```sh
-cd examples/issuer && pnpm start                 # prints the issuer DID; form at http://localhost:4000 (or `make k8s-issuer-apply`)
+make k8s-issuer-apply laadpalen                                # the issuer (form at http://localhost:4000) and the laadpalen app
 pnpm --filter @attesta/wallet-desktop package                  # the wallet: open the app, paste the offer link from the issuer form, confirm (needs https)
-cd examples/simple-gui && pnpm dev                # http://localhost:5173 — "Toegang vragen", then paste the page's link into the wallet and confirm
 ```
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.
