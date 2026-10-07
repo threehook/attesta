@@ -13,7 +13,7 @@ trust the issuer's DID.
 - The issuer's identity is a `did:key` created on first start and kept in its store, so the DID is stable across restarts.
 
 ```sh
-pnpm start      # ATTESTA_ISSUER_PORT (4000), ATTESTA_ISSUER_PUBLIC_URL, ATTESTA_ISSUER_DIR, ATTESTA_ISSUER_KEY
+pnpm start      # ATTESTA_ISSUER_PORT (4000), ATTESTA_ISSUER_PUBLIC_URL, ATTESTA_ISSUER_DIR, ATTESTA_ISSUER_KEY, ATTESTA_ISSUER_NAME
 pnpm test       # issues credentials to an in-process wallet
 ```
 

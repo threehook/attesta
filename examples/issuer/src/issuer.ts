@@ -17,6 +17,8 @@ export interface DiplomaClaims {
   email: string
   degree: string
   university: string
+  /** Shown to the holder with the credential; defaults to DEFAULT_DESCRIPTIONS.Diploma. */
+  description?: string
 }
 
 export type Department = 'burgerzaken' | 'secretariaat'
@@ -33,6 +35,8 @@ export interface EmployeeClaims {
   diploma: string
   /** Last day the diploma is valid, as YYYY-MM-DD. The credential expires at the end of that day (UTC). */
   diplomaValidUntil: string
+  /** Shown to the holder with the credential; defaults to DEFAULT_DESCRIPTIONS.Employee. */
+  description?: string
 }
 
 export interface IssuerOptions {
@@ -45,6 +49,8 @@ export interface IssuerOptions {
   allowInsecureHttp?: boolean
   /** Derives the issuer's signing key (and so its DID) from this text, instead of generating a random key on first start. */
   seed?: string
+  /** The logical issuer, e.g. "Gemeente Utrecht": written into every credential and the issuer metadata, for display only. Trust is by DID. */
+  issuerName?: string
 }
 
 const ISSUER_ID = 'diploma'
@@ -52,22 +58,32 @@ const DIPLOMA = 'Diploma'
 const EMPLOYEE = 'Employee'
 type CredentialType = typeof DIPLOMA | typeof EMPLOYEE
 
+/** Pre-filled in the forms and used when a request leaves the description out. */
+export const DEFAULT_DESCRIPTIONS: Record<CredentialType, string> = {
+  [DIPLOMA]: 'Diploma uitgereikt door het opleidingsinstituut',
+  [EMPLOYEE]: 'Medewerker van de organisatie met het diploma dat bevoegd maakt',
+}
+
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
+const asText = (v: unknown) => (typeof v === 'string' ? v : undefined)
+
 export function endOfDay(date: string): number {
   return Math.floor(Date.parse(`${date}T23:59:59Z`) / 1000)
 }
 
 // What a credential holds: the payload that is signed, and which of its claims the holder may disclose selectively.
-function credentialContent(type: CredentialType, metadata: Record<string, string>) {
+function credentialContent(type: CredentialType, metadata: Record<string, string>, issuerName?: string) {
+  const { description } = metadata
+  const common = { issuer_name: issuerName, description }
   if (type === EMPLOYEE) {
     const { name, email, department, organisation, diploma, diplomaValidUntil } = metadata
     return {
-      payload: { vct: EMPLOYEE, name, email, department, organisation, diploma, exp: endOfDay(diplomaValidUntil) },
-      sd: ['name', 'email', 'department', 'organisation', 'diploma'],
+      payload: { vct: EMPLOYEE, ...common, name, email, department, organisation, diploma, exp: endOfDay(diplomaValidUntil) },
+      sd: ['description', 'name', 'email', 'department', 'organisation', 'diploma'],
     }
   }
   const { name, email, degree, university } = metadata
-  return { payload: { vct: DIPLOMA, name, email, degree, university }, sd: ['name', 'email', 'degree', 'university'] }
+  return { payload: { vct: DIPLOMA, ...common, name, email, degree, university }, sd: ['description', 'name', 'email', 'degree', 'university'] }
 }
 
 const sdJwtConfiguration = (type: CredentialType) => ({
@@ -99,7 +115,7 @@ export async function startIssuer(options: IssuerOptions) {
           baseUrl: `${options.publicUrl}/oid4vci`,
           credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession }) => {
             const { type, ...claims } = issuanceSession.issuanceMetadata as unknown as { type: CredentialType } & Record<string, string>
-            const { payload, sd } = credentialContent(type, claims)
+            const { payload, sd } = credentialContent(type, claims, options.issuerName)
 
             const dids = agentContext.resolve(DidsApi)
             const [issuerDid] = await dids.getCreatedDids({ method: 'key' })
@@ -131,10 +147,11 @@ export async function startIssuer(options: IssuerOptions) {
   }
   // An issuer kept in the store by an earlier version may lack a credential type, so the supported types are written on every start.
   const credentialConfigurationsSupported = { [DIPLOMA]: sdJwtConfiguration(DIPLOMA), [EMPLOYEE]: sdJwtConfiguration(EMPLOYEE) }
+  const display = options.issuerName ? [{ name: options.issuerName }] : undefined
   if ((await agent.openid4vc.issuer.getAllIssuers()).some((issuer) => issuer.issuerId === ISSUER_ID)) {
-    await agent.openid4vc.issuer.updateIssuerMetadata({ issuerId: ISSUER_ID, credentialConfigurationsSupported })
+    await agent.openid4vc.issuer.updateIssuerMetadata({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display })
   } else {
-    await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported })
+    await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display })
   }
 
   async function createOffer(type: CredentialType, claims: DiplomaClaims | EmployeeClaims): Promise<string> {
@@ -142,7 +159,7 @@ export async function startIssuer(options: IssuerOptions) {
       issuerId: ISSUER_ID,
       credentialConfigurationIds: [type],
       preAuthorizedCodeFlowConfig: {},
-      issuanceMetadata: { type, ...claims },
+      issuanceMetadata: { type, ...claims, description: claims.description?.trim() || DEFAULT_DESCRIPTIONS[type] },
     })
     return credentialOffer
   }
@@ -151,10 +168,10 @@ export async function startIssuer(options: IssuerOptions) {
   app.use(express.json())
   app.use(express.urlencoded({ extended: false }))
   app.get('/', (_req, res) => {
-    res.type('html').send(renderForm())
+    res.type('html').send(renderForm(DEFAULT_DESCRIPTIONS[DIPLOMA], options.issuerName))
   })
   app.post('/offers', async (req, res) => {
-    const { name, email, degree, university } = req.body ?? {}
+    const { name, email, degree, university, description } = req.body ?? {}
     if (![name, email, degree, university].every((v) => typeof v === 'string' && v.trim() !== '')) {
       res.status(400).json({ error: 'name, email, degree and university are required' })
       return
@@ -163,13 +180,13 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'email is not an email address' })
       return
     }
-    respondWithOffer(req, res, await createOffer(DIPLOMA, { name, email, degree, university }))
+    respondWithOffer(req, res, await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
   })
   app.get('/employee', (_req, res) => {
-    res.type('html').send(renderEmployeeForm(DEPARTMENTS))
+    res.type('html').send(renderEmployeeForm(DEPARTMENTS, DEFAULT_DESCRIPTIONS[EMPLOYEE]))
   })
   app.post('/employee/offers', async (req, res) => {
-    const { name, email, department, organisation, diploma, diplomaValidUntil } = req.body ?? {}
+    const { name, email, department, organisation, diploma, diplomaValidUntil, description } = req.body ?? {}
     if (![name, email, department, organisation, diploma, diplomaValidUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
       res.status(400).json({ error: 'name, email, department, organisation, diploma and diplomaValidUntil are required' })
       return
@@ -190,7 +207,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    respondWithOffer(req, res, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil }))
+    respondWithOffer(req, res, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
   })
 
   const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })

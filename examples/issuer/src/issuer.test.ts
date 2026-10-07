@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { endOfDay, startIssuer, type EmployeeClaims } from './issuer.js'
+import { DEFAULT_DESCRIPTIONS, endOfDay, startIssuer, type EmployeeClaims } from './issuer.js'
 
 async function freePort(): Promise<number> {
   const server = createServer()
@@ -31,7 +31,7 @@ describe('diploma issuer and wallet', () => {
   beforeEach(async () => {
     const port = await freePort()
     baseUrl = `http://localhost:${port}`
-    issuer = await startIssuer({ port, publicUrl: baseUrl, storeKey: 'issuer-test-key', allowInsecureHttp: true })
+    issuer = await startIssuer({ port, publicUrl: baseUrl, storeKey: 'issuer-test-key', allowInsecureHttp: true, issuerName: 'Gemeente Utrecht' })
     wallet = await createWalletAgent({ storeId: 'wallet', storeKey: 'wallet-test-key', allowInsecureHttp: true })
   })
 
@@ -130,6 +130,29 @@ describe('diploma issuer and wallet', () => {
       diploma: 'laadpalen-management',
       exp: endOfDay('2031-06-30'),
     })
+  })
+
+  it('puts the logical issuer and a description in the credential', async () => {
+    const accepted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer({ ...employee, description: 'Own text' }))
+    const defaulted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+
+    expect(accepted[0].claims).toMatchObject({ issuer_name: 'Gemeente Utrecht', description: 'Own text' })
+    expect(defaulted[0].claims).toMatchObject({ description: DEFAULT_DESCRIPTIONS.Employee })
+  })
+
+  it('names the logical issuer in the issuer metadata', async () => {
+    const meta = (await (await fetch(`${baseUrl}/oid4vci/diploma/.well-known/openid-credential-issuer`)).json()) as { display?: { name?: string }[] }
+
+    expect(meta.display).toEqual([{ name: 'Gemeente Utrecht' }])
+  })
+
+  it('pre-fills the university with the logical issuer', async () => {
+    expect(await (await fetch(baseUrl)).text()).toContain('name="university" value="Gemeente Utrecht"')
+  })
+
+  it('pre-fills the description in both forms', async () => {
+    expect(await (await fetch(baseUrl)).text()).toContain(`name="description" value="${DEFAULT_DESCRIPTIONS.Diploma}"`)
+    expect(await (await fetch(`${baseUrl}/employee`)).text()).toContain(`name="description" value="${DEFAULT_DESCRIPTIONS.Employee}"`)
   })
 
   it('offers each credential type under its own name', async () => {
