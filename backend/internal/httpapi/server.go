@@ -38,7 +38,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 }
 
 // withCORS allows only the origins in the comma-separated allowlist (echoing back the request's Origin when it matches, since
-// Access-Control-Allow-Origin can't itself carry a list) — e.g. examples/simple-gui's dev server. A request from any other origin gets no
+// Access-Control-Allow-Origin can't itself carry a list) — e.g. a page's dev server. A request from any other origin gets no
 // Access-Control-Allow-Origin header, so the browser blocks it.
 func withCORS(next http.Handler, allowlist string) http.Handler {
 	allowed := make(map[string]bool)

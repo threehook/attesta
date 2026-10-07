@@ -32,13 +32,6 @@ func TestExamplePolicies(t *testing.T) {
 		}
 		return in
 	}
-	diploma := func(mutate func(*Input)) Input {
-		in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: demoIssuer, Claims: map[string]string{"email": "ada@example.com"}}
-		if mutate != nil {
-			mutate(&in)
-		}
-		return in
-	}
 
 	for _, tc := range []struct {
 		name, file string
@@ -61,10 +54,6 @@ func TestExamplePolicies(t *testing.T) {
 		{"sign in, untrusted issuer", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "Uitgever niet vertrouwd: did:key:z6Mkother"},
 		{"sign in, another credential type", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Type = "Diploma" }), false, "Onverwacht bewijs: Diploma"},
 		{"sign in, another resource", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Resource = "request_laadpaal" }), false, "Onbekende bron: request_laadpaal"},
-
-		{"diploma vault", "simple-gui/policies/diploma_check.gno", diploma(nil), true, "credential accepted for resource diploma-vault"},
-		{"diploma vault, untrusted issuer", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "issuer not trusted: did:key:z6Mkother"},
-		{"diploma vault, wrong type", "simple-gui/policies/diploma_check.gno", diploma(func(in *Input) { in.Type = "Employee" }), false, "unexpected credential type: Employee"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			source, err := os.ReadFile("../../../examples/" + tc.file)

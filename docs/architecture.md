@@ -15,7 +15,7 @@ document and the PDF ([`architecture.pdf`](architecture.pdf)) are rendered from 
 sequenceDiagram
     participant I as Issuer (examples/issuer)
     participant W as Wallet (wallet-desktop, Credo agent in wallet/)
-    participant A as Relying application (examples/simple-gui)
+    participant A as Relying application
     participant B as Backend (Go)
 
     I->>W: SD-JWT VC credential (OpenID4VCI), once
@@ -29,7 +29,7 @@ sequenceDiagram
     B-->>A: status, allow, reason, subject
 ```
 
-This is the flow of the shared backend with the desktop wallet, as `examples/simple-gui` uses it. It no longer shows the whole solution:
+This is the flow between a relying application, the shared backend and the desktop wallet. It no longer shows the whole solution:
 
 - **The laadpalen example** (`examples/laadpalen`) puts an application backend between the page and attesta, and runs attesta as a **sidecar** in the application's pod.
   The page never talks to attesta; the application asks attesta whether an employee may do something, and then does the work itself.

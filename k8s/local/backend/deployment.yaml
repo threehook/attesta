@@ -25,7 +25,7 @@ spec:
           ports:
             - containerPort: 8080
           env:
-            # Wallets on the host reach the backend through the GUI's LoadBalancer, whose nginx proxies /v1/ here.
+            # The address wallets reach the backend at.
             - name: ATTESTA_PUBLIC_URL
               value: http://localhost:4173
             - name: ATTESTA_ADMIN_TOKEN
