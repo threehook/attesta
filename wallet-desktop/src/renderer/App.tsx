@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import type { HeldCredential, Pending } from "../shared/api.js";
+import { claimLabel } from "../shared/labels.js";
 import { Consent } from "./Consent.js";
 import { CredentialList } from "./CredentialList.js";
 import { Blocks, Shell } from "./Layout.js";
@@ -42,7 +43,7 @@ export function App() {
     try {
       const result = await window.wallet.prepare(value);
       if (!result.ok) setNotice({ kind: "error", text: result.error });
-      else if (result.value.kind === "shared") setNotice({ kind: "info", text: `Gedeeld: ${result.value.claims.join(", ")} met ${result.value.verifier}.` });
+      else if (result.value.kind === "shared") setNotice({ kind: "info", text: `Gedeeld: ${result.value.claims.map(claimLabel).join(", ")} met ${result.value.verifier}.` });
       else setPending(result.value);
     } finally {
       setBusy(false);

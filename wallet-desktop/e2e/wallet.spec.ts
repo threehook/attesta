@@ -116,6 +116,7 @@ test.describe.serial("desktop wallet", () => {
     const card = window.getByRole("region", { name: "Credentials" });
     await expect(card).toContainText("Diploma");
     await expect(card).toContainText("ada@example.com");
+    await expect(card).toContainText("Graad");
     await expect(card).toContainText("Mathematics");
     await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
@@ -150,8 +151,8 @@ test.describe.serial("desktop wallet", () => {
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Informatie delen?");
     await expect(dialog).toContainText(responseUri);
-    await expect(dialog).toContainText("degree");
-    await expect(dialog).toContainText("email");
+    await expect(dialog).toContainText("Graad");
+    await expect(dialog).toContainText("E-mailadres");
     expect(answers).toHaveLength(0);
 
     await dialog.getByRole("button", { name: "Delen", exact: true }).click();
@@ -193,7 +194,7 @@ test.describe.serial("desktop wallet", () => {
     expect(answers).toHaveLength(before + 1);
 
     await openLink(diplomaRequest("s-4"));
-    await expect(window.getByRole("status")).toContainText(`Gedeeld: degree, email met redirect_uri:${responseUri}`);
+    await expect(window.getByRole("status")).toContainText(`Gedeeld: Graad, E-mailadres met redirect_uri:${responseUri}`);
     await expect(window.getByRole("dialog")).toHaveCount(0);
     expect(answers).toHaveLength(before + 2);
     expect(answers[before + 1].get("state")).toBe("s-4");
@@ -231,7 +232,7 @@ test.describe.serial("desktop wallet", () => {
     await expect.poll(() => answers.length).toBe(before + 1);
     const [first] = await popups();
     expect(first.message).toContain(application);
-    expect(first.detail).toBe("• wie het heeft uitgegeven\n• degree\n• email");
+    expect(first.detail).toBe("• wie het heeft uitgegeven\n• Graad\n• E-mailadres");
     expect(first.buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
     await expect(window.getByRole("dialog")).toHaveCount(0);
 

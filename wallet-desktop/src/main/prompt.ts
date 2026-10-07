@@ -1,4 +1,5 @@
 import type { Pending } from "../shared/api.js";
+import { claimLabel } from "../shared/labels.js";
 
 type PresentationRequest = Extract<Pending, { kind: "presentation" }>;
 
@@ -38,7 +39,7 @@ export function signInPrompt(request: PresentationRequest): Prompt {
 
 export function sharePrompt(request: PresentationRequest): Prompt {
   const who = request.application ?? request.verifier;
-  const lines = request.requested.flatMap((r) => ["wie het heeft uitgegeven", ...r.claims]);
+  const lines = request.requested.flatMap((r) => ["wie het heeft uitgegeven", ...r.claims.map(claimLabel)]);
   const canRemember = request.application !== undefined;
   return {
     message: `Informatie delen met ${who}?`,

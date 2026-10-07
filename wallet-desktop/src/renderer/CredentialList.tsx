@@ -1,4 +1,5 @@
 import type { HeldCredential } from "../shared/api.js";
+import { claimLabel } from "../shared/labels.js";
 
 // Fields that belong to the credential's mechanics, not to what it says about the holder.
 const technical = new Set(["iss", "iat", "exp", "nbf", "vct", "cnf", "_sd_alg", "status"]);
@@ -18,7 +19,7 @@ export function CredentialList({ credentials }: { credentials: HeldCredential[] 
               .filter(([name]) => !technical.has(name))
               .map(([name, value]) => (
                 <div key={name}>
-                  <dt>{name}</dt>
+                  <dt>{claimLabel(name)}</dt>
                   <dd>{String(value)}</dd>
                 </div>
               ))}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Pending } from "../shared/api.js";
+import { claimLabel } from "../shared/labels.js";
 
 interface Props {
   pending: Pending;
@@ -60,7 +61,7 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
                 <ul>
                   <li>wie het heeft uitgegeven</li>
                   {request.claims.map((claim) => (
-                    <li key={claim}>{claim}</li>
+                    <li key={claim}>{claimLabel(claim)}</li>
                   ))}
                 </ul>
               </div>

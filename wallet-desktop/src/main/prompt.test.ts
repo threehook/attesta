@@ -15,7 +15,7 @@ describe("sharePrompt", () => {
   it("names the application and lists what would be shared, once each", () => {
     const p = sharePrompt({ ...request("https://api.example"), requested: [{ type: ["A"], claims: ["email"] }, { type: ["B"], claims: ["email", "diploma"] }] });
     expect(p.message).toContain("https://api.example");
-    expect(p.detail).toBe("• wie het heeft uitgegeven\n• email\n• diploma");
+    expect(p.detail).toBe("• wie het heeft uitgegeven\n• E-mailadres\n• Diploma");
   });
 
   it("offers Altijd delen only for an application the user can trust", () => {

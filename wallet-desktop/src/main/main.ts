@@ -9,6 +9,7 @@ import { loadOrCreateStoreKey } from "./keystore.js";
 import { WalletService } from "./service.js";
 import { decision, nothingToShare, promptFor } from "./prompt.js";
 import { applicationOf, WalletSettings } from "./settings.js";
+import { claimLabel } from "../shared/labels.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const LINK_SCHEMES = ["openid-credential-offer", "openid4vp"];
@@ -98,7 +99,7 @@ function announce(shared: Shared) {
   if (!Notification.isSupported()) return;
   const who = applicationOf(shared.verifier) ?? shared.verifier;
   const sent = shared.status < 400;
-  new Notification({ title: sent ? "Gedeeld" : "Niet gedeeld", body: sent ? `${shared.claims.join(", ")} met ${who}` : `${who} heeft het antwoord niet geaccepteerd` }).show();
+  new Notification({ title: sent ? "Gedeeld" : "Niet gedeeld", body: sent ? `${shared.claims.map(claimLabel).join(", ")} met ${who}` : `${who} heeft het antwoord niet geaccepteerd` }).show();
 }
 
 // Registering as the handler for these schemes changes the user's system, so only an installed app does it.
