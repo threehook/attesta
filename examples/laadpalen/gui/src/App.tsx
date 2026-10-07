@@ -197,11 +197,11 @@ export default function App() {
               {wallet === 'searching'
                 ? 'Uw wallet wordt gezocht...'
                 : wallet === 'missing'
-                  ? 'Uw wallet is niet gevonden. Start de wallet en kom terug naar deze pagina.'
+                  ? 'Uw wallet is niet gevonden.'
                   : 'Uw wallet bevat nog geen medewerker-ID.'}
             </p>
           )}
-          <button className="primary" onClick={meldAan} disabled={busy || !identity}>
+          <button className="primary" onClick={meldAan} disabled={busy || (wallet !== 'missing' && !identity)}>
             {busy ? 'Bezig...' : waiting && flow === 'signIn' ? 'Opnieuw aanmelden' : 'Aanmelden'}
           </button>
         </div>
