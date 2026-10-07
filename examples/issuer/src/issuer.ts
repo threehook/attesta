@@ -9,7 +9,8 @@ import { agentDependencies } from '@credo-ts/node'
 import { OpenId4VciCredentialFormatProfile, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
-import { renderEmployeeForm, renderForm, renderOffer } from './page.js'
+import { LOGO_SVG } from './logo.js'
+import { renderEmployeeForm, renderForm, renderOffer, renderWelcome } from './page.js'
 
 export interface DiplomaClaims {
   name: string
@@ -61,10 +62,13 @@ type CredentialType = typeof DIPLOMA | typeof EMPLOYEE
 /** Pre-filled in the forms and used when a request leaves the description out. */
 export const DEFAULT_DESCRIPTIONS: Record<CredentialType, string> = {
   [DIPLOMA]: 'Diploma uitgereikt door het opleidingsinstituut',
-  [EMPLOYEE]: 'Medewerker van de organisatie met het diploma dat bevoegd maakt',
+  [EMPLOYEE]: 'Autorisatie om laadpalen aan te vragen voor burgers van onze gemeente',
 }
 
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
+// The form sends dd-mm-yyyy; API clients may send YYYY-MM-DD.
+const toIsoDate = (v: string) => v.trim().replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1')
+
 const asText = (v: unknown) => (typeof v === 'string' ? v : undefined)
 
 export function endOfDay(date: string): number {
@@ -167,8 +171,16 @@ export async function startIssuer(options: IssuerOptions) {
   // Registered after the OpenID4VCI routes, as the module recommends.
   app.use(express.json())
   app.use(express.urlencoded({ extended: false }))
+  const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })
+  const chrome = { issuerName: options.issuerName, did: issuerDid.did }
+  app.get('/logo.svg', (_req, res) => {
+    res.type('image/svg+xml').send(LOGO_SVG)
+  })
   app.get('/', (_req, res) => {
-    res.type('html').send(renderForm(DEFAULT_DESCRIPTIONS[DIPLOMA], options.issuerName))
+    res.type('html').send(renderWelcome(chrome))
+  })
+  app.get('/diploma', (_req, res) => {
+    res.type('html').send(renderForm(DEFAULT_DESCRIPTIONS[DIPLOMA], chrome, options.issuerName))
   })
   app.post('/offers', async (req, res) => {
     const { name, email, degree, university, description } = req.body ?? {}
@@ -180,14 +192,14 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'email is not an email address' })
       return
     }
-    respondWithOffer(req, res, await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
+    respondWithOffer(req, res, false, await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
   })
   app.get('/employee', (_req, res) => {
-    res.type('html').send(renderEmployeeForm(DEPARTMENTS, DEFAULT_DESCRIPTIONS[EMPLOYEE]))
+    res.type('html').send(renderEmployeeForm(DEPARTMENTS, DEFAULT_DESCRIPTIONS[EMPLOYEE], chrome))
   })
   app.post('/employee/offers', async (req, res) => {
-    const { name, email, department, organisation, diploma, diplomaValidUntil, description } = req.body ?? {}
-    if (![name, email, department, organisation, diploma, diplomaValidUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
+    const { name, email, department, organisation, diploma, diplomaValidUntil: validUntil, description } = req.body ?? {}
+    if (![name, email, department, organisation, diploma, validUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
       res.status(400).json({ error: 'name, email, department, organisation, diploma and diplomaValidUntil are required' })
       return
     }
@@ -199,24 +211,23 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: `department must be one of ${DEPARTMENTS.join(', ')}` })
       return
     }
+    const diplomaValidUntil = toIsoDate(validUntil)
     if (!/^\d{4}-\d{2}-\d{2}$/.test(diplomaValidUntil) || Number.isNaN(endOfDay(diplomaValidUntil))) {
-      res.status(400).json({ error: 'diplomaValidUntil must be a date, YYYY-MM-DD' })
+      res.status(400).json({ error: 'diplomaValidUntil must be a date, dd-mm-yyyy or YYYY-MM-DD' })
       return
     }
     if (endOfDay(diplomaValidUntil) * 1000 <= Date.now()) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    respondWithOffer(req, res, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
+    respondWithOffer(req, res, true, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
   })
 
-  const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })
-
-  function respondWithOffer(req: express.Request, res: express.Response, offerUri: string) {
+  function respondWithOffer(req: express.Request, res: express.Response, employee: boolean, offerUri: string) {
     if (req.accepts(['json', 'html']) === 'json') {
       res.json({ offerUri })
     } else {
-      res.type('html').send(renderOffer(offerUri))
+      res.type('html').send(renderOffer(offerUri, chrome, employee))
     }
   }
 
