@@ -33,6 +33,13 @@ spec:
                 secretKeyRef:
                   name: attesta-backend
                   key: admin-token
+            # Authorization Decision Log: one record per decision, to stdout (the durable trail) and over OTLP to Alloy in the observability namespace.
+            - name: ATTESTA_ADL_OUTPUT
+              value: "stdout,otlp"
+            - name: ATTESTA_ADL_OTLP_ENDPOINT
+              value: alloy.observability.svc.cluster.local:4317
+            - name: ATTESTA_ADL_OTLP_INSECURE
+              value: "true"
             # The backend loads every *.gno file here and reloads it when the ConfigMap changes: no restart (make k8s-policies).
             - name: ATTESTA_POLICIES_DIR
               value: /policies

@@ -62,6 +62,15 @@ spec:
                 secretKeyRef:
                   name: laadpalen-attesta
                   key: admin-token
+            # Authorization Decision Log: one record per decision, to stdout (the durable trail) and over OTLP to Alloy in the observability namespace.
+            - name: ATTESTA_ADL_OUTPUT
+              value: "stdout,otlp"
+            - name: ATTESTA_ADL_OTLP_ENDPOINT
+              value: alloy.observability.svc.cluster.local:4317
+            - name: ATTESTA_ADL_OTLP_INSECURE
+              value: "true"
+            - name: ATTESTA_ADL_RESOURCE
+              value: "application=laadpalen"
             # This app's policies; the sidecar reloads them when the ConfigMap changes: no restart (make laadpalen-policies).
             - name: ATTESTA_POLICIES_DIR
               value: /policies
