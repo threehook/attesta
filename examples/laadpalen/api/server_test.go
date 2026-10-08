@@ -29,11 +29,11 @@ type fakeAttesta struct {
 
 type startedWith struct {
 	resource, policyID, credentialType string
-	claims                             []string
+	claims, userRoles                  []string
 }
 
-func (f *fakeAttesta) start(_ context.Context, resource, policyID, credentialType string, claims []string) (authorizationRequest, error) {
-	f.started = append(f.started, startedWith{resource, policyID, credentialType, claims})
+func (f *fakeAttesta) start(_ context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error) {
+	f.started = append(f.started, startedWith{resource, policyID, credentialType, claims, userRoles})
 	if f.startErr != nil {
 		return authorizationRequest{}, f.startErr
 	}
@@ -381,5 +381,41 @@ func TestOldSubmissionsAreForgotten(t *testing.T) {
 func TestHealthz(t *testing.T) {
 	if rec := call(newTestServer(&fakeAttesta{}), "GET", "/healthz", ""); rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestSubmitSendsTheEmployeesRoles(t *testing.T) {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	s.userRoles = parseUserRoles("Jerry@Example.com=laadpalen-aanvrager;tom@example.com=reader")
+	c := signedIn(t, s, f)
+
+	withCookies(s, "POST", "/api/request-laadpaal", freeAddress, []*http.Cookie{c}, nil)
+
+	if g := f.started[0]; len(g.userRoles) != 0 {
+		t.Errorf("the sign-in sent roles %v", g.userRoles)
+	}
+	if g := f.started[1]; strings.Join(g.userRoles, ",") != "laadpalen-aanvrager" {
+		t.Errorf("the request sent roles %v, want laadpalen-aanvrager", g.userRoles)
+	}
+}
+
+func TestSubmitSendsNoRolesForAnEmployeeWithoutAny(t *testing.T) {
+	f := authorizedAttesta()
+	s := newTestServer(f)
+	s.userRoles = parseUserRoles("tom@example.com=laadpalen-aanvrager")
+	c := signedIn(t, s, f)
+
+	withCookies(s, "POST", "/api/request-laadpaal", freeAddress, []*http.Cookie{c}, nil)
+
+	if g := f.started[1]; len(g.userRoles) != 0 {
+		t.Errorf("the request sent roles %v, want none", g.userRoles)
+	}
+}
+
+func TestParseUserRoles(t *testing.T) {
+	got := parseUserRoles(" Ada@Example.com = a, b ;bob@example.com=;;=x;broken")
+	if len(got) != 1 || strings.Join(got["ada@example.com"], ",") != "a,b" {
+		t.Errorf("parseUserRoles = %v", got)
 	}
 }

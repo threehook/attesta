@@ -12,7 +12,9 @@ import (
 
 func TestAttestaClientStartsARequest(t *testing.T) {
 	var gotBody map[string]any
+	var gotRoles string
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotRoles = r.Header.Get("Att-User-Roles")
 		if r.Method != "POST" || r.URL.Path != "/v1/authorize/requests" {
 			t.Errorf("sidecar got %s %s", r.Method, r.URL.Path)
 		}
@@ -21,13 +23,16 @@ func TestAttestaClientStartsARequest(t *testing.T) {
 	}))
 	defer sidecar.Close()
 
-	got, err := newAttestaClient(sidecar.URL).start(context.Background(), "res", "pol", "Type", []string{"department", "diploma"})
+	got, err := newAttestaClient(sidecar.URL).start(context.Background(), "res", "pol", "Type", []string{"department", "diploma"}, []string{"a", "b"})
 	if err != nil || got.RequestID != "abc" || got.Link != "openid4vp://?y=2" {
 		t.Fatalf("start = %+v, %v", got, err)
 	}
 	if gotBody["resource"] != "res" || gotBody["policyId"] != "pol" || gotBody["credentialType"] != "Type" ||
 		strings.Join(toStrings(gotBody["claims"]), ",") != "department,diploma" {
 		t.Errorf("sidecar got body %v", gotBody)
+	}
+	if gotRoles != "a,b" {
+		t.Errorf("sidecar got Att-User-Roles %q, want a,b", gotRoles)
 	}
 }
 
@@ -42,13 +47,13 @@ func TestAttestaClientStartFailures(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			sidecar := httptest.NewServer(handler)
 			defer sidecar.Close()
-			if _, err := newAttestaClient(sidecar.URL).start(context.Background(), "r", "p", "t", nil); err == nil {
+			if _, err := newAttestaClient(sidecar.URL).start(context.Background(), "r", "p", "t", nil, nil); err == nil {
 				t.Error("want an error")
 			}
 		})
 	}
 
-	if _, err := newAttestaClient("http://127.0.0.1:1").start(context.Background(), "r", "p", "t", nil); err == nil {
+	if _, err := newAttestaClient("http://127.0.0.1:1").start(context.Background(), "r", "p", "t", nil, nil); err == nil {
 		t.Error("sidecar not running: want an error")
 	}
 }

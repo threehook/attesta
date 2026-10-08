@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -35,7 +36,7 @@ type outcome struct {
 
 // authorizer is what this app needs from attesta; attestaClient is the implementation, a client of the sidecar next to it in the pod.
 type authorizer interface {
-	start(ctx context.Context, resource, policyID, credentialType string, claims []string) (authorizationRequest, error)
+	start(ctx context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error)
 	// outcome returns the decision, and the sidecar's answer as it came, for the page's API panel.
 	outcome(ctx context.Context, id string) (outcome, json.RawMessage, error)
 }
@@ -49,7 +50,7 @@ func newAttestaClient(base string) *attestaClient {
 	return &attestaClient{base: base, http: &http.Client{Timeout: 10 * time.Second}}
 }
 
-func (c *attestaClient) start(ctx context.Context, resource, policyID, credentialType string, claims []string) (authorizationRequest, error) {
+func (c *attestaClient) start(ctx context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error) {
 	body, err := json.Marshal(map[string]any{"resource": resource, "policyId": policyID, "credentialType": credentialType, "claims": claims})
 	if err != nil {
 		return authorizationRequest{}, err
@@ -59,6 +60,9 @@ func (c *attestaClient) start(ctx context.Context, resource, policyID, credentia
 		return authorizationRequest{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if len(userRoles) > 0 {
+		req.Header.Set("Att-User-Roles", strings.Join(userRoles, ","))
+	}
 	raw, status, err := c.do(req)
 	if err != nil {
 		return authorizationRequest{}, err

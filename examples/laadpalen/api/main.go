@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -31,6 +32,8 @@ func run() error {
 		app.application = public.Scheme + "://" + public.Host
 	}
 
+	app.userRoles = parseUserRoles(os.Getenv("LAADPALEN_USER_ROLES"))
+
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           app.routes(),
@@ -38,6 +41,24 @@ func run() error {
 	}
 	logger.Info("listening", "addr", addr, "attesta", attestaURL)
 	return srv.ListenAndServe()
+}
+
+// parseUserRoles reads "ada@example.com=role1,role2;bob@example.com=role1" into roles by lower-cased email.
+func parseUserRoles(value string) map[string][]string {
+	out := map[string][]string{}
+	for _, entry := range strings.Split(value, ";") {
+		email, list, ok := strings.Cut(entry, "=")
+		email = strings.ToLower(strings.TrimSpace(email))
+		if !ok || email == "" {
+			continue
+		}
+		for _, role := range strings.Split(list, ",") {
+			if role = strings.TrimSpace(role); role != "" {
+				out[email] = append(out[email], role)
+			}
+		}
+	}
+	return out
 }
 
 func getenv(key, fallback string) string {
