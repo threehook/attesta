@@ -69,7 +69,7 @@ The demo employees (issue each an employee credential at http://localhost:4000/e
 |---|---|---|---|---|
 | Jerry Smith | jsmith@vlierdam.nl | Burgerzaken | `laadpalen-aanvrager` | allowed |
 | Tom de Vries | tdvries@vlierdam.nl | Burgerzaken | none | refused, "Niet geautoriseerd vanwege rol" |
-| Sanne Bakker | sbakker@vlierdam.nl | Secretariaat | `laadpalen-aanvrager` | refused, "Niet geautoriseerd vanwege afdeling" |
+| Sanne Bakker | sbakker@vlierdam.nl | Secretariaat | none | refused, "Niet geautoriseerd vanwege afdeling" |
 
 ## Policies
 
