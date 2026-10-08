@@ -21,6 +21,8 @@ type Input struct {
 	Issuer   string
 	// Claims are the disclosed claims the policy may base its decision on, by name. The values are strings; the caller encodes anything else.
 	Claims map[string]string
+	// UserRoles are asserted by the calling application, not verified by attesta; empty when it sent none.
+	UserRoles []string
 }
 
 // Result is a policy's allow/deny decision and the human-readable reason for it.
@@ -35,7 +37,8 @@ type Evaluator interface {
 	// before it's stored.
 	Validate(source string) error
 	// Evaluate loads source as a Gno package and calls its exported
-	// Authorize(resource, credType, issuer string, claims map[string]string) (bool, string) function.
+	// Authorize(resource, credType, issuer string, claims map[string]string) (bool, string) function, or, when source defines it,
+	// AuthorizeWithUserRoles(resource, credType, issuer string, claims map[string]string, roles []string) (bool, string).
 	Evaluate(source string, in Input) (Result, error)
 }
 
@@ -91,6 +94,9 @@ func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 		m.RunFiles(file)
 
 		expr := fmt.Sprintf("Authorize(%q, %q, %q, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims))
+		if definesFunc(file, "AuthorizeWithUserRoles") {
+			expr = fmt.Sprintf("AuthorizeWithUserRoles(%q, %q, %q, %s, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims), userRolesLiteral(in.UserRoles))
+		}
 		ex, err := m.ParseExpr(expr)
 		if err != nil {
 			return fmt.Errorf("parse call expression: %w", err)
@@ -145,6 +151,25 @@ func parseFile(m *gno.Machine, source string) (*gno.FileNode, error) {
 		return nil, fmt.Errorf("parse policy source: %w", err)
 	}
 	return file, nil
+}
+
+// definesFunc reports whether file declares the package-level function name.
+func definesFunc(file *gno.FileNode, name string) bool {
+	for _, d := range file.Decls {
+		if fd, ok := d.(*gno.FuncDecl); ok && !fd.IsMethod && string(fd.Name) == name {
+			return true
+		}
+	}
+	return false
+}
+
+// userRolesLiteral renders roles as a Gno []string literal; never nil, so a policy can range over it.
+func userRolesLiteral(roles []string) string {
+	parts := make([]string, len(roles))
+	for i, r := range roles {
+		parts[i] = fmt.Sprintf("%q", r)
+	}
+	return "[]string{" + strings.Join(parts, ", ") + "}"
 }
 
 // claimsLiteral renders claims as a Gno map literal, with sorted keys so the call is the same every time. %q yields valid Gno string literals.

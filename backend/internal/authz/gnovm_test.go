@@ -149,3 +149,48 @@ func TestClaimsLiteralIsStable(t *testing.T) {
 		t.Errorf("claimsLiteral(nil) = %s, want %s", got, want)
 	}
 }
+
+const userRolesPolicy = `package policy
+
+func AuthorizeWithUserRoles(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (bool, string) {
+	for _, r := range userRoles {
+		if r == "admin" {
+			return true, "admin"
+		}
+	}
+	return false, "no admin role"
+}
+`
+
+func TestGnoVMUserRoles(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatalf("NewGnoVM: %v", err)
+	}
+	if err := vm.Validate(userRolesPolicy); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	for _, tt := range []struct {
+		roles []string
+		want  bool
+	}{{[]string{"user", "admin"}, true}, {[]string{"user"}, false}, {nil, false}} {
+		result, err := vm.Evaluate(userRolesPolicy, Input{Resource: "r", Type: "t", Issuer: "i", UserRoles: tt.roles})
+		if err != nil {
+			t.Fatalf("Evaluate %v: %v", tt.roles, err)
+		}
+		if result.Allow != tt.want {
+			t.Errorf("roles %v: allow = %v (%s), want %v", tt.roles, result.Allow, result.Reason, tt.want)
+		}
+	}
+}
+
+func TestGnoVMOldPolicyIgnoresUserRoles(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatalf("NewGnoVM: %v", err)
+	}
+	result, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university", UserRoles: []string{"admin"}})
+	if err != nil || !result.Allow {
+		t.Fatalf("old Authorize policy: allow=%v err=%v", result.Allow, err)
+	}
+}
