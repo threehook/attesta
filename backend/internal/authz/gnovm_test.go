@@ -194,3 +194,49 @@ func TestGnoVMOldPolicyIgnoresUserRoles(t *testing.T) {
 		t.Fatalf("old Authorize policy: allow=%v err=%v", result.Allow, err)
 	}
 }
+
+const claimsAndUserRolesPolicy = `package policy
+
+func AuthorizeWithUserRoles(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (bool, string) {
+	if claims["department"] != "burgerzaken" {
+		return false, "wrong department"
+	}
+	for _, r := range userRoles {
+		if r == "planner" {
+			return true, "ok"
+		}
+	}
+	return false, "no planner role"
+}
+`
+
+func TestGnoVMPolicyUsesClaimsAndUserRoles(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatalf("NewGnoVM: %v", err)
+	}
+	tests := []struct {
+		name       string
+		department string
+		userRoles  []string
+		want       bool
+		reason     string
+	}{
+		{"claim and role", "burgerzaken", []string{"planner"}, true, "ok"},
+		{"claim, other role", "burgerzaken", []string{"reader"}, false, "no planner role"},
+		{"claim, no roles", "burgerzaken", nil, false, "no planner role"},
+		{"role, other claim", "financien", []string{"planner"}, false, "wrong department"},
+		{"neither", "financien", nil, false, "wrong department"},
+	}
+	for _, tt := range tests {
+		result, err := vm.Evaluate(claimsAndUserRolesPolicy, Input{
+			Resource: "r", Type: "Employee", Issuer: "i", Claims: map[string]string{"department": tt.department}, UserRoles: tt.userRoles,
+		})
+		if err != nil {
+			t.Fatalf("%s: %v", tt.name, err)
+		}
+		if result.Allow != tt.want || result.Reason != tt.reason {
+			t.Errorf("%s: got allow=%v reason=%q, want allow=%v reason=%q", tt.name, result.Allow, result.Reason, tt.want, tt.reason)
+		}
+	}
+}
