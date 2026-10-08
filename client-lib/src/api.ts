@@ -35,8 +35,10 @@ export class ApiClient {
   ) {}
 
   // createAuthorizationRequest starts an authorization. Hand the returned link to the user's wallet, then wait for the decision.
-  async createAuthorizationRequest(req: AuthorizationRequest): Promise<AuthorizationRequestResponse> {
-    return this.requestJSON<AuthorizationRequestResponse>("POST", "/v1/authorize/requests", req);
+  // userRoles are the user's roles as the calling application knows them; attesta cannot verify them, so call this from a server, not a browser.
+  async createAuthorizationRequest(req: AuthorizationRequest, options: { userRoles?: string[] } = {}): Promise<AuthorizationRequestResponse> {
+    const headers: Record<string, string> = options.userRoles?.length ? { "Att-User-Roles": options.userRoles.join(",") } : {};
+    return this.requestJSON<AuthorizationRequestResponse>("POST", "/v1/authorize/requests", req, headers);
   }
 
   async getAuthorizationOutcome(requestId: string): Promise<AuthorizationOutcome> {

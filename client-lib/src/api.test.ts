@@ -33,6 +33,18 @@ describe("ApiClient.createAuthorizationRequest", () => {
     );
   });
 
+  it("sends the roles in the Att-User-Roles header", async () => {
+    const fetchImpl = fakeFetch(200, { requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
+    const client = new ApiClient("http://localhost:8080", fetchImpl);
+
+    await client.createAuthorizationRequest({ resource: "v", policyId: "p1", credentialType: "Diploma" }, { userRoles: ["admin", "editor"] });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/v1/authorize/requests",
+      expect.objectContaining({ headers: expect.objectContaining({ "Att-User-Roles": "admin,editor" }) }),
+    );
+  });
+
   it("throws an ApiError carrying the backend's message", async () => {
     const client = new ApiClient("http://localhost:8080", fakeFetch(404, { error: 'unknown policy "p1"' }));
 
