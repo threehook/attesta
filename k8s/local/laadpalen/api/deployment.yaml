@@ -31,6 +31,9 @@ spec:
             # The origin wallets know this app by: the page asks the wallet about it. The same address the sidecar below is reached at.
             - name: ATTESTA_PUBLIC_URL
               value: https://api.attesta.corbencreatives.nl
+            # The roles this app gives employees, by email: "ada@example.com=laadpalen-aanvrager;bob@example.com=reader". Sent to attesta as Att-User-Roles.
+            - name: LAADPALEN_USER_ROLES
+              value: "jsmith@vlierdam.nl=laadpalen-aanvrager;sbakker@vlierdam.nl=laadpalen-aanvrager"
           ports:
             - containerPort: 8787
           readinessProbe:

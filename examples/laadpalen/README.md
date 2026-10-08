@@ -11,7 +11,8 @@ Who may submit is attesta's decision, made from a credential in the employee's o
 - `gui/` is the page (Vite + React), in Dutch. The employee signs in, enters an address and sees the outcome; the page hands each step to the wallet itself.
 - `policies/sign_in.gno` signs in an `Employee` credential from a trusted issuer; nothing but the identity is read.
 - `policies/request_laadpaal.gno` decides a request: an `Employee` credential from a trusted issuer, for the `burgerzaken` department and
-  a `laadpalen-management` diploma. Secretariaat employees are refused. The credential's own expiry (the diploma's last day) is checked before the policy runs.
+  a `laadpalen-management` diploma, and the role `laadpalen-aanvrager`, which this app gives an employee (`LAADPALEN_USER_ROLES`) and sends to attesta
+  in the `Att-User-Roles` header. Secretariaat employees are refused. The credential's own expiry (the diploma's last day) is checked before the policy runs.
 
 ## How it fits together
 
@@ -55,6 +56,20 @@ electric vehicle). Press "Aanmelden", then "Dien aanvraag in". The page opens th
 that has to be given it by hand.
 
 The wallet reaches attesta at http://localhost:4175 (the `laadpalen-attesta` Service, container port 8080), which is `ATTESTA_PUBLIC_URL` in `k8s/local/laadpalen/api/deployment.yaml`.
+
+## Roles
+
+The roles are the application's own: `LAADPALEN_USER_ROLES` in `k8s/local/laadpalen/api/deployment.yaml` lists them by email, as
+`ada@example.com=laadpalen-aanvrager;bob@example.com=reader`. A laadpaal request carries the signed-in employee's roles in `Att-User-Roles`; an employee
+who is not listed has none, and the policy then refuses with "Niet geautoriseerd vanwege rol". The sign-in sends no roles.
+
+The demo employees (issue each an employee credential at http://localhost:4000/employee):
+
+| Employee | Email | Department | Role | Outcome |
+|---|---|---|---|---|
+| Jerry Smith | jsmith@vlierdam.nl | Burgerzaken | `laadpalen-aanvrager` | allowed |
+| Tom de Vries | tdvries@vlierdam.nl | Burgerzaken | none | refused, "Niet geautoriseerd vanwege rol" |
+| Sanne Bakker | sbakker@vlierdam.nl | Secretariaat | `laadpalen-aanvrager` | refused, "Niet geautoriseerd vanwege afdeling" |
 
 ## Policies
 
