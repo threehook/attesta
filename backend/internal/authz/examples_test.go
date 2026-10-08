@@ -18,7 +18,8 @@ func TestExamplePolicies(t *testing.T) {
 	laadpaal := func(mutate func(*Input)) Input {
 		in := Input{
 			Resource: "request_laadpaal", Type: "Employee", Issuer: demoIssuer,
-			Claims: map[string]string{"department": "burgerzaken", "diploma": "laadpalen-management", "email": "jerry@example.com"},
+			Claims:    map[string]string{"department": "burgerzaken", "diploma": "laadpalen-management", "email": "jerry@example.com"},
+			UserRoles: []string{"laadpalen-aanvrager"},
 		}
 		if mutate != nil {
 			mutate(&in)
@@ -49,6 +50,11 @@ func TestExamplePolicies(t *testing.T) {
 		{"another credential type", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Type = "Diploma" }), false, "Onverwacht bewijs: Diploma"},
 		{"another resource", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Resource = "diploma-vault" }), false, "Onbekende bron: diploma-vault"},
 		{"department claim cannot stand in for the issuer", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Issuer = "burgerzaken" }), false, "Uitgever niet vertrouwd: burgerzaken"},
+
+		{"no roles", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.UserRoles = nil }), false, "Niet geautoriseerd vanwege rol"},
+		{"another role", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.UserRoles = []string{"reader"} }), false, "Niet geautoriseerd vanwege rol"},
+		{"role among others", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.UserRoles = []string{"reader", "laadpalen-aanvrager"} }), true, "Geautoriseerd"},
+		{"role without the right department", "laadpalen/policies/request_laadpaal.gno", laadpaal(func(in *Input) { in.Claims["department"] = "secretariaat" }), false, "Niet geautoriseerd vanwege afdeling"},
 
 		{"sign in", "laadpalen/policies/sign_in.gno", signIn(nil), true, "Aangemeld"},
 		{"sign in, untrusted issuer", "laadpalen/policies/sign_in.gno", signIn(func(in *Input) { in.Issuer = "did:key:z6Mkother" }), false, "Uitgever niet vertrouwd: did:key:z6Mkother"},
