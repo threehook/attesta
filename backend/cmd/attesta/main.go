@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"attesta/backend/internal/adl"
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/config"
 	"attesta/backend/internal/httpapi"
@@ -59,7 +62,10 @@ func run() error {
 
 	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}})
 
+	decisions := adl.New(context.Background(), adl.ConfigFromEnv(), logger)
+
 	server := &httpapi.Server{
+		Decisions:   decisions,
 		Authz:       gnoVM,
 		Policies:    policies,
 		AdminToken:  cfg.AdminToken,
@@ -68,6 +74,24 @@ func run() error {
 		CORSOrigins: cfg.CORSOrigins,
 	}
 
+	httpServer := &http.Server{Addr: cfg.Addr, Handler: server.Routes()}
+	stop, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+	serveErr := make(chan error, 1)
+	go func() { serveErr <- httpServer.ListenAndServe() }()
 	logger.Info("listening", "addr", cfg.Addr)
-	return http.ListenAndServe(cfg.Addr, server.Routes())
+
+	select {
+	case err := <-serveErr:
+		return err
+	case <-stop.Done():
+	}
+	// Records still batched for the collector are flushed before exit.
+	shutdown, done := context.WithTimeout(context.Background(), 10*time.Second)
+	defer done()
+	err = httpServer.Shutdown(shutdown)
+	if closeErr := decisions.Close(shutdown); closeErr != nil {
+		logger.Error("flushing the decision log failed", "error", closeErr)
+	}
+	return err
 }

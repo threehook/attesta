@@ -21,6 +21,8 @@ type Server struct {
 	Presenter Presenter
 	// CORSOrigins is the comma-separated list of origins allowed to call this API from a browser; see withCORS.
 	CORSOrigins string
+	// Decisions receives a record of every decision; nil records nothing.
+	Decisions DecisionLog
 }
 
 func (s *Server) Routes() http.Handler {

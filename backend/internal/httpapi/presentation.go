@@ -10,12 +10,18 @@ import (
 	"slices"
 	"strings"
 
+	"attesta/backend/internal/adl"
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/presentation"
 )
 
 // maxResponseBytes bounds a wallet's answer; an SD-JWT presentation is a few KB.
 const maxResponseBytes = 1 << 20
+
+// DecisionLog records every decision attesta takes; adl.Logger is the implementation. A nil Server.Decisions records nothing.
+type DecisionLog interface {
+	Log(ctx context.Context, d adl.Decision) error
+}
 
 // Presenter runs the OpenID4VP flow; presentation.Verifier is the implementation.
 type Presenter interface {
@@ -60,6 +66,7 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 
 	id, link, err := s.Presenter.NewRequest(presentation.Request{
 		Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType, Claims: req.Claims, UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)),
+		TraceParent: traceParent(r),
 	})
 	if err != nil {
 		s.Logger.Error("creating presentation request failed", "error", err)
@@ -95,15 +102,25 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	case err != nil:
 		s.Logger.Info("presentation rejected", "requestId", id, "error", err)
-		s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "presentation did not verify"})
+		var rejected *presentation.Rejected
+		errors.As(err, &rejected)
+		d := decisionFor(id, requestOf(rejected))
+		d.Reason, d.DecidedBy, d.Detail = reasonNotVerified, "attesta", err.Error()
+		if !s.decide(w, r, id, d, presentation.Outcome{Reason: reasonOutcomeNotVerified}) {
+			return
+		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": "the presentation did not verify"})
 		return
 	}
 
+	d := decisionFor(id, presented.Request)
+	d.SubjectID, d.Issuer, d.Claims = presented.Subject.Email, presented.Issuer, policyClaims(presented.Claims)
 	source, ok := s.Policies.Get(presented.Request.PolicyID)
 	if !ok {
-		s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "unknown policy"})
-		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", presented.Request.PolicyID))
+		d.Err = fmt.Errorf("unknown policy %q", presented.Request.PolicyID)
+		if s.decide(w, r, id, d, presentation.Outcome{Reason: "unknown policy"}) {
+			writeError(w, http.StatusNotFound, d.Err.Error())
+		}
 		return
 	}
 	decision, err := s.Authz.Evaluate(source, authz.Input{
@@ -112,19 +129,67 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
-		s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "policy evaluation failed"})
-		writeError(w, http.StatusInternalServerError, "policy evaluation failed")
+		d.Err = err
+		if s.decide(w, r, id, d, presentation.Outcome{Reason: "policy evaluation failed"}) {
+			writeError(w, http.StatusInternalServerError, "policy evaluation failed")
+		}
 		return
 	}
 
 	s.Logger.Info("authorize result", "requestId", id, "issuer", presented.Issuer, "resource", presented.Request.Resource, "allow", decision.Allow,
 		"reason", decision.Reason)
+	d.Allow, d.Reason, d.DecidedBy = decision.Allow, decision.Reason, "policy"
 	outcome := presentation.Outcome{Allow: decision.Allow, Reason: decision.Reason}
 	if decision.Allow {
 		outcome.Subject = &presented.Subject
 	}
-	s.Presenter.Complete(id, outcome)
-	writeJSON(w, http.StatusOK, struct{}{})
+	if s.decide(w, r, id, d, outcome) {
+		writeJSON(w, http.StatusOK, struct{}{})
+	}
+}
+
+// reasonNotVerified is what the decision log says when the wallet's answer did not verify; the outcome the application sees keeps its own wording.
+const (
+	reasonNotVerified        = "credential could not be verified"
+	reasonOutcomeNotVerified = "presentation did not verify"
+)
+
+func requestOf(r *presentation.Rejected) presentation.Request {
+	if r == nil {
+		return presentation.Request{}
+	}
+	return r.Request
+}
+
+// decisionFor starts the log entry for a decision on request id.
+func decisionFor(id string, req presentation.Request) adl.Decision {
+	return adl.Decision{
+		TraceParent: req.TraceParent, RequestID: id, Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType,
+		UserRoles: req.UserRoles,
+	}
+}
+
+// decide logs the decision and then records its outcome for the application. When the log entry cannot be written no decision is returned: the
+// outcome becomes a denial, the wallet gets a server error, and decide reports false so the caller does not answer again.
+func (s *Server) decide(w http.ResponseWriter, r *http.Request, id string, d adl.Decision, o presentation.Outcome) bool {
+	if s.Decisions != nil {
+		if err := s.Decisions.Log(r.Context(), d); err != nil {
+			s.Logger.Error("decision log failed", "requestId", id, "error", err)
+			s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "decision could not be logged"})
+			writeError(w, http.StatusInternalServerError, "decision could not be logged")
+			return false
+		}
+	}
+	s.Presenter.Complete(id, o)
+	return true
+}
+
+// traceParent returns the request's W3C traceparent, or "" when it is missing or malformed.
+func traceParent(r *http.Request) string {
+	if h := r.Header.Get("traceparent"); adl.ValidTraceParent(h) {
+		return h
+	}
+	return ""
 }
 
 type presentationOutcomeResponse struct {

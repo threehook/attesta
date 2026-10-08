@@ -265,3 +265,15 @@ func TestOutcome(t *testing.T) {
 		t.Errorf("unknown id: error = %v, want ErrUnknownRequest", err)
 	}
 }
+
+func TestRespondRejectionCarriesTheRequest(t *testing.T) {
+	r := loadRecorded(t)
+	req := Request{CredentialType: "Diploma", Claims: []string{"degree", "department"}, TraceParent: "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"}
+	v := newRecordedVerifier(t, r, r.Full, req)
+
+	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
+	var rejected *Rejected
+	if !errors.As(err, &rejected) || rejected.Request.TraceParent != req.TraceParent || rejected.Request.CredentialType != "Diploma" {
+		t.Errorf("error = %v, want a Rejected carrying the request", err)
+	}
+}

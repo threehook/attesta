@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"attesta/backend/internal/adl"
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/presentation"
 )
@@ -270,5 +271,128 @@ func TestUserRolesTravelFromTheRequestToThePolicy(t *testing.T) {
 	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
 	if !slices.Equal(e.evaluated.UserRoles, []string{"admin", "editor"}) {
 		t.Errorf("policy roles = %v", e.evaluated.UserRoles)
+	}
+}
+
+type fakeDecisionLog struct {
+	decisions []adl.Decision
+	err       error
+}
+
+func (f *fakeDecisionLog) Log(_ context.Context, d adl.Decision) error {
+	f.decisions = append(f.decisions, d)
+	return f.err
+}
+
+const callersTraceParent = "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"
+
+func answer(s *Server) *httptest.ResponseRecorder {
+	return postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
+}
+
+func TestTheRequestKeepsTheCallersTraceparent(t *testing.T) {
+	p := &fakePresenter{}
+	s := newPresentationServer(t, p, &fakeEvaluator{})
+
+	doRequest(s, "POST", "/v1/authorize/requests", requestBody, map[string]string{"traceparent": callersTraceParent})
+	if p.gotRequest.TraceParent != callersTraceParent {
+		t.Errorf("traceparent = %q", p.gotRequest.TraceParent)
+	}
+	doRequest(s, "POST", "/v1/authorize/requests", requestBody, map[string]string{"traceparent": "garbage"})
+	if p.gotRequest.TraceParent != "" {
+		t.Errorf("a malformed traceparent was kept: %q", p.gotRequest.TraceParent)
+	}
+}
+
+func TestEveryDecisionIsLoggedBeforeItsOutcomeIsRecorded(t *testing.T) {
+	for name, allow := range map[string]bool{"allow": true, "deny": false} {
+		t.Run(name, func(t *testing.T) {
+			pr := presented()
+			pr.Request.TraceParent, pr.Request.UserRoles = callersTraceParent, []string{"laadpalen-aanvrager"}
+			p := &fakePresenter{presented: pr}
+			log := &fakeDecisionLog{}
+			s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Allow: allow, Reason: "r"}})
+			s.Decisions = log
+
+			if rec := answer(s); rec.Code != http.StatusOK {
+				t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+			}
+			if len(log.decisions) != 1 {
+				t.Fatalf("logged %d decisions, want 1", len(log.decisions))
+			}
+			d := log.decisions[0]
+			if d.Allow != allow || d.Reason != "r" || d.DecidedBy != "policy" || d.TraceParent != callersTraceParent || d.RequestID != "req-1" ||
+				d.SubjectID != pr.Subject.Email || d.Issuer != pr.Issuer || len(d.UserRoles) != 1 || d.Err != nil {
+				t.Errorf("decision = %+v", d)
+			}
+			if p.completed == nil || p.completed.Allow != allow {
+				t.Errorf("outcome = %+v", p.completed)
+			}
+		})
+	}
+}
+
+func TestAnAnswerThatDoesNotVerifyIsLogged(t *testing.T) {
+	req := presentation.Request{Resource: "vault", PolicyID: "p1", CredentialType: "Diploma", TraceParent: callersTraceParent}
+	p := &fakePresenter{respondErr: &presentation.Rejected{Request: req, Err: errors.New("invalid presentation: state does not match the request")}}
+	log := &fakeDecisionLog{}
+	s := newPresentationServer(t, p, &fakeEvaluator{})
+	s.Decisions = log
+
+	if rec := answer(s); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(log.decisions) != 1 {
+		t.Fatalf("logged %d decisions, want 1", len(log.decisions))
+	}
+	d := log.decisions[0]
+	if d.Allow || d.DecidedBy != "attesta" || d.Reason != "credential could not be verified" || d.Detail == "" || d.Resource != "vault" ||
+		d.TraceParent != callersTraceParent || d.SubjectID != "" || d.Err != nil {
+		t.Errorf("decision = %+v", d)
+	}
+	if p.completed == nil || p.completed.Allow || p.completed.Reason != "presentation did not verify" {
+		t.Errorf("outcome = %+v", p.completed)
+	}
+}
+
+func TestAnAnswerToAnUnknownOrAnsweredRequestIsNotADecision(t *testing.T) {
+	for _, err := range []error{presentation.ErrUnknownRequest, presentation.ErrAlreadyAnswered} {
+		log := &fakeDecisionLog{}
+		s := newPresentationServer(t, &fakePresenter{respondErr: err}, &fakeEvaluator{})
+		s.Decisions = log
+		answer(s)
+		if len(log.decisions) != 0 {
+			t.Errorf("%v: logged %+v", err, log.decisions)
+		}
+	}
+}
+
+func TestAFailedEvaluationIsLoggedAsAnError(t *testing.T) {
+	p := &fakePresenter{presented: presented()}
+	log := &fakeDecisionLog{}
+	s := newPresentationServer(t, p, &fakeEvaluator{err: errors.New("gno policy error")})
+	s.Decisions = log
+
+	if rec := answer(s); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(log.decisions) != 1 || log.decisions[0].Err == nil || log.decisions[0].SubjectID == "" {
+		t.Errorf("decisions = %+v", log.decisions)
+	}
+	if p.completed == nil || p.completed.Allow {
+		t.Errorf("outcome = %+v", p.completed)
+	}
+}
+
+func TestNoDecisionIsReturnedWhenItCannotBeLogged(t *testing.T) {
+	p := &fakePresenter{presented: presented()}
+	s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Allow: true, Reason: "ok"}})
+	s.Decisions = &fakeDecisionLog{err: errors.New("disk full")}
+
+	if rec := answer(s); rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if p.completed == nil || p.completed.Allow || p.completed.Reason != "decision could not be logged" || p.completed.Subject != nil {
+		t.Errorf("outcome = %+v, want a denial", p.completed)
 	}
 }

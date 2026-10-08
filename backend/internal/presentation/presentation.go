@@ -36,6 +36,8 @@ type Request struct {
 	Claims []string
 	// UserRoles are the roles the calling application asserted. They are not part of the presentation and attesta cannot verify them.
 	UserRoles []string
+	// TraceParent is the W3C traceparent the application sent with the request; the decision log keeps its trace.
+	TraceParent string
 }
 
 // asked lists every claim name a request asks for: its Claims and the identifying email, each once.
@@ -153,6 +155,15 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 // ErrInvalidPresentation wraps every reason a wallet's answer is not acceptable.
 var ErrInvalidPresentation = errors.New("invalid presentation")
 
+// Rejected is the error Respond returns for an answer that did not verify; it carries the request the answer belonged to.
+type Rejected struct {
+	Request Request
+	Err     error
+}
+
+func (r *Rejected) Error() string { return r.Err.Error() }
+func (r *Rejected) Unwrap() error { return r.Err }
+
 // Respond verifies the wallet's direct_post answer (`vp_token` and `state` form fields) to request id. The request is consumed whether or not the
 // answer verifies.
 func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Presented, error) {
@@ -161,7 +172,7 @@ func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Pres
 		return nil, err
 	}
 	invalid := func(format string, args ...any) error {
-		return fmt.Errorf("%w: %s", ErrInvalidPresentation, fmt.Sprintf(format, args...))
+		return &Rejected{Request: sess.request, Err: fmt.Errorf("%w: %s", ErrInvalidPresentation, fmt.Sprintf(format, args...))}
 	}
 
 	if form.Get("state") != sess.state {
