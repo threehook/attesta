@@ -19,7 +19,7 @@ const traceParent = "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"
 
 func testLogger(out io.Writer) *Logger {
 	return &Logger{
-		log: slog.New(slog.NewTextHandler(io.Discard, nil)), out: out, resource: map[string]string{"service.name": "attesta", "instance_id": "pod-1"},
+		log: slog.New(slog.NewTextHandler(io.Discard, nil)), out: out, resource: map[string]string{"service.name": "attesta-adl", "instance_id": "pod-1"},
 		now: func() time.Time { return time.UnixMilli(1757240058042) },
 	}
 }
@@ -76,7 +76,7 @@ func TestRecordIsALevel1RecordWithTheCallersTrace(t *testing.T) {
 	if attrs := at(t, rec, "attributes").(map[string]any); len(attrs) != 0 {
 		t.Errorf("attributes = %v, want none at Level 1", attrs)
 	}
-	if at(t, rec, "resource", "service.name") != "attesta" || at(t, rec, "resource", "instance_id") != "pod-1" {
+	if at(t, rec, "resource", "service.name") != "attesta-adl" || at(t, rec, "resource", "instance_id") != "pod-1" {
 		t.Errorf("resource = %v", rec["resource"])
 	}
 	if at(t, rec, "body", "adl.core.request", "subject", "id") != "jsmith@vlierdam.nl" ||
@@ -212,7 +212,7 @@ func TestOTLPCarriesTheRecordWithNativeTraceIDs(t *testing.T) {
 	}
 	found := false
 	for _, kv := range r.Resource().Attributes() {
-		if string(kv.Key) == "service.name" && kv.Value.AsString() == "attesta" {
+		if string(kv.Key) == "service.name" && kv.Value.AsString() == "attesta-adl" {
 			found = true
 		}
 	}
@@ -230,6 +230,9 @@ func TestConfig(t *testing.T) {
 	}
 	if o := (Config{Output: "stdout, otlp"}).outputs(); !o[OutputStdout] || !o[OutputOTLP] {
 		t.Errorf("outputs = %v", o)
+	}
+	if r := (Config{}).effectiveResource(); r["service.name"] != "attesta-adl" {
+		t.Errorf("default service.name = %q, want attesta-adl", r["service.name"])
 	}
 	if r := (Config{Resource: map[string]string{"service.name": "x"}}).effectiveResource(); r["service.name"] != "x" || r["instance_id"] == "" {
 		t.Errorf("effectiveResource = %v", r)

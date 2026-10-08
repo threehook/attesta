@@ -19,7 +19,7 @@ type Config struct {
 	OTLPEndpoint string
 	// OTLPInsecure sends without TLS, for a collector inside the cluster.
 	OTLPInsecure bool
-	// Resource identifies the producer of the records. service.name defaults to attesta and instance_id to the host name.
+	// Resource identifies the producer of the records. service.name defaults to attesta-adl, so the decisions are a stream of their own, and instance_id to the host name.
 	Resource map[string]string
 }
 
@@ -66,7 +66,7 @@ func (c Config) effectiveResource() map[string]string {
 		resource[k] = v
 	}
 	if _, ok := resource["service.name"]; !ok {
-		resource["service.name"] = "attesta"
+		resource["service.name"] = "attesta-adl"
 	}
 	if _, ok := resource["instance_id"]; !ok {
 		host, err := os.Hostname()
