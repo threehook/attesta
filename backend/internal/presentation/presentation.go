@@ -34,6 +34,8 @@ type Request struct {
 	// Claims are the top-level claim names the holder is asked to disclose, besides the email that identifies them. The type and issuer are always
 	// established. Respond requires every one of them to be disclosed.
 	Claims []string
+	// UserRoles are the roles the calling application asserted. They are not part of the presentation and attesta cannot verify them.
+	UserRoles []string
 }
 
 // asked lists every claim name a request asks for: its Claims and the identifying email, each once.

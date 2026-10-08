@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -226,4 +228,47 @@ func sameOutcome(a, b presentation.Outcome) bool {
 		return false
 	}
 	return a.Subject == nil || *a.Subject == *b.Subject
+}
+
+func TestParseRoles(t *testing.T) {
+	long := strings.Repeat("x", maxUserRoleBytes+1)
+	tests := []struct {
+		name, header string
+		want         []string
+	}{
+		{"missing", "", []string{}},
+		{"one", "admin", []string{"admin"}},
+		{"trimmed and distinct", " admin , editor,admin,, ", []string{"admin", "editor"}},
+		{"too long", "admin," + long, []string{"admin"}},
+	}
+	for _, tt := range tests {
+		got := parseUserRoles(tt.header)
+		if got == nil || !slices.Equal(got, tt.want) {
+			t.Errorf("%s: parseUserRoles(%q) = %#v, want %#v", tt.name, tt.header, got, tt.want)
+		}
+	}
+	many := make([]string, maxUserRoles+5)
+	for i := range many {
+		many[i] = fmt.Sprintf("r%d", i)
+	}
+	if got := parseUserRoles(strings.Join(many, ",")); len(got) != maxUserRoles {
+		t.Errorf("got %d roles, want the first %d", len(got), maxUserRoles)
+	}
+}
+
+func TestUserRolesTravelFromTheRequestToThePolicy(t *testing.T) {
+	p := &fakePresenter{presented: presented()}
+	e := &fakeEvaluator{result: authz.Result{Allow: true}}
+	s := newPresentationServer(t, p, e)
+
+	doRequest(s, "POST", "/v1/authorize/requests", requestBody, map[string]string{"Att-User-Roles": "admin, editor"})
+	if !slices.Equal(p.gotRequest.UserRoles, []string{"admin", "editor"}) {
+		t.Fatalf("request roles = %v", p.gotRequest.UserRoles)
+	}
+
+	p.presented.Request.UserRoles = p.gotRequest.UserRoles
+	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
+	if !slices.Equal(e.evaluated.UserRoles, []string{"admin", "editor"}) {
+		t.Errorf("policy roles = %v", e.evaluated.UserRoles)
+	}
 }

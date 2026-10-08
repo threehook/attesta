@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"strings"
 
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/presentation"
@@ -57,7 +59,7 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	id, link, err := s.Presenter.NewRequest(presentation.Request{
-		Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType, Claims: req.Claims,
+		Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType, Claims: req.Claims, UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)),
 	})
 	if err != nil {
 		s.Logger.Error("creating presentation request failed", "error", err)
@@ -106,6 +108,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	}
 	decision, err := s.Authz.Evaluate(source, authz.Input{
 		Resource: presented.Request.Resource, Type: presented.Type, Issuer: presented.Issuer, Claims: policyClaims(presented.Claims),
+		UserRoles: presented.Request.UserRoles,
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
@@ -157,6 +160,31 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, Email: outcome.Subject.Email}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// userRolesHeader carries the roles the calling application asserts for the user, comma-separated.
+const userRolesHeader = "Att-User-Roles"
+
+const (
+	maxUserRoles     = 50
+	maxUserRoleBytes = 100
+)
+
+// parseUserRoles splits the header value into trimmed, distinct roles; empty or oversized entries and entries beyond maxUserRoles are dropped.
+// It returns an empty, non-nil slice when there are none.
+func parseUserRoles(value string) []string {
+	roles := []string{}
+	for _, role := range strings.Split(value, ",") {
+		role = strings.TrimSpace(role)
+		if role == "" || len(role) > maxUserRoleBytes || slices.Contains(roles, role) {
+			continue
+		}
+		if len(roles) == maxUserRoles {
+			break
+		}
+		roles = append(roles, role)
+	}
+	return roles
 }
 
 // policyClaims gives a policy the claims as strings: text as it is, anything else (numbers, booleans, lists, objects) as its JSON.
