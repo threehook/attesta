@@ -143,7 +143,7 @@ func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("sign-in started", "requestId", started.RequestID)
+	s.logger.Info("sign-in started", "requestId", started.RequestID, "traceId", started.TraceID)
 	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
 }
 
@@ -186,7 +186,7 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("submission started", "requestId", started.RequestID, "email", sess.subject.Email, "postcode", postcode, "houseNumber", houseNumber)
+	s.logger.Info("submission started", "requestId", started.RequestID, "traceId", started.TraceID, "email", sess.subject.Email, "postcode", postcode, "houseNumber", houseNumber)
 	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
 }
 

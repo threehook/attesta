@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +21,8 @@ type authorizationRequest struct {
 	RequestID string `json:"requestId"`
 	// Link is the openid4vp:// link the employee opens in their wallet.
 	Link string `json:"authorizationRequest"`
+	// TraceID is the trace this app started for the request; attesta's decision log carries it, and so does this app's own log.
+	TraceID string `json:"-"`
 }
 
 type subject struct {
@@ -60,6 +64,8 @@ func (c *attestaClient) start(ctx context.Context, resource, policyID, credentia
 		return authorizationRequest{}, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	traceID, spanID := randomHex(16), randomHex(8)
+	req.Header.Set("traceparent", "00-"+traceID+"-"+spanID+"-01")
 	if len(userRoles) > 0 {
 		req.Header.Set("Att-User-Roles", strings.Join(userRoles, ","))
 	}
@@ -74,7 +80,15 @@ func (c *attestaClient) start(ctx context.Context, resource, policyID, credentia
 	if err := json.Unmarshal(raw, &out); err != nil || out.RequestID == "" || out.Link == "" {
 		return authorizationRequest{}, fmt.Errorf("attesta sent an unusable answer: %s", raw)
 	}
+	out.TraceID = traceID
 	return out, nil
+}
+
+// randomHex returns n random bytes as lowercase hex.
+func randomHex(n int) string {
+	b := make([]byte, n)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 func (c *attestaClient) outcome(ctx context.Context, id string) (outcome, json.RawMessage, error) {

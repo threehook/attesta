@@ -12,9 +12,10 @@ import (
 
 func TestAttestaClientStartsARequest(t *testing.T) {
 	var gotBody map[string]any
-	var gotRoles string
+	var gotRoles, gotTraceparent string
 	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotRoles = r.Header.Get("Att-User-Roles")
+		gotTraceparent = r.Header.Get("traceparent")
 		if r.Method != "POST" || r.URL.Path != "/v1/authorize/requests" {
 			t.Errorf("sidecar got %s %s", r.Method, r.URL.Path)
 		}
@@ -30,6 +31,9 @@ func TestAttestaClientStartsARequest(t *testing.T) {
 	if gotBody["resource"] != "res" || gotBody["policyId"] != "pol" || gotBody["credentialType"] != "Type" ||
 		strings.Join(toStrings(gotBody["claims"]), ",") != "department,diploma" {
 		t.Errorf("sidecar got body %v", gotBody)
+	}
+	if want := "00-" + got.TraceID + "-"; !strings.HasPrefix(gotTraceparent, want) || len(gotTraceparent) != len(want)+16+3 || len(got.TraceID) != 32 {
+		t.Errorf("sidecar got traceparent %q for trace %q, want a fresh W3C trace context", gotTraceparent, got.TraceID)
 	}
 	if gotRoles != "a,b" {
 		t.Errorf("sidecar got Att-User-Roles %q, want a,b", gotRoles)

@@ -45,6 +45,19 @@ describe("ApiClient.createAuthorizationRequest", () => {
     );
   });
 
+  it("sends the caller's traceparent", async () => {
+    const fetchImpl = fakeFetch(200, { requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
+    const client = new ApiClient("http://localhost:8080", fetchImpl);
+    const traceparent = "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01";
+
+    await client.createAuthorizationRequest({ resource: "v", policyId: "p1", credentialType: "Diploma" }, { traceparent });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/v1/authorize/requests",
+      expect.objectContaining({ headers: expect.objectContaining({ traceparent }) }),
+    );
+  });
+
   it("throws an ApiError carrying the backend's message", async () => {
     const client = new ApiClient("http://localhost:8080", fakeFetch(404, { error: 'unknown policy "p1"' }));
 
