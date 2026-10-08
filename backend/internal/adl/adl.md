@@ -32,7 +32,7 @@ a new trace starts. The sampled flag is not used: every decision is recorded.
 | `ATTESTA_ADL_OUTPUT` | `stdout`, `otlp` or `stdout,otlp`. Default `stdout`. |
 | `ATTESTA_ADL_OTLP_ENDPOINT` | OTLP/gRPC collector, such as `alloy.observability.svc.cluster.local:4317`. |
 | `ATTESTA_ADL_OTLP_INSECURE` | `true` sends without TLS. |
-| `ATTESTA_ADL_RESOURCE` | Producer identity, `key=value,key=value`. `service.name` defaults to `attesta`, `instance_id` to the pod name. |
+| `ATTESTA_ADL_RESOURCE` | Producer identity, `key=value,key=value`. `service.name` defaults to `attesta-adl`, `instance_id` to the pod name. |
 
 stdout writes the record as one JSON line. otlp sends the same JSON as the OTLP log body, with `trace_id` and `span_id` as native fields and the
 resource as OTLP resource attributes. Keep stdout on next to otlp: the OTLP export is batched, so a collector outage loses what is still queued.
@@ -46,11 +46,12 @@ Alloy receives the records on OTLP and writes them to Loki; Grafana has Loki as 
 namespace and drops the ADL lines there, so a decision is stored once. In Grafana's Explore:
 
 ```logql
-{service_name="attesta"}                                                       # every record
-{service_name="attesta"} | json | body_adl_core_response_decision="false"      # denials
-{service_name="attesta"} | status="Error"                                      # attesta could not evaluate
-{service_name="attesta"} | trace_id="28dbeec32e77635cc19bc3204ec56c41"         # one flow
-{service_name="attesta", application="laadpalen"}                              # one application's sidecar
+{service_name="attesta-adl"}                                                          # every decision
+{service_name="attesta-adl"} | json | body_adl_core_response_decision="false"         # denials
+{service_name="attesta-adl"} | json | status="Error"                                  # attesta could not evaluate
+{service_name="attesta-adl"} | trace_id="28dbeec32e77635cc19bc3204ec56c41"            # one flow
+{service_name="attesta-adl"} | application="laadpalen"                                # one application's sidecar
+{service_name="attesta"}                                                              # attesta's regular log lines
 ```
 
 ## Not met
