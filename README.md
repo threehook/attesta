@@ -1,4 +1,4 @@
-# attesta
+# Attesta
 
 A Go backend that authorizes requests based on verifiable credentials that users present from their own wallet. An application asks the backend to
 start an authorization; the user's wallet answers with an SD-JWT presentation that discloses only what was asked for; the backend verifies it and
@@ -23,7 +23,7 @@ Key design decisions:
 | Verifier identity | requests are unsigned and identify the verifier by its response URI (`redirect_uri` client identifier prefix), so there is no verifier key to manage |
 | Identity | the holder is identified by the `email` claim of their credential, together with the issuer's DID. Every request asks the wallet for it, a presentation without it is rejected, and an allowed outcome carries it as `subject`; a denial does not, since an untrusted issuer's claims prove nothing |
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
-| Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string) (bool, string)`; `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. A policy that defines `AuthorizeWithUserRoles(resource, credType, issuer string, claims map[string]string, roles []string) (bool, string)` is called with that instead; `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by attesta |
+| Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string) (bool, string)`; `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. A policy that defines `AuthorizeWithUserRoles(resource, credType, issuer string, claims map[string]string, roles []string) (bool, string)` is called with that instead; `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every offer, and every disclosure unless they chose to always share with that application |
 | TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer` and `examples/laadpalen/gui` |
@@ -49,12 +49,12 @@ wallet/                    @attesta/wallet: the wallet core — a Credo holder a
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
   issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
-  laadpalen/               a relying application with attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
+  laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
     issuer/           deployment/service for examples/issuer (https://issuer.attesta.corbencreatives.nl, and LoadBalancer on localhost:4000)
-    laadpalen/        the laadpalen app: one pod with its backend and the attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach attesta at https://api.attesta.corbencreatives.nl)
+    laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach Attesta at https://api.attesta.corbencreatives.nl)
     ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
   cloud/              (empty for now)
 pnpm-workspace.yaml   client-lib + wallet + wallet-desktop + examples
@@ -66,7 +66,7 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 | GUI | Where | Used for |
 |---|---|---|
 | Issuer | `examples/issuer` | The organisation's staff creates a verifiable credential for an employee and gets the offer link for the employee's wallet. The pages are in Dutch. |
-| Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. attesta decides from the credential in the wallet. |
+| Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
 | Wallet | `wallet-desktop` | The employee's wallet: confirms every offer, and every disclosure unless the employee chose to always share with that application. |
 
 ### Issuer

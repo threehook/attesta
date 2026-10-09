@@ -1,6 +1,6 @@
-# attesta architecture
+# Attesta architecture
 
-This document describes how the pieces of attesta fit together, and the design for the next big piece: a wallet that the organisation runs for its employees.
+This document describes how the pieces of Attesta fit together, and the design for the next big piece: a wallet that the organisation runs for its employees.
 
 1. [How it works today](#1-how-it-works-today)
 2. [The scenario we design for: the workforce](#2-the-scenario-we-design-for-the-workforce)
@@ -31,20 +31,20 @@ sequenceDiagram
 
 This is the flow between a relying application, the shared backend and the desktop wallet. It no longer shows the whole solution:
 
-- **The laadpalen example** (`examples/laadpalen`) puts an application backend between the page and attesta, and runs attesta as a **sidecar** in the application's pod.
-  The page never talks to attesta; the application asks attesta whether an employee may do something, and then does the work itself.
-- **Policies** are per application, and are reloaded while attesta runs: they come from a directory (a ConfigMap in Kubernetes) that attesta watches.
+- **The laadpalen example** (`examples/laadpalen`) puts an application backend between the page and Attesta, and runs Attesta as a **sidecar** in the application's pod.
+  The page never talks to Attesta; the application asks Attesta whether an employee may do something, and then does the work itself.
+- **Policies** are per application, and are reloaded while Attesta runs: they come from a directory (a ConfigMap in Kubernetes) that Attesta watches.
 - **Claims** the employee discloses are passed to the policy, next to the resource, the credential type and the issuer.
 - **The copy and paste** of the link into the wallet is a demo shortcut. Section 3 replaces it.
 
 ## 2. The scenario we design for: the workforce
 
-attesta is designed for a **workforce** scenario. The people being authorized are the organisation's own employees. The organisation issues their credentials,
-and the applications, the wallets and attesta all run inside the organisation's network. There is no outside world to defend against. Because of that,
-attesta has one API and does not tell its callers apart; which workload may reach which is the platform's concern (network rules, service identity).
+Attesta is designed for a **workforce** scenario. The people being authorized are the organisation's own employees. The organisation issues their credentials,
+and the applications, the wallets and Attesta all run inside the organisation's network. There is no outside world to defend against. Because of that,
+Attesta has one API and does not tell its callers apart; which workload may reach which is the platform's concern (network rules, service identity).
 
 A **citizen or customer** scenario is different: the users are outside the organisation, choose their own wallet and bring credentials from third parties
-(a national identity wallet, a bank). attesta can act as a verifier for those wallets, but we do not build a wallet for them.
+(a national identity wallet, a bank). Attesta can act as a verifier for those wallets, but we do not build a wallet for them.
 
 ## 3. Design: a wallet the organisation runs for its employees
 
@@ -66,7 +66,7 @@ another employee's wallet). The design is built around those two.
 - Nothing is presented without the employee's fresh, explicit approval.
 - The wallet follows the employee's life in the organisation: joiner, mover, leaver.
 - Every issuance, approval and presentation is recorded.
-- attesta stays as it is: it speaks the standard issuing and presenting protocols (OpenID4VCI, OpenID4VP) and does not care which wallet answers.
+- Attesta stays as it is: it speaks the standard issuing and presenting protocols (OpenID4VCI, OpenID4VP) and does not care which wallet answers.
 
 **Not goals**
 
@@ -90,22 +90,22 @@ another employee's wallet). The design is built around those two.
 | **Identity provider** | The organisation's existing SSO. It tells the wallet who the employee is. |
 | **Issuer** | Issues the employee credentials from HR data, over the standard protocol. Already exists as a demo; changes below. |
 | **HR system** | The source of joiners, movers and leavers. |
-| **Application + attesta** | The relying application with its sidecar. attesta verifies the presentation and applies the application's policy. |
+| **Application + Attesta** | The relying application with its sidecar. Attesta verifies the presentation and applies the application's policy. |
 
 ### 3.3 Presenting a credential
 
 ![Presenting a credential](architecture/hosted-wallet-2-presentation.svg)
 
-The employee uses the laadpalen application. The application asks its attesta for a request and sends the employee's browser to the wallet. The wallet,
+The employee uses the laadpalen application. The application asks its Attesta for a request and sends the employee's browser to the wallet. The wallet,
 where the employee is already signed in, shows who asks and what would be shared. The employee approves with a passkey that is tied to this one request.
-The wallet service lets the KMS sign, sends the presentation to attesta, and the browser goes back to the application. attesta has verified the
+The wallet service lets the KMS sign, sends the presentation to Attesta, and the browser goes back to the application. Attesta has verified the
 presentation and applied the policy; the application reads the outcome and does its work once.
 
 Orange arrows are what does not work today and has to change:
 
 - **The wallet link** is an ordinary web address of the organisation's wallet instead of an `openid4vp://` link that has to be pasted.
-- **The way back.** After the answer, attesta tells the wallet where to send the browser back to (the standard "redirect after direct post" of OpenID4VP,
-  protected with a one-time code). Today attesta answers with an empty reply.
+- **The way back.** After the answer, Attesta tells the wallet where to send the browser back to (the standard "redirect after direct post" of OpenID4VP,
+  protected with a one-time code). Today Attesta answers with an empty reply.
 
 ### 3.4 Getting a credential, and what happens when people change
 
@@ -135,7 +135,7 @@ pod per employee. What stops each threat:
 | A rogue or look-alike verifier | The registry lists the applications the wallet may present to; the wallet shows the verifier's registered name, not what the request claims. |
 | An operator with access | No cross-tenant administration interface; keys are not extractable; access to the KMS is audited. |
 | An employee who leaves | The tenant's data key and holder keys are destroyed. |
-| A replayed presentation | Already covered by attesta: each request has its own nonce, is answered once, and expires after five minutes. |
+| A replayed presentation | Already covered by Attesta: each request has its own nonce, is answered once, and expires after five minutes. |
 
 ### 3.6 Decisions
 
@@ -147,13 +147,13 @@ pod per employee. What stops each threat:
 | Who checks the passkey | The wallet service, or a separate approval gate | **The wallet service first, the gate as hardening.** The gate stops a compromised service from signing alone. |
 | How the wallet is reached | A custom link scheme, or the organisation wallet's web address | **The web address.** The application knows the wallet; no installed handler is needed. |
 | Who may be presented to | Anyone who asks, or registered applications | **Registered applications only.** Possible because everything is inside one organisation. |
-| Credential lifetime | Long-lived with revocation, or short-lived with renewal | **Short-lived with renewal.** It fits attesta, which already checks expiry, and avoids a revocation list for now. |
+| Credential lifetime | Long-lived with revocation, or short-lived with renewal | **Short-lived with renewal.** It fits Attesta, which already checks expiry, and avoids a revocation list for now. |
 | How credentials are issued | A pre-authorized offer link, or the authorization-code flow through SSO | **Authorization-code through SSO.** No link to hand over, and the issuer knows who asks. |
 | The tenant's identity | A wallet-specific account, or the identity provider's subject | **The identity provider's subject.** One identity, managed by the organisation. |
 
 ### 3.7 What has to change
 
-- **attesta:** answer a presentation with a redirect target and a one-time code, so the browser can return to the application; build the request link from the
+- **Attesta:** answer a presentation with a redirect target and a one-time code, so the browser can return to the application; build the request link from the
   organisation wallet's address when one is configured. The policy and the verifying stay as they are.
 - **Issuer:** the authorization-code flow with the organisation's identity provider, short-lived employee credentials, HR attribute mapping and renewal.
   The demo issuer keeps the pre-authorized flow for the desktop wallet.

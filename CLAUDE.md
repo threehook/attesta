@@ -1,4 +1,4 @@
-# attesta
+# Attesta
 
 Authorization with verifiable credentials. An application asks the backend to start an authorization; the user's wallet answers with an SD-JWT
 presentation that discloses only what was asked; the backend verifies it and a Gno policy decides.
@@ -12,7 +12,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
-- `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/laadpalen/`: relying app with attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
+- `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
 Flow: page `POST /v1/authorize/requests` -> `openid4vp://` link -> user pastes it into the wallet and confirms -> wallet posts to
@@ -32,7 +32,7 @@ ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> pnpm --fil
 make k8s-apply k8s-issuer-apply                  # build and deploy
 make k8s-policies POLICIES="<a.gno> <b.gno>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES
 make k8s-policies-add POLICIES=<a.gno>           # hot deploy of one policy, the others stay
-make laadpalen                                   # the laadpalen app + its attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
+make laadpalen                                   # the laadpalen app + its Attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 
 Manual test, with the packaged wallet (it refuses plain http, and is the only way to run the desktop wallet by hand): `pnpm --filter @attesta/wallet-desktop package`, open `release/mac-arm64/attesta wallet.app` once so it becomes

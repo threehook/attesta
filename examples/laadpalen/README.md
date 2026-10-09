@@ -1,7 +1,7 @@
 # laadpalen
 
-A relying application with attesta as its **sidecar**. Municipality employees submit requests for a laadpaal (EV charging point) for a citizen's address.
-Who may submit is attesta's decision, made from a credential in the employee's own wallet; what becomes of the request is the application's own business.
+A relying application with Attesta as its **sidecar**. Municipality employees submit requests for a laadpaal (EV charging point) for a citizen's address.
+Who may submit is Attesta's decision, made from a credential in the employee's own wallet; what becomes of the request is the application's own business.
 
 ## What's here
 
@@ -11,19 +11,19 @@ Who may submit is attesta's decision, made from a credential in the employee's o
 - `gui/` is the page (Vite + React), in Dutch. The employee signs in, enters an address and sees the outcome; the page hands each step to the wallet itself.
 - `policies/sign_in.gno` signs in an `Employee` credential from a trusted issuer; nothing but the identity is read.
 - `policies/request_laadpaal.gno` decides a request: an `Employee` credential from a trusted issuer, for the `burgerzaken` department and
-  a `laadpalen-management` diploma, and the role `laadpalen-aanvrager`, which this app gives an employee (`LAADPALEN_USER_ROLES`) and sends to attesta
+  a `laadpalen-management` diploma, and the role `laadpalen-aanvrager`, which this app gives an employee (`LAADPALEN_USER_ROLES`) and sends to Attesta
   in the `Att-User-Roles` header. Secretariaat employees are refused. The credential's own expiry (the diploma's last day) is checked before the policy runs.
 
 ## How it fits together
 
 ```
-browser ──► page (nginx) ──► laadpalen-api ──► attesta (sidecar, 127.0.0.1:8080)      one pod: laadpalen-api
+browser ──► page (nginx) ──► laadpalen-api ──► Attesta (sidecar, 127.0.0.1:8080)      one pod: laadpalen-api
                                                     ▲
 wallet ─────────────────────────────────────────────┘ :8080 (wallets: https://api.attesta.corbencreatives.nl)
 ```
 
 1. **Sign in.** The page asks the wallet on this machine for the user's identities (email and issuer DID) and shows them in a dropdown;
-   `GET /api/config` gives the origin the wallet knows this app by. "Aanmelden" posts to `POST /api/sign-in`. The backend asks attesta for a request
+   `GET /api/config` gives the origin the wallet knows this app by. "Aanmelden" posts to `POST /api/sign-in`. The backend asks Attesta for a request
    (`sign_in` for both `policyId` and `resource`, credential `Employee`, no claims beyond the email every request asks) and returns the `openid4vp://`
    link. The page adds the chosen identity to it (`login_hint`, `issuer_hint`) and opens it, so the system starts the wallet. The wallet's popup names the
    identity and offers to sign in without the button next time; if the user chose that, the page signs in by itself when it is opened.
@@ -31,12 +31,12 @@ wallet ────────────────────────�
    (from the sign-in, not extended by use) the employee is signed in. The page shows who (`GET /api/session`) and has "Afmelden" (`DELETE /api/session`).
    Sessions live in memory, so a restart signs everyone out.
 3. **Request a laadpaal.** Only in a session: the page posts the address to `POST /api/request-laadpaal`, which answers 401 without one. The backend asks
-   attesta for a request (`request_laadpaal`, credential `Employee`, claims `department` and `diploma`) and returns a link. The wallet asks what to
+   Attesta for a request (`request_laadpaal`, credential `Employee`, claims `department` and `diploma`) and returns a link. The wallet asks what to
    share, or answers on its own when the user chose to always share with this application.
-4. The page polls `GET /api/request-laadpaal/{id}`. When attesta has decided, an authorized submission is carried out once: the address rules run and the
+4. The page polls `GET /api/request-laadpaal/{id}`. When Attesta has decided, an authorized submission is carried out once: the address rules run and the
    outcome is recorded. The credential shown must be the signed-in employee's, otherwise the request is refused.
 
-This is a workforce setup: the employees, their wallets, the application and attesta all belong to one organisation and run inside its network. attesta
+This is a workforce setup: the employees, their wallets, the application and Attesta all belong to one organisation and run inside its network. Attesta
 has a single API and does not tell callers apart; which workloads may reach which is the platform's concern (network rules, service identity). The Service
 `laadpalen-attesta` is a LoadBalancer only because the demo wallet runs on the host; a wallet inside the cluster would use the internal address.
 
@@ -55,7 +55,7 @@ and paste the offer link into the wallet. Then open http://localhost:4174, sign 
 electric vehicle). Press "Aanmelden", then "Dien aanvraag in". The page opens the wallet each time; the link is also under "Toon API-aanroep" for a wallet
 that has to be given it by hand.
 
-The wallet reaches attesta at http://localhost:4175 (the `laadpalen-attesta` Service, container port 8080), which is `ATTESTA_PUBLIC_URL` in `k8s/local/laadpalen/api/deployment.yaml`.
+The wallet reaches Attesta at http://localhost:4175 (the `laadpalen-attesta` Service, container port 8080), which is `ATTESTA_PUBLIC_URL` in `k8s/local/laadpalen/api/deployment.yaml`.
 
 ## Roles
 

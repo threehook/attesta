@@ -1,7 +1,7 @@
 # issuer
 
 A demo credential issuer. It stands for an organization such as a university: it signs diploma credentials (SD-JWT VC, type `Diploma`) with its own
-key and hands them to a wallet through OpenID4VCI. It is independent of the attesta backend; the backend only learns of it by being configured to
+key and hands them to a wallet through OpenID4VCI. It is independent of the Attesta backend; the backend only learns of it by being configured to
 trust the issuer's DID.
 
 - `GET /` is a form for creating a credential offer (name, email, degree, university); `POST /offers` (JSON or form) does the same and returns the offer link

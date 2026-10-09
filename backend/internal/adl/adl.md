@@ -1,6 +1,6 @@
 # Authorization Decision Log
 
-attesta writes one record per decision, as an [ADL 1.0](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record. A decision is
+Attesta writes one record per decision, as an [ADL 1.0](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record. A decision is
 the answer to a wallet's response: the sign-in and every request, allowed or denied.
 
 ## What is recorded
@@ -13,15 +13,15 @@ the answer to a wallet's response: the sign-in and every request, allowed or den
 
 A wallet answering an unknown, expired or already answered request is not a decision and is not recorded.
 
-The request is written in the AuthZEN shape the standard prescribes (attesta itself does not use AuthZEN): `subject` is the holder (`id` is the email,
+The request is written in the AuthZEN shape the standard prescribes (Attesta itself does not use AuthZEN): `subject` is the holder (`id` is the email,
 `properties.issuer` the issuer DID; `unknown` when the credential did not verify), `action.name` is always `authorize`, `resource.id` is the resource
 the application asked about, and `context` holds the request id, policy id, credential type, the disclosed claims the policy received and the
-`user_roles` the application sent, marked `origin: application` because attesta cannot verify them. There are no source references (`attributes` is
+`user_roles` the application sent, marked `origin: application` because Attesta cannot verify them. There are no source references (`attributes` is
 empty): those start at Level 2.
 
 ## Trace
 
-The application sends a W3C `traceparent` when it starts a request. attesta keeps it with the request, because the wallet's answer arrives later
+The application sends a W3C `traceparent` when it starts a request. Attesta keeps it with the request, because the wallet's answer arrives later
 without one. The record carries that `trace_id`, the application's span as `parent_span_id`, and a fresh `span_id`. Without a (valid) `traceparent`
 a new trace starts. The sampled flag is not used: every decision is recorded.
 
@@ -48,10 +48,10 @@ namespace and drops the ADL lines there, so a decision is stored once. In Grafan
 ```logql
 {service_name="attesta-adl"}                                                          # every decision
 {service_name="attesta-adl"} | json | body_adl_core_response_decision="false"         # denials
-{service_name="attesta-adl"} | json | status="Error"                                  # attesta could not evaluate
+{service_name="attesta-adl"} | json | status="Error"                                  # Attesta could not evaluate
 {service_name="attesta-adl"} | trace_id="28dbeec32e77635cc19bc3204ec56c41"            # one flow
 {service_name="attesta-adl"} | application="laadpalen"                                # one application's sidecar
-{service_name="attesta"}                                                              # attesta's regular log lines
+{service_name="attesta"}                                                              # Attesta's regular log lines
 ```
 
 ## Not met
@@ -59,6 +59,6 @@ namespace and drops the ADL lines there, so a decision is stored once. In Grafan
 - TLS to the log: the collector is reached inside the cluster without it.
 - Durable before returning: the stdout write is not fsynced and the OTLP export is asynchronous.
 - Idempotent ingestion: Loki drops identical lines in a stream, which is not a guarantee.
-- Trace context is kept and recorded, but attesta makes no outgoing calls to pass it on.
+- Trace context is kept and recorded, but Attesta makes no outgoing calls to pass it on.
 - Retention follows Loki's (31 days here); the organisation's own retention policy is not applied.
 - Subject ids and claim values are logged as they are, not pseudonymised.
