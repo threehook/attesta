@@ -1,7 +1,7 @@
 {
   "name": "attesta",
   "private": true,
-  "description": "Monorepo root for the attesta TypeScript packages (client-lib, wallet, wallet-desktop, examples). The Go backend is not part of this workspace; see backend/go.mod.",
+  "description": "Monorepo root for the Attesta TypeScript packages (client-lib, wallet, wallet-desktop, examples). The Go backend is not part of this workspace; see backend/go.mod.",
   "engines": {
     "node": ">=20"
   }

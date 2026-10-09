@@ -1,5 +1,5 @@
 // Command laadpalen-api is the backend of the laadpalen example: municipality employees submit requests for a laadpaal (EV charging point). The page
-// calls this server and nothing else; this server asks attesta, running as a sidecar in the same pod, whether the employee may submit, and then
+// calls this server and nothing else; this server asks Attesta, running as a sidecar in the same pod, whether the employee may submit, and then
 // carries the request out.
 package main
 
@@ -23,11 +23,11 @@ func main() {
 func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	addr := getenv("LAADPALEN_ADDR", ":8787")
-	// The attesta sidecar in the same pod.
+	// The Attesta sidecar in the same pod.
 	attestaURL := getenv("ATTESTA_URL", "http://127.0.0.1:8080")
 
 	app := newServer(newAttestaClient(attestaURL), logger)
-	// Where wallets answer attesta; wallets know the application by this origin.
+	// Where wallets answer Attesta; wallets know the application by this origin.
 	if public, err := url.Parse(os.Getenv("ATTESTA_PUBLIC_URL")); err == nil && public.Scheme != "" && public.Host != "" {
 		app.application = public.Scheme + "://" + public.Host
 	}

@@ -1,4 +1,4 @@
-// The look and feel of the attesta example apps: header with breadcrumb and current action, menu on the left, one-line footer.
+// The look and feel of the Attesta example apps: header with breadcrumb and current action, menu on the left, one-line footer.
 export const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
 
 export interface Crumb {

@@ -1,4 +1,4 @@
-// The laadpalen backend's own contract; the page never talks to attesta.
+// The laadpalen backend's own contract; the page never talks to Attesta.
 
 export interface Subject {
   issuer: string
@@ -19,7 +19,7 @@ export interface Session {
 
 export interface Status {
   status: 'pending' | 'done' | 'expired'
-  // attesta's decision on the employee, and why.
+  // Attesta's decision on the employee, and why.
   authorized: boolean
   reason?: string
   subject?: Subject

@@ -35,7 +35,7 @@ export class ApiClient {
   ) {}
 
   // createAuthorizationRequest starts an authorization. Hand the returned link to the user's wallet, then wait for the decision.
-  // userRoles are the user's roles as the calling application knows them; attesta cannot verify them, so call this from a server, not a browser.
+  // userRoles are the user's roles as the calling application knows them; Attesta cannot verify them, so call this from a server, not a browser.
   // traceparent is the W3C trace context of the caller's own span; the decision log keeps its trace.
   async createAuthorizationRequest(
     req: AuthorizationRequest,

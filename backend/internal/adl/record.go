@@ -1,4 +1,4 @@
-// Package adl writes Authorization Decision Log 1.0 Level 1 records, one per decision attesta takes.
+// Package adl writes Authorization Decision Log 1.0 Level 1 records, one per decision Attesta takes.
 //
 // Spec: https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/
 package adl
@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// Status is the record's status. A denial is Ok: Error is reserved for attesta failing to evaluate.
+// Status is the record's status. A denial is Ok: Error is reserved for Attesta failing to evaluate.
 type Status string
 
 const (
@@ -17,7 +17,7 @@ const (
 	StatusError Status = "Error"
 )
 
-// EventAccessEvaluation is the event_name of a single decision, the only kind attesta takes.
+// EventAccessEvaluation is the event_name of a single decision, the only kind Attesta takes.
 const EventAccessEvaluation = "adl.access_evaluation"
 
 // Record is an ADL Level 1 record: no policy, information or configuration source references.
@@ -33,7 +33,7 @@ type Record struct {
 	Body         Body              `json:"body"`
 }
 
-// Body holds the raw request and response under the keys the standard fixes. The response is absent when attesta could not evaluate.
+// Body holds the raw request and response under the keys the standard fixes. The response is absent when Attesta could not evaluate.
 type Body struct {
 	Request  any `json:"adl.core.request"`
 	Response any `json:"adl.core.response,omitempty"`

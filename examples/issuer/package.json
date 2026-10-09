@@ -2,7 +2,7 @@
   "name": "@attesta/issuer",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo credential issuer for attesta: issues SD-JWT diploma credentials through OpenID4VCI.",
+  "description": "Demo credential issuer for Attesta: issues SD-JWT diploma credentials through OpenID4VCI.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",

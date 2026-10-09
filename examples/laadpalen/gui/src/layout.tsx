@@ -1,4 +1,4 @@
-// The look and feel shared with the other attesta example apps: header with logo and breadcrumb, menu on the left, one-line footer.
+// The look and feel shared with the other Attesta example apps: header with logo and breadcrumb, menu on the left, one-line footer.
 import type { ReactNode } from 'react'
 
 import { HOME, MENU, type Crumb, type MenuItem } from './menu.ts'

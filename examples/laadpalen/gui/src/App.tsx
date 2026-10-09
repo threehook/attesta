@@ -266,7 +266,7 @@ export default function App() {
           <details>
             <summary>Toon API-aanroep</summary>
             <pre>{JSON.stringify({ requestId: submitted.requestId, authorizationRequest: submitted.authorizationRequest }, null, 2)}</pre>
-            <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van attesta.'}</pre>
+            <pre>{state?.debug.outcome ? JSON.stringify(state.debug.outcome, null, 2) : 'Nog geen antwoord van Attesta.'}</pre>
           </details>
         )}
         </>

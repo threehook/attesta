@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-// What this app asks attesta. Signing in asks for the employee credential and nothing beyond the email that identifies them; a laadpaal request asks
+// What this app asks Attesta. Signing in asks for the employee credential and nothing beyond the email that identifies them; a laadpaal request asks
 // for the claims its policy reads.
 const (
 	signInResource = "sign_in"
@@ -23,7 +23,7 @@ const (
 	resource       = "request_laadpaal"
 	policyID       = "request_laadpaal"
 	credentialType = "Employee"
-	// submissionTTL is how long a submission is remembered; attesta forgets a request after five minutes, so a longer one only keeps finished results.
+	// submissionTTL is how long a submission is remembered; Attesta forgets a request after five minutes, so a longer one only keeps finished results.
 	submissionTTL = 30 * time.Minute
 	// sessionTTL is how long an employee who signed in with the wallet stays signed in. It runs from the sign-in and is not extended by use.
 	sessionTTL    = 30 * time.Minute
@@ -34,7 +34,7 @@ var claimsAsked = []string{"department", "diploma"}
 
 var postcodePattern = regexp.MustCompile(`^[0-9]{4}[A-Z]{2}$`)
 
-// submission is a sign-in or a laadpaal request that was handed to attesta.
+// submission is a sign-in or a laadpaal request that was handed to Attesta.
 type submission struct {
 	signIn bool
 	// by is the signed-in employee a laadpaal request was made for; the credential shown for it must be theirs.
@@ -42,7 +42,7 @@ type submission struct {
 	postcode    string
 	houseNumber int
 	created     time.Time
-	// answered is set once attesta has decided (or forgotten the request); from then on view is the answer and attesta is not asked again.
+	// answered is set once Attesta has decided (or forgotten the request); from then on view is the answer and Attesta is not asked again.
 	answered bool
 	view     submissionView
 }
@@ -55,12 +55,12 @@ type session struct {
 
 type submissionView struct {
 	Status string `json:"status"` // pending, done or expired
-	// Authorized is attesta's decision on the employee; Reason is why. Only an authorized employee gets a Result.
+	// Authorized is Attesta's decision on the employee; Reason is why. Only an authorized employee gets a Result.
 	Authorized bool     `json:"authorized"`
 	Reason     string   `json:"reason,omitempty"`
 	Subject    *subject `json:"subject,omitempty"`
 	Result     *result  `json:"result,omitempty"`
-	// Debug shows the page what this app exchanged with attesta.
+	// Debug shows the page what this app exchanged with Attesta.
 	Debug debugView `json:"debug"`
 }
 
@@ -81,9 +81,9 @@ type server struct {
 	attesta authorizer
 	logger  *slog.Logger
 	now     func() time.Time
-	// application is the origin wallets know this app by (where they answer attesta); the page gives it to the wallet to ask about this app.
+	// application is the origin wallets know this app by (where they answer Attesta); the page gives it to the wallet to ask about this app.
 	application string
-	// userRoles gives an employee, by email, the roles this app sends attesta with a laadpaal request. An employee not listed has none.
+	// userRoles gives an employee, by email, the roles this app sends Attesta with a laadpaal request. An employee not listed has none.
 	userRoles map[string][]string
 
 	mu          sync.Mutex
@@ -128,7 +128,7 @@ func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, configView{Application: s.application})
 }
 
-// handleSignIn starts a sign-in: attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
+// handleSignIn starts a sign-in: Attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
 func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	started, err := s.attesta.start(r.Context(), signInResource, signInPolicyID, credentialType, nil, nil)
 	if err != nil {
@@ -147,8 +147,8 @@ func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
 }
 
-// handleSubmit starts a laadpaal request for a signed-in employee. What the employee may submit is attesta's decision, so this only checks the input
-// and asks attesta for the wallet link.
+// handleSubmit starts a laadpaal request for a signed-in employee. What the employee may submit is Attesta's decision, so this only checks the input
+// and asks Attesta for the wallet link.
 func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	sess, signedIn := s.currentSession(r)
@@ -194,7 +194,7 @@ func (s *server) handleSignInStatus(w http.ResponseWriter, r *http.Request) { s.
 
 func (s *server) handleStatus(w http.ResponseWriter, r *http.Request) { s.status(w, r, false) }
 
-// status reports on a sign-in or a submission. Once the wallet has answered and attesta has decided, an authorized sign-in starts the session and an
+// status reports on a sign-in or a submission. Once the wallet has answered and Attesta has decided, an authorized sign-in starts the session and an
 // authorized submission is carried out exactly once: the address rules run, and the outcome is recorded with the employee that submitted it.
 func (s *server) status(w http.ResponseWriter, r *http.Request, signIn bool) {
 	id := r.PathValue("id")
@@ -233,7 +233,7 @@ func (s *server) currentSession(r *http.Request) (session, bool) {
 	return sess, true
 }
 
-// startSession remembers an employee that attesta authorized and hands the browser the cookie that names the session. Callers hold s.mu.
+// startSession remembers an employee that Attesta authorized and hands the browser the cookie that names the session. Callers hold s.mu.
 func (s *server) startSession(w http.ResponseWriter, r *http.Request, who subject) {
 	token := newToken()
 	expires := s.now().Add(sessionTTL)
@@ -280,7 +280,7 @@ func newToken() string {
 	return hex.EncodeToString(b)
 }
 
-// settle asks attesta for the decision on a submission and, when there is one, finishes the submission. Callers hold s.mu.
+// settle asks Attesta for the decision on a submission and, when there is one, finishes the submission. Callers hold s.mu.
 func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 	got, raw, err := s.attesta.outcome(ctx, id)
 	if errors.Is(err, errUnknownRequest) {

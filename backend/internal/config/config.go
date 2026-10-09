@@ -1,9 +1,9 @@
-// Package config loads attesta's runtime configuration from the environment.
+// Package config loads Attesta's runtime configuration from the environment.
 package config
 
 import "os"
 
-// Config holds attesta's runtime configuration; see FromEnv.
+// Config holds Attesta's runtime configuration; see FromEnv.
 type Config struct {
 	// Addr is the address the HTTP server listens on.
 	Addr string

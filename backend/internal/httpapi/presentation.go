@@ -18,7 +18,7 @@ import (
 // maxResponseBytes bounds a wallet's answer; an SD-JWT presentation is a few KB.
 const maxResponseBytes = 1 << 20
 
-// DecisionLog records every decision attesta takes; adl.Logger is the implementation. A nil Server.Decisions records nothing.
+// DecisionLog records every decision Attesta takes; adl.Logger is the implementation. A nil Server.Decisions records nothing.
 type DecisionLog interface {
 	Log(ctx context.Context, d adl.Decision) error
 }

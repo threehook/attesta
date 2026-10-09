@@ -21,7 +21,7 @@ type Input struct {
 	Issuer   string
 	// Claims are the disclosed claims the policy may base its decision on, by name. The values are strings; the caller encodes anything else.
 	Claims map[string]string
-	// UserRoles are asserted by the calling application, not verified by attesta; empty when it sent none.
+	// UserRoles are asserted by the calling application, not verified by Attesta; empty when it sent none.
 	UserRoles []string
 }
 

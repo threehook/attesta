@@ -140,10 +140,10 @@ func TestSignInAsksAttestaForTheIdentityOnly(t *testing.T) {
 		t.Errorf("response = %s", rec.Body)
 	}
 	if len(f.started) != 1 {
-		t.Fatalf("attesta was asked %d times, want once", len(f.started))
+		t.Fatalf("Attesta was asked %d times, want once", len(f.started))
 	}
 	if g := f.started[0]; g.resource != "sign_in" || g.policyID != "sign_in" || g.credentialType != "Employee" || len(g.claims) != 0 {
-		t.Errorf("asked attesta for %+v, want the Employee identity for sign_in and no other claims", g)
+		t.Errorf("asked Attesta for %+v, want the Employee identity for sign_in and no other claims", g)
 	}
 }
 
@@ -167,7 +167,7 @@ func TestSubmitNeedsASignIn(t *testing.T) {
 		})
 	}
 	if len(f.started) != 0 {
-		t.Error("attesta was asked for a request nobody was signed in for")
+		t.Error("Attesta was asked for a request nobody was signed in for")
 	}
 }
 
@@ -185,10 +185,10 @@ func TestSubmitAsksAttestaForTheEmployeeClaims(t *testing.T) {
 		t.Errorf("response = %s", rec.Body)
 	}
 	if len(f.started) != 2 {
-		t.Fatalf("attesta was asked %d times, want a sign-in and a request", len(f.started))
+		t.Fatalf("Attesta was asked %d times, want a sign-in and a request", len(f.started))
 	}
 	if g := f.started[1]; g.resource != "request_laadpaal" || g.policyID != "request_laadpaal" || g.credentialType != "Employee" || strings.Join(g.claims, ",") != "department,diploma" {
-		t.Errorf("asked attesta for %+v, want the Employee department and diploma for request_laadpaal", g)
+		t.Errorf("asked Attesta for %+v, want the Employee department and diploma for request_laadpaal", g)
 	}
 }
 
@@ -209,7 +209,7 @@ func TestSubmitRejectsBadInput(t *testing.T) {
 				t.Errorf("status = %d, want 400: %s", rec.Code, rec.Body)
 			}
 			if len(f.started) != 1 {
-				t.Error("attesta was asked for a request with bad input")
+				t.Error("Attesta was asked for a request with bad input")
 			}
 		})
 	}
@@ -237,7 +237,7 @@ func TestStatusIsPendingUntilTheWalletAnswers(t *testing.T) {
 		t.Errorf("view = %+v, want pending with the wallet link", v)
 	}
 	if len(s.records) != 0 {
-		t.Error("something was recorded before attesta decided")
+		t.Error("something was recorded before Attesta decided")
 	}
 }
 
@@ -263,7 +263,7 @@ func TestAuthorizedSubmissionIsCarriedOutOnceAndRecorded(t *testing.T) {
 		t.Errorf("record = %+v", r)
 	}
 	if n := f.outcomeCalls - callsBefore; n != 1 {
-		t.Errorf("attesta was asked for the decision %d times, want once: it is final", n)
+		t.Errorf("Attesta was asked for the decision %d times, want once: it is final", n)
 	}
 }
 
@@ -358,7 +358,7 @@ func TestStatusErrors(t *testing.T) {
 	s = newTestServer(down)
 	call(s, "POST", "/api/sign-in", "")
 	if rec := call(s, "GET", "/api/sign-in/req-1", ""); rec.Code != http.StatusBadGateway {
-		t.Errorf("attesta down: status = %d, want 502", rec.Code)
+		t.Errorf("Attesta down: status = %d, want 502", rec.Code)
 	}
 }
 

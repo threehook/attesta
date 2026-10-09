@@ -1,4 +1,4 @@
-// The look and feel shared with the other attesta apps: header with logo and breadcrumb, menu on the left, one-line footer.
+// The look and feel shared with the other Attesta apps: header with logo and breadcrumb, menu on the left, one-line footer.
 export interface Crumb {
   label: string;
   href?: string;

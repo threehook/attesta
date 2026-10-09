@@ -2,7 +2,7 @@
   "name": "@attesta/client",
   "version": "0.1.0",
   "private": true,
-  "description": "TypeScript client library for attesta: a typed wrapper around the authorization API.",
+  "description": "TypeScript client library for Attesta: a typed wrapper around the authorization API.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-// Decision is one authorization decision, as far as attesta got.
+// Decision is one authorization decision, as far as Attesta got.
 type Decision struct {
 	// TraceParent is the W3C traceparent the application sent when it started the request; empty or invalid starts a new trace.
 	TraceParent string
@@ -22,7 +22,7 @@ type Decision struct {
 	SubjectID, Issuer string
 	// Claims are the disclosed claims the policy received.
 	Claims map[string]string
-	// UserRoles are the roles the application asserted; attesta cannot verify them.
+	// UserRoles are the roles the application asserted; Attesta cannot verify them.
 	UserRoles []string
 	// Allow and Reason are the decision. DecidedBy says who gave the reason: "policy", or "attesta" when no policy ran.
 	Allow     bool
@@ -30,7 +30,7 @@ type Decision struct {
 	DecidedBy string
 	// Detail adds to Reason for the log reader, such as why a credential did not verify.
 	Detail string
-	// Err is set when attesta could not evaluate; the record is then an Error record without a response.
+	// Err is set when Attesta could not evaluate; the record is then an Error record without a response.
 	Err error
 }
 
@@ -118,7 +118,7 @@ func (l *Logger) record(d Decision) (Record, error) {
 	return rec, nil
 }
 
-// authzenRequest renders the question in the AuthZEN shape ADL prescribes for the request. The action is always "authorize": attesta has no
+// authzenRequest renders the question in the AuthZEN shape ADL prescribes for the request. The action is always "authorize": Attesta has no
 // actions, the resource it is asked about is the thing a policy decides on.
 func authzenRequest(d Decision) map[string]any {
 	subject := map[string]any{"type": "user", "id": "unknown"}
@@ -146,7 +146,7 @@ func authzenRequest(d Decision) map[string]any {
 	}
 }
 
-// authzenResponse is the decision. The reason is keyed by who gave it, so a reader can tell a policy's reason from attesta's own.
+// authzenResponse is the decision. The reason is keyed by who gave it, so a reader can tell a policy's reason from Attesta's own.
 func authzenResponse(d Decision) map[string]any {
 	by := d.DecidedBy
 	if by == "" {

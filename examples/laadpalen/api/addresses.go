@@ -2,8 +2,8 @@ package main
 
 import "fmt"
 
-// The address data is the app's own business data, not something attesta knows about: whether an address exists, already has a laadpaal, and has an
-// electric vehicle. attesta decides who may submit a request; these rules decide what happens to it.
+// The address data is the app's own business data, not something Attesta knows about: whether an address exists, already has a laadpaal, and has an
+// electric vehicle. Attesta decides who may submit a request; these rules decide what happens to it.
 type address struct {
 	laadpaalPresent bool
 	electricVehicle bool

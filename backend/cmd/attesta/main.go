@@ -1,4 +1,4 @@
-// Command attesta runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
+// Command Attesta runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
 package main
 
 import (

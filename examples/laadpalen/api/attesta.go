@@ -21,7 +21,7 @@ type authorizationRequest struct {
 	RequestID string `json:"requestId"`
 	// Link is the openid4vp:// link the employee opens in their wallet.
 	Link string `json:"authorizationRequest"`
-	// TraceID is the trace this app started for the request; attesta's decision log carries it, and so does this app's own log.
+	// TraceID is the trace this app started for the request; Attesta's decision log carries it, and so does this app's own log.
 	TraceID string `json:"-"`
 }
 
@@ -38,7 +38,7 @@ type outcome struct {
 	Subject *subject `json:"subject"`
 }
 
-// authorizer is what this app needs from attesta; attestaClient is the implementation, a client of the sidecar next to it in the pod.
+// authorizer is what this app needs from Attesta; attestaClient is the implementation, a client of the sidecar next to it in the pod.
 type authorizer interface {
 	start(ctx context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error)
 	// outcome returns the decision, and the sidecar's answer as it came, for the page's API panel.
@@ -74,11 +74,11 @@ func (c *attestaClient) start(ctx context.Context, resource, policyID, credentia
 		return authorizationRequest{}, err
 	}
 	if status != http.StatusOK {
-		return authorizationRequest{}, fmt.Errorf("attesta answered %d: %s", status, bytes.TrimSpace(raw))
+		return authorizationRequest{}, fmt.Errorf("Attesta answered %d: %s", status, bytes.TrimSpace(raw))
 	}
 	var out authorizationRequest
 	if err := json.Unmarshal(raw, &out); err != nil || out.RequestID == "" || out.Link == "" {
-		return authorizationRequest{}, fmt.Errorf("attesta sent an unusable answer: %s", raw)
+		return authorizationRequest{}, fmt.Errorf("Attesta sent an unusable answer: %s", raw)
 	}
 	out.TraceID = traceID
 	return out, nil
@@ -105,11 +105,11 @@ func (c *attestaClient) outcome(ctx context.Context, id string) (outcome, json.R
 	case http.StatusNotFound:
 		return outcome{}, nil, errUnknownRequest
 	default:
-		return outcome{}, nil, fmt.Errorf("attesta answered %d: %s", status, bytes.TrimSpace(raw))
+		return outcome{}, nil, fmt.Errorf("Attesta answered %d: %s", status, bytes.TrimSpace(raw))
 	}
 	var out outcome
 	if err := json.Unmarshal(raw, &out); err != nil {
-		return outcome{}, nil, fmt.Errorf("attesta sent an unusable answer: %s", raw)
+		return outcome{}, nil, fmt.Errorf("Attesta sent an unusable answer: %s", raw)
 	}
 	return out, raw, nil
 }
