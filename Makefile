@@ -33,7 +33,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
 	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
-	k8s-traefik k8s-tls k8s-ingress
+	k8s-traefik k8s-tls k8s-ingress grafana
 
 build:
 	cd backend && go build ./...
@@ -77,6 +77,10 @@ k8s-logs:
 # attesta-backend is ClusterIP only — this is for manual curl/debugging directly against it.
 k8s-port-forward:
 	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/attesta-backend 8080:8080
+
+# Grafana (with the decision log in Loki) is in the observability stack, not in this repo. Open http://localhost:3000 and use Explore.
+grafana:
+	kubectl --context $(KUBE_CONTEXT) port-forward -n observability svc/grafana 3000:3000
 
 # Hot-deploys policies: writes POLICIES into the ConfigMap the backend reads, and the running backend picks the change up (within about a minute, as
 # Kubernetes updates the mounted files) without a restart. Files left out of POLICIES are removed from the backend.
