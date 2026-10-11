@@ -19,6 +19,9 @@ spec:
     spec:
       # Kubernetes would otherwise inject variables such as LAADPALEN_API_PORT=tcp://10.0.0.1:8787 for every Service in the namespace.
       enableServiceLinks: false
+      # The attesta image runs as uid 10001; fsGroup makes the decision log volume writable for it.
+      securityContext:
+        fsGroup: 10001
       containers:
         - name: api
           image: laadpalen-api:dev
@@ -62,9 +65,11 @@ spec:
                 secretKeyRef:
                   name: laadpalen-attesta
                   key: admin-token
-            # Authorization Decision Log: one record per decision, to stdout (the durable trail) and over OTLP to Alloy in the observability namespace.
+            # Authorization Decision Log: one record per decision, to an fsynced file on the decision-log volume (the durable trail), to stdout and over OTLP to Alloy.
             - name: ATTESTA_ADL_OUTPUT
-              value: "stdout,otlp"
+              value: "file,stdout,otlp"
+            - name: ATTESTA_ADL_FILE
+              value: /var/lib/attesta/adl/decisions.jsonl
             - name: ATTESTA_ADL_OTLP_ENDPOINT
               value: alloy.observability.svc.cluster.local:4317
             - name: ATTESTA_ADL_OTLP_INSECURE
@@ -80,6 +85,8 @@ spec:
             - name: policies
               mountPath: /policies
               readOnly: true
+            - name: decision-log
+              mountPath: /var/lib/attesta/adl
           readinessProbe:
             httpGet:
               path: /healthz
@@ -93,6 +100,9 @@ spec:
             initialDelaySeconds: 5
             periodSeconds: 10
       volumes:
+        - name: decision-log
+          persistentVolumeClaim:
+            claimName: laadpalen-decision-log
         - name: policies
           configMap:
             name: laadpalen-policies

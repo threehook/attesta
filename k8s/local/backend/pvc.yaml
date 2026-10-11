@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: attesta-decision-log
+  namespace: attesta
+spec:
+  storageClassName: attesta-retain
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

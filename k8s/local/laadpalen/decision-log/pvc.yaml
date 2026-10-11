@@ -1,0 +1,12 @@
+# Kept apart from api/ so that laadpalen-delete leaves the decision records in place.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: laadpalen-decision-log
+  namespace: attesta
+spec:
+  storageClassName: attesta-retain
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

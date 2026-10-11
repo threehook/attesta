@@ -1,0 +1,8 @@
+# For the decision log volumes: deleting a claim, or the namespace, keeps the volume and its records. Cluster-scoped, so no teardown target removes it.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: attesta-retain
+provisioner: rancher.io/local-path
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer

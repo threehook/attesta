@@ -52,7 +52,7 @@ docker-build:
 k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	$(MAKE) k8s-secret k8s-ensure-policies
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/backend/pvc.yaml -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-backend attesta-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-backend -n $(NAMESPACE)
 
@@ -137,7 +137,7 @@ docker-build-laadpalen-gui:
 laadpalen: docker-build docker-build-laadpalen-api docker-build-laadpalen-gui
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	$(MAKE) laadpalen-secret laadpalen-policies
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/laadpalen/api -f k8s/local/laadpalen/gui
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/laadpalen/decision-log -f k8s/local/laadpalen/api -f k8s/local/laadpalen/gui
 	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-api api=$(LAADPALEN_API_IMAGE) attesta=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-gui laadpalen-gui=$(LAADPALEN_GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/laadpalen-api -n $(NAMESPACE)
