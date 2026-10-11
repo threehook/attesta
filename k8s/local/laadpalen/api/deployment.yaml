@@ -23,7 +23,7 @@ spec:
       securityContext:
         fsGroup: 10001
       containers:
-        - name: api
+        - name: laadpalen-api
           image: laadpalen-api:dev
           imagePullPolicy: IfNotPresent
           env:
@@ -51,7 +51,7 @@ spec:
               port: 8787
             initialDelaySeconds: 5
             periodSeconds: 10
-        - name: attesta
+        - name: laadpalen-attesta
           image: attesta-backend:dev
           imagePullPolicy: IfNotPresent
           env:

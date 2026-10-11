@@ -142,7 +142,7 @@ laadpalen: docker-build docker-build-laadpalen-api docker-build-laadpalen-gui
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	$(MAKE) laadpalen-secret laadpalen-policies
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/laadpalen/decision-log -f k8s/local/laadpalen/api -f k8s/local/laadpalen/gui
-	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-api api=$(LAADPALEN_API_IMAGE) attesta=$(IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-api laadpalen-api=$(LAADPALEN_API_IMAGE) laadpalen-attesta=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/laadpalen-gui laadpalen-gui=$(LAADPALEN_GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/laadpalen-api -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/laadpalen-gui -n $(NAMESPACE)
@@ -165,10 +165,10 @@ laadpalen-delete:
 	kubectl --context $(KUBE_CONTEXT) delete configmap laadpalen-policies -n $(NAMESPACE) --ignore-not-found
 
 laadpalen-logs:
-	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c api -f
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c laadpalen-api -f
 
 laadpalen-attesta-logs:
-	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c attesta -f
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/laadpalen-api -c laadpalen-attesta -f
 
 # https for the demo: Traefik on host ports 80/443, the certificate Secret, and the Ingress for laadpalen.attesta.corbencreatives.nl,
 # api.attesta.corbencreatives.nl and issuer.attesta.corbencreatives.nl.
