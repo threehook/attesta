@@ -38,40 +38,67 @@ type Decision struct {
 type Logger struct {
 	log      *slog.Logger
 	out      io.Writer
+	closer   io.Closer
 	otel     *otelState
+	ship     *shipper
 	resource map[string]string
 	now      func() time.Time
 }
 
-// New builds a Logger. An output that cannot be set up is logged and skipped, so the others keep working.
-func New(ctx context.Context, cfg Config, log *slog.Logger) *Logger {
+// New builds a Logger. The file output is the durable trail, so New fails when it cannot be opened; an OTLP output that cannot be set up is
+// logged and skipped, so the others keep working.
+func New(ctx context.Context, cfg Config, log *slog.Logger) (*Logger, error) {
 	l := &Logger{log: log, out: io.Discard, resource: cfg.effectiveResource(), now: time.Now}
 	outputs := cfg.outputs()
+	var writers []io.Writer
+	if outputs[OutputFile] {
+		f, err := openSyncFile(cfg.File)
+		if err != nil {
+			return nil, err
+		}
+		l.closer = f
+		writers = append(writers, f)
+	}
 	if outputs[OutputStdout] {
-		l.out = os.Stdout
+		writers = append(writers, os.Stdout)
+	}
+	if len(writers) > 0 {
+		// The file comes first: MultiWriter stops at the first error, so a record that is not durable is never reported as written.
+		l.out = io.MultiWriter(writers...)
 	}
 	if outputs[OutputOTLP] {
 		if cfg.OTLPEndpoint == "" {
 			log.Error("adl: otlp output requested without ATTESTA_ADL_OTLP_ENDPOINT, skipping it")
 		} else if exporter, err := newOTelExporter(ctx, cfg); err != nil {
 			log.Error("adl: otlp export not available, skipping it", "error", err)
+		} else if outputs[OutputFile] {
+			// The file is the source: records the collector missed are sent again from it.
+			l.ship = newShipper(cfg.File, exporter, l.resource, log)
+			l.ship.start()
 		} else {
 			l.otel = newOTelState(exporter, l.resource)
 		}
 	}
 	log.Info("adl decision logging enabled", "output", cfg.Output)
-	return l
+	return l, nil
 }
 
-// Close flushes records still batched for OTLP.
+// Close sends the records still waiting for OTLP and closes the record file.
 func (l *Logger) Close(ctx context.Context) error {
 	if l == nil {
 		return nil
 	}
-	return l.otel.shutdown(ctx)
+	err := l.otel.shutdown(ctx)
+	if l.ship != nil {
+		err = errors.Join(err, l.ship.stop(ctx))
+	}
+	if l.closer != nil {
+		err = errors.Join(err, l.closer.Close())
+	}
+	return err
 }
 
-// Log writes the record for d. It returns an error when the stdout record could not be written or built, so a caller can refuse to return a
+// Log writes the record for d. It returns an error when the file or stdout record could not be written or built, so a caller can refuse to return a
 // decision nobody can trace; an OTLP failure after the record is queued does not surface.
 func (l *Logger) Log(ctx context.Context, d Decision) error {
 	if l == nil {
@@ -87,7 +114,11 @@ func (l *Logger) Log(ctx context.Context, d Decision) error {
 	} else if _, err := l.out.Write(append(buf, '\n')); err != nil {
 		errs = append(errs, fmt.Errorf("write the record: %w", err))
 	}
-	if l.otel != nil {
+	if l.ship != nil {
+		if len(errs) == 0 {
+			l.ship.notify()
+		}
+	} else if l.otel != nil {
 		if err := l.otel.emit(ctx, rec); err != nil {
 			errs = append(errs, err)
 		}

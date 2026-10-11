@@ -7,6 +7,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -168,6 +170,50 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("disk ful
 func TestAFailedWriteIsReported(t *testing.T) {
 	if err := testLogger(failingWriter{}).Log(context.Background(), allowed()); err == nil {
 		t.Fatal("want an error when the record cannot be written")
+	}
+}
+
+func TestTheFileOutputHoldsTheRecordWhenLogReturns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adl.jsonl")
+	l, err := New(context.Background(), Config{Output: "file", File: path}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.Log(context.Background(), allowed()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rec map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(data), &rec); err != nil {
+		t.Fatalf("want one JSON line in the file: %v", err)
+	}
+	if err := l.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestADecisionIsRefusedWhenTheFileCannotBeWritten(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adl.jsonl")
+	l, err := New(context.Background(), Config{Output: "file", File: path}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.Close(context.Background())
+	if err := l.Log(context.Background(), allowed()); err == nil {
+		t.Fatal("want an error when the record file cannot be written")
+	}
+}
+
+func TestTheFileOutputNeedsAUsablePath(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if _, err := New(context.Background(), Config{Output: "file"}, log); err == nil {
+		t.Fatal("want an error without a path")
+	}
+	if _, err := New(context.Background(), Config{Output: "file", File: filepath.Join(t.TempDir(), "missing", "adl.jsonl")}, log); err == nil {
+		t.Fatal("want an error for a path that cannot be opened")
 	}
 }
 

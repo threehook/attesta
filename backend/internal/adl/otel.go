@@ -35,13 +35,17 @@ func newOTelExporter(ctx context.Context, cfg Config) (sdklog.Exporter, error) {
 // newOTelState batches records to exporter. The batch processor makes emission asynchronous, so a collector outage does not fail a decision; the
 // stdout copy is the trail that survives it.
 func newOTelState(exporter sdklog.Exporter, resourceAttrs map[string]string) *otelState {
+	return newOTelStateWith(sdklog.NewBatchProcessor(exporter), resourceAttrs)
+}
+
+func newOTelStateWith(processor sdklog.Processor, resourceAttrs map[string]string) *otelState {
 	attrs := make([]attribute.KeyValue, 0, len(resourceAttrs))
 	for k, v := range resourceAttrs {
 		attrs = append(attrs, attribute.String(k, v))
 	}
 	provider := sdklog.NewLoggerProvider(
 		sdklog.WithResource(resource.NewSchemaless(attrs...)),
-		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter)),
+		sdklog.WithProcessor(processor),
 	)
 	return &otelState{provider: provider, logger: provider.Logger("attesta/adl")}
 }

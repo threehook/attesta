@@ -9,12 +9,15 @@ import (
 const (
 	OutputStdout = "stdout"
 	OutputOTLP   = "otlp"
+	OutputFile   = "file"
 )
 
 // Config says where records go. The zero value writes them to stdout only.
 type Config struct {
-	// Output is a comma-separated list of stdout and otlp. Empty means stdout.
+	// Output is a comma-separated list of stdout, file and otlp. Empty means stdout.
 	Output string
+	// File is the path of the append-only record file the file output fsyncs before a decision is returned.
+	File string
 	// OTLPEndpoint is the collector's OTLP/gRPC address, such as alloy.observability.svc.cluster.local:4317.
 	OTLPEndpoint string
 	// OTLPInsecure sends without TLS, for a collector inside the cluster.
@@ -23,10 +26,11 @@ type Config struct {
 	Resource map[string]string
 }
 
-// ConfigFromEnv reads ATTESTA_ADL_OUTPUT, ATTESTA_ADL_OTLP_ENDPOINT, ATTESTA_ADL_OTLP_INSECURE (true) and ATTESTA_ADL_RESOURCE (key=value,key=value).
+// ConfigFromEnv reads ATTESTA_ADL_OUTPUT, ATTESTA_ADL_FILE, ATTESTA_ADL_OTLP_ENDPOINT, ATTESTA_ADL_OTLP_INSECURE (true) and ATTESTA_ADL_RESOURCE (key=value,key=value).
 func ConfigFromEnv() Config {
 	return Config{
 		Output:       os.Getenv("ATTESTA_ADL_OUTPUT"),
+		File:         os.Getenv("ATTESTA_ADL_FILE"),
 		OTLPEndpoint: os.Getenv("ATTESTA_ADL_OTLP_ENDPOINT"),
 		OTLPInsecure: os.Getenv("ATTESTA_ADL_OTLP_INSECURE") == "true",
 		Resource:     parseResource(os.Getenv("ATTESTA_ADL_RESOURCE")),

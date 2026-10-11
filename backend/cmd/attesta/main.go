@@ -62,7 +62,10 @@ func run() error {
 
 	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}})
 
-	decisions := adl.New(context.Background(), adl.ConfigFromEnv(), logger)
+	decisions, err := adl.New(context.Background(), adl.ConfigFromEnv(), logger)
+	if err != nil {
+		return err
+	}
 
 	server := &httpapi.Server{
 		Decisions:   decisions,
