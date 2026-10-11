@@ -29,16 +29,21 @@ a new trace starts. The sampled flag is not used: every decision is recorded.
 
 | Variable | Meaning |
 |---|---|
-| `ATTESTA_ADL_OUTPUT` | `stdout`, `otlp` or `stdout,otlp`. Default `stdout`. |
+| `ATTESTA_ADL_OUTPUT` | Any of `stdout`, `file`, `otlp`, comma-separated. Default `stdout`. |
+| `ATTESTA_ADL_FILE` | Path of the record file for `file`. Attesta does not start when it cannot be opened. |
 | `ATTESTA_ADL_OTLP_ENDPOINT` | OTLP/gRPC collector, such as `alloy.observability.svc.cluster.local:4317`. |
 | `ATTESTA_ADL_OTLP_INSECURE` | `true` sends without TLS. |
 | `ATTESTA_ADL_RESOURCE` | Producer identity, `key=value,key=value`. `service.name` defaults to `attesta-adl`, `instance_id` to the pod name. |
 
 stdout writes the record as one JSON line. otlp sends the same JSON as the OTLP log body, with `trace_id` and `span_id` as native fields and the
-resource as OTLP resource attributes. Keep stdout on next to otlp: the OTLP export is batched, so a collector outage loses what is still queued.
+resource as OTLP resource attributes. file appends the same JSON line to `ATTESTA_ADL_FILE` and fsyncs it. The file must be on a persistent volume.
 
-A record is written before the decision is handed to the application. If the stdout record cannot be written, no decision is returned: the
-application gets a denial ("decision could not be logged") and the wallet a server error.
+With file and otlp together, the OTLP export reads the file: it sends the records after the offset saved in `ATTESTA_ADL_FILE` + `.offset` and moves
+the offset once the collector accepted them. After a collector outage or a restart it sends what was missed, so a record can arrive twice. Without
+file, otlp sends from memory in batches and a collector outage loses what is still queued.
+
+A record is written before the decision is handed to the application. If the file or stdout record cannot be written, no decision is returned:
+the application gets a denial ("decision could not be logged") and the wallet a server error.
 
 ## Observing it
 
@@ -57,7 +62,7 @@ namespace and drops the ADL lines there, so a decision is stored once. In Grafan
 ## Not met
 
 - TLS to the log: the collector is reached inside the cluster without it.
-- Durable before returning: the stdout write is not fsynced and the OTLP export is asynchronous.
+- The record file is never trimmed; records already sent stay in it.
 - Idempotent ingestion: Loki drops identical lines in a stream, which is not a guarantee.
 - Trace context is kept and recorded, but Attesta makes no outgoing calls to pass it on.
 - Retention follows Loki's (31 days here); the organisation's own retention policy is not applied.
