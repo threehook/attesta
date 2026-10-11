@@ -30,17 +30,20 @@ a new trace starts. The sampled flag is not used: every decision is recorded.
 | Variable | Meaning |
 |---|---|
 | `ATTESTA_ADL_OUTPUT` | Any of `stdout`, `file`, `otlp`, comma-separated. Default `stdout`. |
-| `ATTESTA_ADL_FILE` | Path of the record file for `file`. Attesta does not start when it cannot be opened. |
+| `ATTESTA_ADL_FILE` | Base path of the record files for `file`. Attesta does not start when they cannot be opened. |
 | `ATTESTA_ADL_OTLP_ENDPOINT` | OTLP/gRPC collector, such as `alloy.observability.svc.cluster.local:4317`. |
 | `ATTESTA_ADL_OTLP_INSECURE` | `true` sends without TLS. |
 | `ATTESTA_ADL_RESOURCE` | Producer identity, `key=value,key=value`. `service.name` defaults to `attesta-adl`, `instance_id` to the pod name. |
 
 stdout writes the record as one JSON line. otlp sends the same JSON as the OTLP log body, with `trace_id` and `span_id` as native fields and the
-resource as OTLP resource attributes. file appends the same JSON line to `ATTESTA_ADL_FILE` and fsyncs it. The file must be on a persistent volume.
+resource as OTLP resource attributes. file appends the same JSON line to the record file and fsyncs it. The record file is a series of segments, `ATTESTA_ADL_FILE` + `.000001`,
+`.000002` and so on; a new segment starts at 64 MiB. Keep them on a persistent volume.
 
-With file and otlp together, the OTLP export reads the file: it sends the records after the offset saved in `ATTESTA_ADL_FILE` + `.offset` and moves
-the offset once the collector accepted them. After a collector outage or a restart it sends what was missed, so a record can arrive twice. Without
-file, otlp sends from memory in batches and a collector outage loses what is still queued.
+With file and otlp together, the OTLP export reads the segments in order: it sends the records after the position saved in `ATTESTA_ADL_FILE` +
+`.offset` (segment and offset) and moves it once the collector accepted them. After a collector outage or a restart it sends what was missed, so a
+record can arrive twice. A segment that is sent in full is kept for one day from then, in case the collector lost what it accepted, and then deleted;
+the segment being written and segments not yet sent are never deleted. Without file, otlp sends from memory in batches and a collector outage loses
+what is still queued.
 
 A record is written before the decision is handed to the application. If the file or stdout record cannot be written, no decision is returned:
 the application gets a denial ("decision could not be logged") and the wallet a server error.
@@ -62,7 +65,7 @@ namespace and drops the ADL lines there, so a decision is stored once. In Grafan
 ## Not met
 
 - TLS to the log: the collector is reached inside the cluster without it.
-- The record file is never trimmed; records already sent stay in it.
+- Once a sent segment is deleted, Loki holds the only copy of its records; nothing replays from a deleted segment.
 - Idempotent ingestion: Loki drops identical lines in a stream, which is not a guarantee.
 - Trace context is kept and recorded, but Attesta makes no outgoing calls to pass it on.
 - Retention follows Loki's (31 days here); the organisation's own retention policy is not applied.

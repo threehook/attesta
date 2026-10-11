@@ -52,7 +52,7 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Logger, error) {
 	outputs := cfg.outputs()
 	var writers []io.Writer
 	if outputs[OutputFile] {
-		f, err := openSyncFile(cfg.File)
+		f, err := openSegments(cfg.File, segmentBytes)
 		if err != nil {
 			return nil, err
 		}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,7 +37,7 @@ func (e *flakyExporter) count() int {
 func fileLogger(t *testing.T) (*Logger, string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "adl.jsonl")
-	f, err := openSyncFile(path)
+	f, err := openSegments(path, segmentBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +91,7 @@ func TestRecordsTheCollectorMissedAreSentWhenItIsBack(t *testing.T) {
 	if _, err := s.drain(context.Background()); err == nil {
 		t.Fatal("want an error while the collector is down")
 	}
-	if s.readOffset() != 0 {
+	if pos, _ := s.readPosition(); pos.off != 0 {
 		t.Fatal("the offset moved although nothing was accepted")
 	}
 	exp.down.Store(false)
@@ -103,7 +104,7 @@ func TestAHalfWrittenLineWaitsAndABrokenLineIsSkipped(t *testing.T) {
 	l, path := fileLogger(t)
 	exp := &flakyExporter{}
 	logN(t, l, 1)
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	f, err := os.OpenFile(segmentPath(path, 1), os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,4 +143,117 @@ func TestStopSendsWhatIsLeftAndLogWakesTheLoop(t *testing.T) {
 	if exp.count() != 2 {
 		t.Fatalf("exported %d records after Close, want 2", exp.count())
 	}
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func TestRecordsAreShippedAcrossSegmentsInOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adl.jsonl")
+	w, err := openSegments(path, 600) // smaller than a record: one record per segment
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	l := testLogger(w)
+	logN(t, l, 3)
+	if seqs, _ := listSegments(path); len(seqs) != 3 {
+		t.Fatalf("segments = %v, want 3", seqs)
+	}
+
+	exp := &flakyExporter{}
+	s := newTestShipper(path, exp)
+	if n, err := s.drain(context.Background()); err != nil || n != 3 || exp.count() != 3 {
+		t.Fatalf("drain = %d, %v, exported %d; want 3", n, err, exp.count())
+	}
+	if pos, _ := s.readPosition(); pos.seq != 3 {
+		t.Fatalf("position = %+v, want it in the last segment", pos)
+	}
+	logN(t, l, 1)
+	if n, err := s.drain(context.Background()); err != nil || n != 1 {
+		t.Fatalf("drain after a new segment = %d, %v; want 1", n, err)
+	}
+}
+
+func TestASegmentIsKeptForADayAfterItWasSentThenDeleted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adl.jsonl")
+	w, err := openSegments(path, 600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	l := testLogger(w)
+	logN(t, l, 3)
+	old := time.Now().Add(-48 * time.Hour)
+	for seq := 1; seq <= 3; seq++ {
+		os.Chtimes(segmentPath(path, seq), old, old)
+	}
+
+	exp := &flakyExporter{}
+	exp.down.Store(true)
+	s := newTestShipper(path, exp)
+	s.drain(context.Background())
+	for seq := 1; seq <= 3; seq++ {
+		if !exists(segmentPath(path, seq)) {
+			t.Fatalf("segment %d was deleted before it was sent", seq)
+		}
+	}
+
+	exp.down.Store(false)
+	if _, err := s.drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for seq := 1; seq <= 2; seq++ {
+		if !exists(segmentPath(path, seq)) {
+			t.Fatalf("segment %d was deleted although it was sent just now, however old its records", seq)
+		}
+	}
+	for seq := 1; seq <= 2; seq++ {
+		os.Chtimes(segmentPath(path, seq), old, old)
+	}
+	os.Chtimes(segmentPath(path, 3), old, old)
+	s.drain(context.Background())
+	if exists(segmentPath(path, 1)) || exists(segmentPath(path, 2)) {
+		t.Fatal("sent segments older than the retention are still there")
+	}
+	if !exists(segmentPath(path, 3)) {
+		t.Fatal("the segment being written was deleted")
+	}
+}
+
+func TestARecordFileFromBeforeSegmentsIsAdoptedWithItsOffset(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "adl.jsonl")
+	legacy, err := openSegments(path, segmentBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logN(t, testLogger(legacy), 2)
+	legacy.Close()
+	size := fileSize(t, segmentPath(path, 1))
+	if err := os.Rename(segmentPath(path, 1), path); err != nil { // the layout before segments
+		t.Fatal(err)
+	}
+	os.WriteFile(path+".offset", []byte(strconv.FormatInt(size, 10)), 0o600)
+
+	w, err := openSegments(path, segmentBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer w.Close()
+	logN(t, testLogger(w), 1)
+	exp := &flakyExporter{}
+	if n, err := newTestShipper(path, exp).drain(context.Background()); err != nil || n != 1 {
+		t.Fatalf("drain = %d, %v; want only the record written after the upgrade", n, err)
+	}
+}
+
+func fileSize(t *testing.T, path string) int64 {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Size()
 }

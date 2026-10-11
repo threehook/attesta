@@ -182,7 +182,7 @@ func TestTheFileOutputHoldsTheRecordWhenLogReturns(t *testing.T) {
 	if err := l.Log(context.Background(), allowed()); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(segmentPath(path, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
