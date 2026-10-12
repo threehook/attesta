@@ -1,6 +1,17 @@
 import type { ReactNode } from "react";
 import { HOME, MENU, type Crumb, type MenuItem } from "./menu.js";
 
+const APP_NAME = "Attesta Wallet";
+
+function AppMark() {
+  return (
+    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 2.5 4.5 5.5v5.8c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.5z" />
+      <path d="m8.5 12.2 2.4 2.4 4.6-5" />
+    </svg>
+  );
+}
+
 export function Shell(props: { title: string; crumbs: Crumb[]; active: string; footer?: ReactNode; children: ReactNode }) {
   const crumbs = [...props.crumbs, { label: props.title }];
   const list = (items: MenuItem[]) => (
@@ -21,6 +32,10 @@ export function Shell(props: { title: string; crumbs: Crumb[]; active: string; f
           <img src="./logo.svg" alt="Gemeente Vlierdam" />
         </div>
         <div className="title">
+          <div className="appname">
+            <AppMark />
+            {APP_NAME}
+          </div>
           <nav className="crumbs" aria-label="Kruimelpad">
             <ol>
               {crumbs.map((crumb, i) =>

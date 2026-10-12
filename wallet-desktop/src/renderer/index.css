@@ -76,6 +76,7 @@ body {
 
 header {
   grid-area: header;
+  position: relative;
   min-height: 88px;
   background: var(--brand);
   color: var(--brand-text);
@@ -86,6 +87,19 @@ header {
 header .title {
   padding: 14px 32px 18px;
   align-self: center;
+}
+
+.appname {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: absolute;
+  right: 32px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .logo {

@@ -28,8 +28,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    document.title = route === HOME ? "attesta wallet" : `${route.label} – attesta wallet`;
-  }, [route]);
+    document.title = "Attesta Wallet";
+  }, []);
 
   const refresh = useCallback(async () => {
     const result = await window.wallet.list();
