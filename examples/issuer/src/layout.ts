@@ -18,6 +18,9 @@ export interface MenuGroup {
   items: MenuItem[]
 }
 
+const APP_NAME = 'Attesta VC Uitgever'
+const APP_MARK = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5 4.5 5.5v5.8c0 4.6 3.1 8.6 7.5 10.2 4.4-1.6 7.5-5.6 7.5-10.2V5.5z"/><path d="m8.5 12.2 2.4 2.4 4.6-5"/></svg>`
+
 /** The first menu item, without a label above it. */
 export const HOME: MenuItem = { id: 'home', label: 'Home', href: '/', description: '' }
 
@@ -30,7 +33,7 @@ export const MENU: MenuGroup[] = [
         label: 'Aanvragen laadpalen',
         href: '/employee',
         description:
-          'Geef een medewerker een verifiable credential uit met afdeling, organisatie en diploma. Met deze verifiable credential mag de medewerker laadpalen aanvragen.',
+          'Geef een medewerker een verifiable credential met afdeling, organisatie en diploma. Met deze verifiable credential mag de medewerker laadpalen aanvragen.',
       },
     ],
   },
@@ -50,10 +53,11 @@ const theme = `
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
   display:grid;grid-template-columns:var(--menu-w) 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"header header" "menu main" "footer footer"}
-header{grid-area:header;min-height:88px;background:var(--brand);color:var(--brand-text);display:grid;grid-template-columns:var(--menu-w) 1fr}
+header{grid-area:header;position:relative;min-height:88px;background:var(--brand);color:var(--brand-text);display:grid;grid-template-columns:var(--menu-w) 1fr}
 header .title{padding:14px 32px 18px;align-self:center}
 .logo{position:relative;border:1px solid var(--brand-muted);background:var(--logo-bg)}
 .logo img{position:absolute;inset:6px;width:calc(100% - 12px);height:calc(100% - 12px);object-fit:contain}
+header .app{display:flex;align-items:center;gap:8px;position:absolute;right:32px;font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
 .crumbs ol{display:flex;flex-wrap:wrap;gap:6px;list-style:none;margin:0;padding:0;font-size:12px;color:var(--brand-muted)}
 .crumbs li+li::before{content:"/";margin-right:6px}
 .crumbs a{color:inherit;text-decoration:none}.crumbs a:hover{text-decoration:underline}
@@ -88,6 +92,7 @@ code{word-break:break-all}
   nav.menu{border-right:0;border-bottom:1px solid var(--border)}
   :root{--menu-w:120px}
   header .title,main,footer{padding-left:16px;padding-right:16px}
+  header .app{right:16px}
 }`
 
 export interface Page {
@@ -117,8 +122,8 @@ export function renderPage(page: Page): string {
   const menu = list([HOME]) + MENU.map((group) => `<h2>${escape(group.label)}</h2>${list(group.items)}`).join('')
   const footer = page.footer ? `<footer title="${escape(page.footer)}">${escape(page.footer)}</footer>` : '<footer>&nbsp;</footer>'
   return `<!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escape(page.title)}</title><style>${theme}</style>
-<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div></header>
+<title>${APP_NAME}</title><style>${theme}</style>
+<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div></header>
 <nav class="menu" aria-label="Menu">${menu}</nav>
 <main>${page.body}</main>
 ${footer}`
