@@ -146,8 +146,8 @@ export default function App() {
   }, [])
   const page = route === 'laadpaal' ? { title: LAADPAAL.label, crumbs: [{ label: HOME.label, href: HOME.href }], active: LAADPAAL.id } : { title: HOME.label, crumbs: [], active: HOME.id }
   useEffect(() => {
-    document.title = page.title
-  }, [page.title])
+    document.title = 'Attesta Laadpalen'
+  }, [])
 
   const waiting = submitted !== null && (state === null || state.status === 'pending')
 
