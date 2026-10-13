@@ -45,7 +45,7 @@ export interface EmployeeClaims {
 
 export interface IssuerOptions {
   port: number
-  /** Where wallets reach this issuer; it appears in every offer and in the issuer's metadata. */
+  /** Where wallets reach this issuer; it appears in the QR codes and in the issuer's metadata. */
   publicUrl: string
   storeKey: string
   /** Directory that holds the SQLite store file with the issuer's signing key; created if missing. Omit to keep it in memory only. Ignored with `database`. */
@@ -59,7 +59,7 @@ export interface IssuerOptions {
   /** Sends the mail with the QR code that gives a holder their credential. */
   mailer: Mailer
   /** How long a QR code works, in seconds. Defaults to 24 hours. */
-  offerLifetimeSeconds?: number
+  qrLifetimeSeconds?: number
   /** The least time between two new QR codes that an expired one asks for, in milliseconds. Defaults to ten minutes. */
   renewalCooldownMs?: number
   allowInsecureHttp?: boolean
@@ -125,7 +125,7 @@ const sdJwtConfiguration = (type: CredentialType) => ({
 export async function startIssuer(options: IssuerOptions) {
   if (options.path && !options.database) mkdirSync(options.path, { recursive: true })
   const entitlements: EntitlementStore = options.entitlements ?? (options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE, options.entitlementLeaseMs) : new MemoryEntitlementStore(options.entitlementLeaseMs))
-  // The credential is made from the entitlement the offer points to. Claiming it keeps anyone else from taking it; it counts as issued once the library says so.
+  // The credential is made from the entitlement the QR code points to. Claiming it keeps anyone else from taking it; it counts as issued once the library says so.
   async function claimEntitlement(id: string | undefined): Promise<Entitlement> {
     const entitlement = id ? await entitlements.find(id) : undefined
     if (!entitlement || (entitlement.validUntil && entitlement.validUntil.getTime() <= Date.now()) || !(await entitlements.claim(entitlement.id))) {
@@ -135,29 +135,30 @@ export async function startIssuer(options: IssuerOptions) {
   }
 
   const app = express()
-  // Registered before the library's own routes, which would answer an expired offer with a plain 404.
+  // Registered before the library's own routes, which would answer an expired QR code with a plain 404.
   // A wallet that comes with an expired QR code gets a new one by mail, as long as the entitlement is still there and no new one went out lately.
   const renewed = new Map<string, number>()
-  app.get(`/oid4vci/${ISSUER_ID}/offers/:offer`, async (req, res, next) => {
+  app.get(`/oid4vci/${ISSUER_ID}/offers/:id`, async (req, res, next) => {
     try {
-      const session = await agent.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository).findSingleByQuery(agent.context, { issuerId: ISSUER_ID, credentialOfferId: req.params.offer })
+      const session = await agent.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository).findSingleByQuery(agent.context, { issuerId: ISSUER_ID, credentialOfferId: req.params.id })
       const usable = session?.state === OpenId4VcIssuanceSessionState.OfferCreated || session?.state === OpenId4VcIssuanceSessionState.OfferUriRetrieved
       if (!session || !usable || !session.expiresAt || session.expiresAt.getTime() > Date.now()) return next()
       const id = (session.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
       const entitlement = id ? await entitlements.find(id) : undefined
       const open = entitlement ? (await entitlements.findOpenByEmail(entitlement.email)).some((e) => e.id === entitlement.id) : false
       if (!entitlement || !open) {
-        res.status(410).json({ error: 'offer_gone', error_description: 'Dit credential is al opgehaald of ingetrokken.' })
+        res.status(410).json({ error: 'qr_gone', error_description: 'Dit credential is al opgehaald of ingetrokken.' })
         return
       }
       const cooldown = options.renewalCooldownMs ?? 10 * 60_000
       if (Date.now() - (renewed.get(entitlement.id) ?? 0) < cooldown) {
-        res.status(410).json({ error: 'offer_expired', error_description: 'De QR-code is verlopen. Er is al een nieuwe QR-code naar uw e-mail gestuurd.' })
+        res.status(410).json({ error: 'qr_expired', error_description: 'De QR-code is verlopen. Er is al een nieuwe QR-code naar uw e-mail gestuurd.' })
         return
       }
       renewed.set(entitlement.id, Date.now())
-      await sendOffer(entitlement)
-      res.status(410).json({ error: 'offer_expired', error_description: 'De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.' })
+      console.log(`a wallet came with an expired QR code for ${entitlement.email}; sending a new one`)
+      await mailQrCode(entitlement)
+      res.status(410).json({ error: 'qr_expired', error_description: 'De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.' })
     } catch (error) {
       next(error)
     }
@@ -252,9 +253,9 @@ export async function startIssuer(options: IssuerOptions) {
     return same ?? (await entitlements.create({ email: claims.email, type, claims: stored, validUntil }))
   }
 
-  /** Makes an offer for the entitlement and mails its person a QR code that holds it. */
-  async function sendOffer(entitlement: Entitlement): Promise<{ offerUri: string; qr: Buffer }> {
-    const lifetime = options.offerLifetimeSeconds ?? 24 * 3600
+  /** Mails the entitlement's person a QR code that claims it, and gives the link the code holds (the library and the standard call it a credential offer). */
+  async function mailQrCode(entitlement: Entitlement): Promise<{ link: string; qr: Buffer }> {
+    const lifetime = options.qrLifetimeSeconds ?? 24 * 3600
     const { credentialOffer } = await agent.openid4vc.issuer.createCredentialOffer({
       issuerId: ISSUER_ID,
       credentialConfigurationIds: [entitlement.type],
@@ -276,7 +277,8 @@ export async function startIssuer(options: IssuerOptions) {
         { filename: 'qr-code.png', content: qr, contentType: 'image/png', cid: 'credential-qr' },
       ],
     })
-    return { offerUri: credentialOffer, qr }
+    console.log(`mailed a QR code for the ${entitlement.type} credential to ${entitlement.email}`)
+    return { link: credentialOffer, qr }
   }
 
   // Registered after the OpenID4VCI routes, as the module recommends.
@@ -289,10 +291,10 @@ export async function startIssuer(options: IssuerOptions) {
   // The entitlement is recorded, and its person gets the mail with the QR code.
   async function grant(res: express.Response, entitlement: Entitlement) {
     try {
-      await sendOffer(entitlement)
+      await mailQrCode(entitlement)
       res.json({ entitlementId: entitlement.id, mailedTo: entitlement.email })
     } catch (error) {
-      console.error('could not send the offer', error)
+      console.error('could not mail the QR code', error)
       res.status(502).json({ error: 'het credential is vastgelegd, maar de e-mail kon niet worden verstuurd; probeer het opnieuw', entitlementId: entitlement.id })
     }
   }
@@ -344,7 +346,7 @@ export async function startIssuer(options: IssuerOptions) {
     /** The DID that signs every credential; verifiers trust the issuer by this identifier. */
     did: issuerDid.did,
     entitlements,
-    sendOffer,
+    mailQrCode,
     createDiplomaEntitlement: (claims: DiplomaClaims) => createEntitlement(DIPLOMA, claims),
     createEmployeeEntitlement: (claims: EmployeeClaims) => createEntitlement(EMPLOYEE, claims),
     async close() {

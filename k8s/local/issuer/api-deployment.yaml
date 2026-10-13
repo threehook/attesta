@@ -25,7 +25,7 @@ spec:
           ports:
             - containerPort: 4001
           env:
-            # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into every offer.
+            # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into the QR codes and the issuer metadata.
             - name: ATTESTA_ISSUER_PUBLIC_URL
               value: https://issuer.attesta.corbencreatives.nl
             # The mail with the QR code that gives a person their credential. In the demo it goes to the mail catcher; an organisation points it at its own mail server.

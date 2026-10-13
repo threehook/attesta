@@ -1,7 +1,7 @@
 // What tests need to get a credential into a wallet the way a holder does: an issuer whose mail is kept in memory, and the QR code in that mail read back
 // the way the wallet reads it. Nothing in the issuer itself depends on this.
 import { createServer } from 'node:net'
-import { acceptCredentialOffer, type HeldCredential, readQrImage, type WalletAgent } from '@attesta/wallet'
+import { acceptCredential, type HeldCredential, readQrImage, type WalletAgent } from '@attesta/wallet'
 import { type IssuerOptions, startIssuer } from './issuer.js'
 import type { Mail } from './mail.js'
 
@@ -46,16 +46,16 @@ export function qrImageFor(test: TestIssuer, to: string): Buffer {
   return attachment.content
 }
 
-/** The offer link in the QR code of the newest mail to `to`. */
-export const offerLinkFor = (test: TestIssuer, to: string): string => readQrImage(qrImageFor(test, to))
+/** The link in the QR code of the newest mail to `to`. */
+export const qrLinkFor = (test: TestIssuer, to: string): string => readQrImage(qrImageFor(test, to))
 
 /** The wallet takes the QR code from the newest mail to `to` and fetches the credential. */
-export const receive = (wallet: WalletAgent, test: TestIssuer, to: string): Promise<HeldCredential[]> => acceptCredentialOffer(wallet, offerLinkFor(test, to))
+export const receive = (wallet: WalletAgent, test: TestIssuer, to: string): Promise<HeldCredential[]> => acceptCredential(wallet, qrLinkFor(test, to))
 
 /** The issuer mails the person's open entitlement of this type, as it does when it is recorded, and the wallet fetches the credential from the QR code. */
 export async function fetchCredential(wallet: WalletAgent, test: TestIssuer, type: string, email: string): Promise<HeldCredential[]> {
   const entitlement = (await test.issuer.entitlements.findOpenByEmail(email)).find((e) => e.type === type)
   if (!entitlement) throw new Error(`there is no open ${type} entitlement for ${email}`)
-  await test.issuer.sendOffer(entitlement)
+  await test.issuer.mailQrCode(entitlement)
   return receive(wallet, test, email)
 }

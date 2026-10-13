@@ -1,10 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWalletAgent, listCredentials, previewCredentialOffer, readQrImage, type WalletAgent } from '@attesta/wallet'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createWalletAgent, listCredentials, previewCredential, readQrImage, type WalletAgent } from '@attesta/wallet'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MemoryEntitlementStore } from './entitlements.js'
-import { offerLinkFor, qrImageFor, receive, startTestIssuer, type TestIssuer } from './testing.js'
+import { qrLinkFor, qrImageFor, receive, startTestIssuer, type TestIssuer } from './testing.js'
 
 const employee = { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' as const, organisation: 'Gemeente Vlierdam', diploma: 'laadpalen-management', diplomaValidUntil: '2031-06-30' }
 const diploma = { name: 'Jerry Smith', email: 'jerry@example.com', degree: 'Mathematics', university: 'Trusted University' }
@@ -36,7 +36,7 @@ describe('a QR code that is mailed', () => {
   })
 
   it('mails the person a QR code as an image, in the mail and as an attachment', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
 
     expect(test.sent).toHaveLength(1)
     const mail = test.sent[0]
@@ -51,10 +51,22 @@ describe('a QR code that is mailed', () => {
     expect(mail.text).toContain('QR-code uploaden')
   })
 
-  it('holds the offer in the code, and nothing secret in the text of the mail', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
+  it('logs that it mailed a QR code, and to whom', async () => {
+    const logged: string[] = []
+    const log = vi.spyOn(console, 'log').mockImplementation((line: string) => void logged.push(line))
+    try {
+      await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+    } finally {
+      log.mockRestore()
+    }
 
-    const link = offerLinkFor(test, 'jerry@example.com')
+    expect(logged).toEqual(['mailed a QR code for the Employee credential to jerry@example.com'])
+  })
+
+  it('holds the link in the code, and nothing secret in the text of the mail', async () => {
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+
+    const link = qrLinkFor(test, 'jerry@example.com')
 
     expect(link).toMatch(new RegExp(`^openid-credential-offer://\\?credential_offer_uri=${encodeURIComponent(`${test.url}/oid4vci/diploma/offers/`)}`))
     expect(test.sent[0].text).not.toContain('credential_offer')
@@ -63,7 +75,7 @@ describe('a QR code that is mailed', () => {
 
   it('gives the wallet the credential, and marks the entitlement issued', async () => {
     const entitlement = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(entitlement)
+    await test.issuer.mailQrCode(entitlement)
 
     const accepted = await receive(wallet, test, employee.email)
 
@@ -72,7 +84,7 @@ describe('a QR code that is mailed', () => {
   })
 
   it('does the same for every credential type', async () => {
-    await test.issuer.sendOffer(await test.issuer.createDiplomaEntitlement(diploma))
+    await test.issuer.mailQrCode(await test.issuer.createDiplomaEntitlement(diploma))
 
     const accepted = await receive(wallet, test, diploma.email)
 
@@ -80,7 +92,7 @@ describe('a QR code that is mailed', () => {
   })
 
   it('works once', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
     await receive(wallet, test, employee.email)
 
     await expect(receive(wallet, test, employee.email)).rejects.toThrow()
@@ -88,7 +100,7 @@ describe('a QR code that is mailed', () => {
 
   it('issues nothing for an entitlement that was revoked after the mail', async () => {
     const entitlement = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(entitlement)
+    await test.issuer.mailQrCode(entitlement)
     await test.issuer.entitlements.revoke(entitlement.id)
 
     await expect(receive(wallet, test, employee.email)).rejects.toMatchObject(denied)
@@ -98,13 +110,13 @@ describe('a QR code that is mailed', () => {
 
   it('gives a holder who lost their credential a new one only when the organisation makes a new entitlement', async () => {
     const first = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(first)
+    await test.issuer.mailQrCode(first)
     await receive(wallet, test, employee.email)
     await until(() => test.issuer.entitlements.find(first.id), (e) => e?.status === 'issued')
     await expect(receive(wallet, test, employee.email)).rejects.toThrow()
 
     const second = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(second)
+    await test.issuer.mailQrCode(second)
     const again = await receive(wallet, test, employee.email)
 
     expect(second.id).not.toBe(first.id)
@@ -118,11 +130,11 @@ describe('a QR code that is mailed', () => {
       const { id } = await short.issuer.createEmployeeEntitlement(employee)
       // An attempt that took the entitlement and then broke off.
       await short.issuer.entitlements.claim(id)
-      await short.issuer.sendOffer((await short.issuer.entitlements.find(id))!)
+      await short.issuer.mailQrCode((await short.issuer.entitlements.find(id))!)
       await expect(receive(wallet, short, employee.email)).rejects.toMatchObject(denied)
 
       await new Promise((resolve) => setTimeout(resolve, 400))
-      await short.issuer.sendOffer((await short.issuer.entitlements.find(id))!)
+      await short.issuer.mailQrCode((await short.issuer.entitlements.find(id))!)
 
       expect((await receive(wallet, short, employee.email))[0].type).toBe('Employee')
     } finally {
@@ -143,7 +155,7 @@ describe('a QR code that is mailed', () => {
     try {
       const first = await startTestIssuer({ path: dir, seed: 'restart seed', entitlements: store })
       const entitlement = await first.issuer.createEmployeeEntitlement(employee)
-      await first.issuer.sendOffer(entitlement)
+      await first.issuer.mailQrCode(entitlement)
       expect(await receive(wallet, first, employee.email)).toHaveLength(1)
       expect(await store.find(entitlement.id)).toMatchObject({ status: 'claimed' })
       await first.close()
@@ -164,7 +176,7 @@ describe('a QR code that has expired', () => {
   let test: TestIssuer
 
   beforeEach(async () => {
-    test = await startTestIssuer({ offerLifetimeSeconds: 1, renewalCooldownMs: 1500 })
+    test = await startTestIssuer({ qrLifetimeSeconds: 1, renewalCooldownMs: 1500 })
     wallet = await createWalletAgent({ storeId: 'wallet', storeKey: 'wallet-test-key', allowInsecureHttp: true })
   })
 
@@ -176,11 +188,11 @@ describe('a QR code that has expired', () => {
   const expire = () => new Promise((resolve) => setTimeout(resolve, 1500))
 
   it('makes the issuer mail a new QR code, which works', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
-    const old = offerLinkFor(test, employee.email)
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+    const old = qrLinkFor(test, employee.email)
     await expire()
 
-    await expect(previewCredentialOffer(wallet, old)).rejects.toThrow('De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.')
+    await expect(previewCredential(wallet, old)).rejects.toThrow('De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.')
 
     expect(test.sent).toHaveLength(2)
     expect(qrImageFor(test, employee.email)).not.toEqual(test.sent[0].attachments![0].content)
@@ -188,19 +200,19 @@ describe('a QR code that has expired', () => {
   })
 
   it('tells the wallet that a new code was sent', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
-    const old = offerLinkFor(test, employee.email)
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+    const old = qrLinkFor(test, employee.email)
     await expire()
 
     const res = await fetch(decodeURIComponent(old.split('credential_offer_uri=')[1]))
 
     expect(res.status).toBe(410)
-    expect(await res.json()).toEqual({ error: 'offer_expired', error_description: 'De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.' })
+    expect(await res.json()).toEqual({ error: 'qr_expired', error_description: 'De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.' })
   })
 
   it('does not mail again within the cooldown, and says one was sent', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
-    const old = decodeURIComponent(offerLinkFor(test, employee.email).split('credential_offer_uri=')[1])
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+    const old = decodeURIComponent(qrLinkFor(test, employee.email).split('credential_offer_uri=')[1])
     await expire()
     await fetch(old)
 
@@ -212,8 +224,8 @@ describe('a QR code that has expired', () => {
   })
 
   it('mails again once the cooldown is over', async () => {
-    await test.issuer.sendOffer(await test.issuer.createEmployeeEntitlement(employee))
-    const old = decodeURIComponent(offerLinkFor(test, employee.email).split('credential_offer_uri=')[1])
+    await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
+    const old = decodeURIComponent(qrLinkFor(test, employee.email).split('credential_offer_uri=')[1])
     await expire()
     await fetch(old)
     await expire()
@@ -225,19 +237,19 @@ describe('a QR code that has expired', () => {
 
   it('mails nothing when the credential was already fetched or withdrawn', async () => {
     const fetched = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(fetched)
-    const old = decodeURIComponent(offerLinkFor(test, employee.email).split('credential_offer_uri=')[1])
+    await test.issuer.mailQrCode(fetched)
+    const old = decodeURIComponent(qrLinkFor(test, employee.email).split('credential_offer_uri=')[1])
     await test.issuer.entitlements.revoke(fetched.id)
     await expire()
 
     const res = await fetch(old)
 
     expect(res.status).toBe(410)
-    expect(((await res.json()) as { error: string }).error).toBe('offer_gone')
+    expect(((await res.json()) as { error: string }).error).toBe('qr_gone')
     expect(test.sent).toHaveLength(1)
   })
 
-  it('knows nothing of an offer that never existed', async () => {
+  it('knows nothing of a QR code that never existed', async () => {
     const res = await fetch(`${test.url}/oid4vci/diploma/offers/00000000-0000-4000-8000-000000000000`)
 
     expect(res.status).toBe(404)

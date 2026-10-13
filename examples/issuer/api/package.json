@@ -2,7 +2,7 @@
   "name": "@attesta/issuer-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo credential issuer for Attesta, the part wallets and the issuer page talk to: OpenID4VCI endpoints and the JSON API that creates offers.",
+  "description": "Demo credential issuer for Attesta, the part wallets and the issuer page talk to: OpenID4VCI endpoints and the JSON API that records entitlements and mails their QR codes.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",

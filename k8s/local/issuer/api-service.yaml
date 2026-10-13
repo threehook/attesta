@@ -1,4 +1,4 @@
-# Only the pages and the Ingress's /oid4vci path reach this Service; creating offers is not exposed.
+# Only the pages and the Ingress's /oid4vci path reach this Service; recording entitlements is not exposed.
 apiVersion: v1
 kind: Service
 metadata:

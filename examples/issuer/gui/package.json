@@ -2,7 +2,7 @@
   "name": "@attesta/issuer-gui",
   "version": "0.1.0",
   "private": true,
-  "description": "The demo issuer's pages: forms to create a credential offer, served on top of the issuer API.",
+  "description": "The demo issuer's pages: forms that record an entitlement, served on top of the issuer API.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",

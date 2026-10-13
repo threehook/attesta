@@ -24,7 +24,7 @@ const mailer = new SmtpMailer(
 
 const issuer = await startIssuer({
   mailer,
-  offerLifetimeSeconds: process.env.ATTESTA_ISSUER_OFFER_LIFETIME_SECONDS ? Number(process.env.ATTESTA_ISSUER_OFFER_LIFETIME_SECONDS) : undefined,
+  qrLifetimeSeconds: process.env.ATTESTA_ISSUER_QR_LIFETIME_SECONDS ? Number(process.env.ATTESTA_ISSUER_QR_LIFETIME_SECONDS) : undefined,
   port,
   publicUrl,
   storeKey: process.env.ATTESTA_ISSUER_KEY ?? 'dev-only-insecure-issuer-key',

@@ -73,7 +73,7 @@ describe('issuer and wallet', () => {
     expect((await post(`${test.url}/entitlements/diploma`, { ...diploma, email: 'not-an-address' })).status).toBe(400)
   })
 
-  it('has no way to make an offer', async () => {
+  it('has no endpoint that makes a link', async () => {
     expect((await post(`${test.url}/offers`, diploma)).status).toBe(404)
     expect((await post(`${test.url}/employee/offers`, employee)).status).toBe(404)
   })
@@ -127,7 +127,7 @@ describe('issuer and wallet', () => {
     expect(meta.display).toEqual([{ name: 'Gemeente Utrecht' }])
   })
 
-  it('tells the pages which issuer it is and what the forms offer', async () => {
+  it('tells the pages which issuer it is and what the forms ask for', async () => {
     const info = await (await fetch(`${test.url}/info`)).json()
 
     expect(info).toEqual({
@@ -152,7 +152,7 @@ describe('issuer and wallet', () => {
 
   it('issues nothing for an entitlement that was revoked', async () => {
     const entitlement = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.sendOffer(entitlement)
+    await test.issuer.mailQrCode(entitlement)
     await test.issuer.entitlements.revoke(entitlement.id)
 
     await expect(receive(wallet, test, employee.email)).rejects.toMatchObject({
@@ -176,7 +176,7 @@ describe('issuer and wallet', () => {
     expect(await test.issuer.entitlements.find(body.entitlementId)).toMatchObject({ email: 'jerry@example.com', status: 'open' })
   })
 
-  it('offers each credential type under its own name', async () => {
+  it('lists each credential type under its own name', async () => {
     const meta = (await (await fetch(`${test.url}/oid4vci/diploma/.well-known/openid-credential-issuer`)).json()) as { credential_configurations_supported: Record<string, unknown> }
 
     expect(Object.keys(meta.credential_configurations_supported).sort()).toEqual(['Diploma', 'Employee'])

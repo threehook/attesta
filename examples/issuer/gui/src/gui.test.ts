@@ -121,7 +121,7 @@ describe('issuer pages', () => {
     expect(html).toContain('<strong>jerry@example.com</strong>')
     expect(html).toContain('e-mail met een QR-code')
     expect(html).not.toContain('PIN')
-    expect(html).not.toContain('openid-credential-offer')
+    expect(html).not.toContain('openid-credential')
     expect(html).toContain('<li><a href="/">Home</a></li><li><a href="/employee">Aanvragen laadpalen</a></li><li aria-current="page">Credential klaargezet</li>')
   })
 

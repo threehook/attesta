@@ -4,15 +4,15 @@ A demo credential issuer. It stands for an organization such as a university or 
 `Employee`) with its own key and hands them to a wallet through OpenID4VCI. It is independent of the Attesta backend; the backend only learns of it by being
 configured to trust the issuer's DID. It has two parts:
 
-- `api/` (`@attesta/issuer-api`) holds the signing key, the entitlements and the OpenID4VCI endpoints (issuer metadata, token, credential, offers) under `/oid4vci`.
+- `api/` (`@attesta/issuer-api`) holds the signing key, the entitlements and the OpenID4VCI endpoints (issuer metadata, token, credential, and the link behind each QR code) under `/oid4vci`.
   - An **entitlement** is the right of the person with an email address to receive one credential. `POST /entitlements/diploma` records one for a `Diploma`,
     `POST /entitlements/employee` for an `Employee` (name, email, `department` of `burgerzaken` or `secretariaat`, organisation, diploma course and the date the
     diploma is valid until; the credential expires at the end of that day, and a date in the past is refused). Both answer `{ "entitlementId": ..., "mailedTo": ... }`.
-  - **Recording an entitlement mails the person a QR code**, as an image in the mail and as the attachment `credential.png`. The code holds an offer for that
-    entitlement with a one-time code. The person saves the image and uploads it in their wallet, which then fetches the credential by itself. The code works once and
-    for 24 hours (`ATTESTA_ISSUER_OFFER_LIFETIME_SECONDS`).
+  - **Recording an entitlement mails the person a QR code**, as an image in the mail and as the attachment `credential.png`. The code holds a link with a one-time code for that
+    entitlement. The person saves the image and uploads it in their wallet, which then fetches the credential by itself. The code works once and
+    for 24 hours (`ATTESTA_ISSUER_QR_LIFETIME_SECONDS`).
   - **An expired code is replaced.** When a wallet comes with an expired code and the entitlement is still open, the issuer mails a new code and tells the wallet so
-    (`410`, `offer_expired`); at most one per ten minutes per entitlement. When the credential was already fetched or withdrawn it mails nothing (`offer_gone`).
+    (`410`, `qr_expired`); at most one per ten minutes per entitlement. When the credential was already fetched or withdrawn it mails nothing (`qr_gone`).
   - An entitlement is issued once. Posting the same data again returns the same entitlement while it is open and mails a new code; for a holder who lost their
     credential, the organisation posts the form again after the first was issued, which makes a new entitlement. The credential is signed from the entitlement when the
     wallet asks for it: the issuer claims it first, so no one else can take it, and marks it issued when the library reports the credential made. A claim that is not
@@ -32,7 +32,7 @@ pnpm --filter @attesta/issuer-api test    # gets credentials into an in-process 
 pnpm --filter @attesta/issuer-gui test    # the pages against a stand-in API
 ```
 
-`ATTESTA_ISSUER_PUBLIC_URL` must be the address wallets reach the API at: it appears in every offer and in the issuer metadata.
+`ATTESTA_ISSUER_PUBLIC_URL` must be the address wallets reach the API at: it appears in the QR codes and in the issuer metadata.
 
 In Docker Desktop's Kubernetes, `make k8s-issuer-apply` builds both images and deploys them with Postgres and Mailpit (`k8s/local/issuer/`); the pages are then at http://localhost:4000.
 The Ingress sends `/oid4vci` on the issuer's address to the API and everything else to the pages, so recording entitlements is not reachable from outside the cluster except through the page's forms.
