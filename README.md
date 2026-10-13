@@ -171,3 +171,7 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
   together with the issuer, can correlate presentations of the same credential.
 - **No revocation.** The backend does not check a credential's status; a credential is valid until it expires.
 - **The email is not checked beyond being disclosed and signed by the issuer.** Only Ed25519 `did:key` issuers are accepted.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
