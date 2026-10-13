@@ -15,11 +15,11 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
   return (
     <div className="backdrop">
       <div role="dialog" aria-modal="true" aria-label="Bevestigen" className="dialog">
-        {pending.kind === "offer" ? (
+        {pending.kind === "credential" ? (
           <>
             <h2>Credential toevoegen?</h2>
             <p>
-              <strong>{pending.issuer}</strong> biedt u aan:
+              <strong>{pending.issuer}</strong> geeft u:
             </p>
             <ul>
               {pending.types.map((type) => (
@@ -80,7 +80,7 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
             {signIn ? "Annuleren" : "Weigeren"}
           </button>
           <button type="button" className="primary" onClick={() => onApprove(remember)} disabled={busy || (pending.kind === "presentation" && !pending.satisfiable)}>
-            {pending.kind === "offer" ? "Toevoegen" : signIn ? "Bevestigen" : "Delen"}
+            {pending.kind === "credential" ? "Toevoegen" : signIn ? "Bevestigen" : "Delen"}
           </button>
         </div>
       </div>

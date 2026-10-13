@@ -6,7 +6,7 @@ import { PNG } from 'pngjs'
 type ReadQr = (data: Uint8ClampedArray, width: number, height: number) => { data: string } | null
 const jsQR = ((jsqrModule as unknown as { default?: ReadQr }).default ?? jsqrModule) as unknown as ReadQr
 
-/** The text in the QR code of an image (PNG or JPEG), such as the link to a credential offer; throws when the image is not one of those or holds no QR code. */
+/** The text in the QR code of an image (PNG or JPEG), the link to a credential; throws when the image is not one of those or holds no QR code. */
 export function readQrImage(image: Uint8Array): string {
   const bytes = Buffer.from(image)
   const { data, width, height } = decode(bytes)

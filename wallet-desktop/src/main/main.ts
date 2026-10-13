@@ -39,7 +39,7 @@ function deliverLink(link: string) {
 }
 
 // Reads a link the system handed to the app. A presentation request never opens the window: it is answered when the user chose to share with the
-// application, and otherwise asked about in a popup. Only a credential offer is shown in the window.
+// application, and otherwise asked about in a popup. Only a credential to add is shown in the window.
 async function handleLink(wallet: WalletService, link: string) {
   const result = await handled(() => wallet.prepare(link));
   const presentation = link.trim().startsWith("openid4vp:");
@@ -175,7 +175,7 @@ async function start() {
   ipcMain.handle(channels.forgetSignIn, (_event, choice: SignInChoice) =>
     handled(() => wallet.forgetSignIn({ application: String(choice.application), email: String(choice.email), issuer: String(choice.issuer) })),
   );
-  // Pages ask the wallet who the user is; when the port is taken the wallet still works, a page just cannot offer the choice.
+  // Pages ask the wallet who the user is; when the port is taken the wallet still works, a page just cannot give the choice.
   startIdentityServer(wallet, dev.identityPort ?? IDENTITY_PORT, (message) => console.error(message)).catch((error) =>
     console.error("the identity port could not be opened:", error),
   );

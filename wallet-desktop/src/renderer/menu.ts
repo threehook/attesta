@@ -34,7 +34,7 @@ export const MENU: { label: string; items: MenuItem[] }[] = [
         id: "link",
         label: "Link openen",
         href: "#/link",
-        description: "Open een aanbod van een uitgever of een verzoek van een applicatie, als de link niet vanzelf in de wallet opent.",
+        description: "Open een link van een uitgever of een verzoek van een applicatie, als de link niet vanzelf in de wallet opent.",
       },
       {
         id: "delen",

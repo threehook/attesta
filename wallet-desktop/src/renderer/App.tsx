@@ -50,7 +50,7 @@ export function App() {
     }
   }, []);
 
-  // The QR code from the mail, as an image: the wallet reads it and shows what is offered.
+  // The QR code from the mail, as an image: the wallet reads it and shows what will be added.
   const openImage = useCallback(async (file: File) => {
     setNotice(null);
     setBusy(true);
@@ -82,7 +82,7 @@ export function App() {
       setSettingsVersion((v) => v + 1);
       if (!result.ok) {
         setNotice({ kind: "error", text: result.error });
-      } else if (result.value.kind === "offer") {
+      } else if (result.value.kind === "credential") {
         setNotice({ kind: "info", text: `${result.value.credentials.length} credential(s) toegevoegd aan uw wallet.` });
         await refresh();
       } else {

@@ -19,18 +19,18 @@ function bindToNewKey(agent: WalletAgent): OpenId4VciCredentialBindingResolver {
   }
 }
 
-/** What an issuer offers, in a form a consent screen can show. */
-export interface CredentialOffer {
+/** What the wallet read from a link or QR code, in a form a consent screen can show. The standard calls the link a credential offer. */
+export interface CredentialPreview {
   /** The issuer's address. */
   issuer: string
-  /** The offered credential types. */
+  /** The credential types the issuer gives. */
   types: string[]
   resolved: OpenId4VciResolvedCredentialOffer
 }
 
-/** Reads an OpenID4VCI credential offer (an `openid-credential-offer://` link) without accepting it. */
-export async function previewCredentialOffer(agent: WalletAgent, offerUri: string): Promise<CredentialOffer> {
-  const resolved = await agent.openid4vc.holder.resolveCredentialOffer(offerUri).catch((error: unknown) => {
+/** Reads an `openid-credential-offer://` link (the text of a QR code from an issuer) without accepting what it gives. */
+export async function previewCredential(agent: WalletAgent, link: string): Promise<CredentialPreview> {
+  const resolved = await agent.openid4vc.holder.resolveCredentialOffer(link).catch((error: unknown) => {
     throw saidByIssuer(error) ?? error
   })
   return {
@@ -42,15 +42,15 @@ export async function previewCredentialOffer(agent: WalletAgent, offerUri: strin
   }
 }
 
-/** Accepts an OpenID4VCI credential offer (pre-authorized code flow) and stores the SD-JWT VCs it yields. */
-export async function acceptCredentialOffer(agent: WalletAgent, offerUri: string): Promise<HeldCredential[]> {
-  return acceptPreviewedOffer(agent, await previewCredentialOffer(agent, offerUri))
+/** Takes what a link gives (pre-authorized code flow) and stores the SD-JWT VCs it yields. */
+export async function acceptCredential(agent: WalletAgent, link: string): Promise<HeldCredential[]> {
+  return acceptPreviewed(agent, await previewCredential(agent, link))
 }
 
-/** Accepts an offer that was read with previewCredentialOffer. */
-export async function acceptPreviewedOffer(agent: WalletAgent, offer: CredentialOffer): Promise<HeldCredential[]> {
+/** Takes the credential that was read with previewCredential. */
+export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPreview): Promise<HeldCredential[]> {
   const holder = agent.openid4vc.holder
-  const resolvedCredentialOffer = offer.resolved
+  const resolvedCredentialOffer = preview.resolved
   const token = await holder.requestToken({ resolvedCredentialOffer })
   const { credentials } = await holder.requestCredentials({
     resolvedCredentialOffer,
@@ -84,7 +84,7 @@ function describe(agent: WalletAgent, record: SdJwtVcRecord): HeldCredential {
   }
 }
 
-// When the issuer refuses to give the offer, it says why in its answer (for an expired QR code, that a new one was sent); that is what the person should read.
+// When the issuer refuses to give what the link points to, it says why in its answer (for an expired QR code, that a new one was sent); that is what the person should read.
 function saidByIssuer(error: unknown): Error | undefined {
   const text = (error as { textResponse?: unknown } | null)?.textResponse
   if (typeof text !== 'string') return undefined

@@ -6,7 +6,7 @@ const technical = new Set(["iss", "iat", "exp", "nbf", "vct", "cnf", "_sd_alg", 
 
 export function CredentialList({ credentials }: { credentials: HeldCredential[] }) {
   if (credentials.length === 0) {
-    return <p className="empty">Nog geen credentials. Open een aanbod van een uitgever om er een toe te voegen.</p>;
+    return <p className="empty">Nog geen credentials. Upload de QR-code uit een e-mail van een uitgever om er een toe te voegen.</p>;
   }
   return (
     <section aria-label="Credentials">

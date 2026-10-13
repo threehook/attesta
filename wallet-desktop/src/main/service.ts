@@ -1,19 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
-  acceptPreviewedOffer,
+  acceptPreviewed,
   listCredentials,
-  previewCredentialOffer,
+  previewCredential,
   readQrImage,
   resolvePresentationRequest,
   submitPresentation,
-  type CredentialOffer,
+  type CredentialPreview,
   type PresentationRequest,
   type WalletAgent,
 } from "@attesta/wallet";
 import { isSignIn, type Approved, type HeldCredential, type Identity, type Pending, type Prepared, type Settings, type SignInChoice } from "../shared/api.js";
 import { applicationOf, type WalletSettings } from "./settings.js";
 
-const OFFER_SCHEME = "openid-credential-offer://";
+const CREDENTIAL_SCHEME = "openid-credential-offer://";
 const PRESENTATION_SCHEME = "openid4vp://";
 const PENDING_LIFETIME_MS = 10 * 60 * 1000;
 /** An image bigger than this is not a QR code someone mailed. */
@@ -23,11 +23,11 @@ export class WalletError extends Error {}
 
 
 type Waiting = { expires: number } & (
-  | { kind: "offer"; offer: CredentialOffer }
+  | { kind: "credential"; credential: CredentialPreview }
   | { kind: "presentation"; request: PresentationRequest; identity?: Identity }
 );
 
-// WalletService is what the user can do with the wallet: look at what it holds, and read, then approve or decline, a credential offer or a
+// WalletService is what the user can do with the wallet: look at what it holds, and read, then approve or decline, a credential to add or a
 // presentation request. Reading never changes anything, except that a presentation request from an application the user chose to share with
 // is answered at once; approve is the other way anything changes.
 
@@ -64,10 +64,10 @@ export class WalletService {
     const id = randomUUID();
     const expires = this.now() + PENDING_LIFETIME_MS;
 
-    if (trimmed.startsWith(OFFER_SCHEME)) {
-      const offer = await previewCredentialOffer(this.agent, trimmed);
-      this.waiting.set(id, { kind: "offer", offer, expires });
-      return { id, kind: "offer", issuer: offer.issuer, types: offer.types };
+    if (trimmed.startsWith(CREDENTIAL_SCHEME)) {
+      const credential = await previewCredential(this.agent, trimmed);
+      this.waiting.set(id, { kind: "credential", credential, expires });
+      return { id, kind: "credential", issuer: credential.issuer, types: credential.types };
     }
     if (trimmed.startsWith(PRESENTATION_SCHEME)) {
       const request = await resolvePresentationRequest(this.agent, trimmed);
@@ -81,14 +81,14 @@ export class WalletService {
       this.waiting.set(id, { kind: "presentation", request, identity, expires });
       return { id, kind: "presentation", verifier: request.verifier, application, requested: request.requested, signIn, identity, satisfiable: request.satisfiable };
     }
-    throw new WalletError("Dit is geen credential-aanbod of presentatieverzoek.");
+    throw new WalletError("Dit is geen credential-link of presentatieverzoek.");
   }
 
   async approve(id: string, remember = false): Promise<Approved> {
     const item = this.take(id);
-    if (item.kind === "offer") {
+    if (item.kind === "credential") {
       try {
-        return { kind: "offer", credentials: await acceptPreviewedOffer(this.agent, item.offer) };
+        return { kind: "credential", credentials: await acceptPreviewed(this.agent, item.credential) };
       } catch (error) {
         if (refusalOf(error) === "credential_request_denied") throw new WalletError("Er staat geen credential voor u klaar bij deze uitgever.");
         throw error;

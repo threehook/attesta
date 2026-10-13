@@ -14,7 +14,7 @@ export async function uploadQr(window: Page, image: Buffer, name = "credential.p
 export async function addCredential(window: Page, issuer: TestIssuer, type: string, email: string): Promise<void> {
   const entitlement = (await issuer.issuer.entitlements.findOpenByEmail(email)).find((e) => e.type === type);
   if (!entitlement) throw new Error(`there is no open ${type} entitlement for ${email}`);
-  await issuer.issuer.sendOffer(entitlement);
+  await issuer.issuer.mailQrCode(entitlement);
   await uploadQr(window, qrImageFor(issuer, email));
   await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
   await expect(window.getByRole("status")).toContainText("toegevoegd");

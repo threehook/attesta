@@ -8,8 +8,8 @@ const core = vi.hoisted(() => ({
   resolvePresentationRequest: vi.fn(),
   submitPresentation: vi.fn(),
   listCredentials: vi.fn(),
-  previewCredentialOffer: vi.fn(),
-  acceptPreviewedOffer: vi.fn(),
+  previewCredential: vi.fn(),
+  acceptPreviewed: vi.fn(),
   readQrImage: vi.fn(),
 }));
 vi.mock("@attesta/wallet", async (importOriginal) => ({ ...(await importOriginal<object>()), ...core }));
@@ -35,16 +35,16 @@ beforeEach(() => {
   core.resolvePresentationRequest.mockReset();
   core.listCredentials.mockReset().mockResolvedValue([]);
   core.submitPresentation.mockReset().mockResolvedValue({ status: 200 });
-  core.previewCredentialOffer.mockReset();
-  core.acceptPreviewedOffer.mockReset().mockResolvedValue([]);
+  core.previewCredential.mockReset();
+  core.acceptPreviewed.mockReset().mockResolvedValue([]);
   core.readQrImage.mockReset();
 });
 
-// Reading real offers and requests is covered end to end (e2e/wallet.spec.ts); here the wallet core is replaced to cover what the service decides.
+// Reading real links and requests is covered end to end (e2e/wallet.spec.ts); here the wallet core is replaced to cover what the service decides.
 describe("WalletService", () => {
-  it("rejects a link that is neither an offer nor a presentation request", async () => {
+  it("rejects a link that is neither a credential link nor a presentation request", async () => {
     await expect(service().prepare("https://example.com")).rejects.toThrow(WalletError);
-    await expect(service().prepare("")).rejects.toThrow("geen credential-aanbod");
+    await expect(service().prepare("")).rejects.toThrow("geen credential-link");
   });
 
   it("rejects approving something it never prepared", async () => {
@@ -215,31 +215,31 @@ describe("signing in", () => {
 });
 
 const issuer = "https://issuer.example/oid4vci/diploma";
-const offerLink = "openid-credential-offer://?credential_offer_uri=x";
-const offered = { issuer, types: ["Employee"], resolved: {} };
+const qrLink = "openid-credential-offer://?credential_offer_uri=x";
+const previewed = { issuer, types: ["Employee"], resolved: {} };
 const image = new Uint8Array([1, 2, 3]);
 
 describe("WalletService, a QR code in an image", () => {
-  it("reads the link in the QR code and prepares the offer in it", async () => {
-    core.readQrImage.mockReturnValue(offerLink);
-    core.previewCredentialOffer.mockResolvedValue(offered);
+  it("reads the link in the QR code and prepares the credential in it", async () => {
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockResolvedValue(previewed);
 
     const prepared = await service().prepareImage(image);
 
     expect(core.readQrImage).toHaveBeenCalledWith(image);
-    expect(core.previewCredentialOffer).toHaveBeenCalledWith({}, offerLink);
-    expect(prepared).toMatchObject({ kind: "offer", issuer, types: ["Employee"] });
-    expect(core.acceptPreviewedOffer).not.toHaveBeenCalled();
+    expect(core.previewCredential).toHaveBeenCalledWith({}, qrLink);
+    expect(prepared).toMatchObject({ kind: "credential", issuer, types: ["Employee"] });
+    expect(core.acceptPreviewed).not.toHaveBeenCalled();
   });
 
   it("adds nothing until the user agrees", async () => {
-    core.readQrImage.mockReturnValue(offerLink);
-    core.previewCredentialOffer.mockResolvedValue(offered);
-    core.acceptPreviewedOffer.mockResolvedValue([{ id: "1" }]);
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockResolvedValue(previewed);
+    core.acceptPreviewed.mockResolvedValue([{ id: "1" }]);
     const s = service();
     const prepared = (await s.prepareImage(image)) as { id: string };
 
-    expect(await s.approve(prepared.id)).toEqual({ kind: "offer", credentials: [{ id: "1" }] });
+    expect(await s.approve(prepared.id)).toEqual({ kind: "credential", credentials: [{ id: "1" }] });
   });
 
   it.each([
@@ -260,16 +260,16 @@ describe("WalletService, a QR code in an image", () => {
   });
 
   it("passes on what the issuer says about a QR code that has expired", async () => {
-    core.readQrImage.mockReturnValue(offerLink);
-    core.previewCredentialOffer.mockRejectedValue(new Error("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd."));
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockRejectedValue(new Error("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd."));
 
     await expect(service().prepareImage(image)).rejects.toThrow("Er is een nieuwe QR-code naar uw e-mail gestuurd.");
   });
 
   it("tells the user when the issuer has no credential for them", async () => {
-    core.readQrImage.mockReturnValue(offerLink);
-    core.previewCredentialOffer.mockResolvedValue(offered);
-    core.acceptPreviewedOffer.mockRejectedValue(Object.assign(new Error("request failed"), { response: { credentialErrorResponseResult: { data: { error: "credential_request_denied" } } } }));
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockResolvedValue(previewed);
+    core.acceptPreviewed.mockRejectedValue(Object.assign(new Error("request failed"), { response: { credentialErrorResponseResult: { data: { error: "credential_request_denied" } } } }));
     const s = service();
     const prepared = (await s.prepareImage(image)) as { id: string };
 
@@ -277,9 +277,9 @@ describe("WalletService, a QR code in an image", () => {
   });
 
   it("passes on any other failure as it is", async () => {
-    core.readQrImage.mockReturnValue(offerLink);
-    core.previewCredentialOffer.mockResolvedValue(offered);
-    core.acceptPreviewedOffer.mockRejectedValue(new Error("the issuer did not answer"));
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockResolvedValue(previewed);
+    core.acceptPreviewed.mockRejectedValue(new Error("the issuer did not answer"));
     const s = service();
     const prepared = (await s.prepareImage(image)) as { id: string };
 

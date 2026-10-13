@@ -14,7 +14,7 @@ export interface WalletOptions {
   storeKey: string
   /** Directory that holds the SQLite store file; created if missing. Omit to keep the wallet in memory only. */
   path?: string
-  /** Accept offers and issuers served over plain http, for local development. */
+  /** Accept links and issuers served over plain http, for local development. */
   allowInsecureHttp?: boolean
 }
 

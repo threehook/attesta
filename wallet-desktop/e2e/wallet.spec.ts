@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { offerLinkFor, qrImageFor, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { qrImageFor, qrLinkFor, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
 import { addCredential, uploadQr } from "./issuing.js";
 
 const appDir = join(import.meta.dirname, "..");
@@ -99,11 +99,11 @@ test.describe.serial("desktop wallet", () => {
 
   test("rejects a link it does not understand", async () => {
     await openLink("https://example.com");
-    await expect(window.getByRole("status")).toContainText("geen credential-aanbod");
+    await expect(window.getByRole("status")).toContainText("geen credential-link");
   });
 
-  test("shows an offer from a QR code, and adds the credential only once the user agrees", async () => {
-    await test_.issuer.sendOffer(await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+  test("shows what a QR code gives, and adds the credential only once the user agrees", async () => {
+    await test_.issuer.mailQrCode(await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
 
     await uploadQr(window, qrImageFor(test_, "ada@example.com"));
     const dialog = window.getByRole("dialog");
@@ -121,8 +121,8 @@ test.describe.serial("desktop wallet", () => {
     await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
 
-  test("adds nothing when the user declines an offer", async () => {
-    await test_.issuer.sendOffer(await test_.issuer.createDiplomaEntitlement({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" }));
+  test("adds nothing when the user declines", async () => {
+    await test_.issuer.mailQrCode(await test_.issuer.createDiplomaEntitlement({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" }));
 
     await uploadQr(window, qrImageFor(test_, "grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
@@ -416,10 +416,10 @@ test("starts with its data in a folder whose path has spaces, as the system app 
 
 test("opens a link handed to the app when it starts", async () => {
   const issuer = await startTestIssuer();
-  await issuer.issuer.sendOffer(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
-  const offer = offerLinkFor(issuer, "ada@example.com");
+  await issuer.issuer.mailQrCode(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+  const link = qrLinkFor(issuer, "ada@example.com");
   const app = await electron.launch({
-    args: [appDir, offer],
+    args: [appDir, link],
     env: {
       ...process.env,
       ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
@@ -439,8 +439,8 @@ test("opens a link handed to the app when it starts", async () => {
 test("opens a new window for a link that arrives after its window was closed", async () => {
   test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
   const issuer = await startTestIssuer();
-  await issuer.issuer.sendOffer(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
-  const offer = offerLinkFor(issuer, "ada@example.com");
+  await issuer.issuer.mailQrCode(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+  const link = qrLinkFor(issuer, "ada@example.com");
   const app = await electron.launch({
     args: [appDir],
     env: {
@@ -456,7 +456,7 @@ test("opens a new window for a link that arrives after its window was closed", a
     await expect(first.getByText("Nog geen credentials")).toBeVisible();
     await first.close();
     // What macOS sends when a link is opened while the app runs without a window.
-    await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), offer);
+    await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), link);
     const next = await app.waitForEvent("window");
     await expect(next.getByRole("dialog")).toContainText("Credential toevoegen?");
   } finally {
@@ -480,7 +480,7 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   };
 
   test.beforeAll(async () => {
-    issuer = await startTestIssuer({ offerLifetimeSeconds: 2, renewalCooldownMs: 500 });
+    issuer = await startTestIssuer({ qrLifetimeSeconds: 2, renewalCooldownMs: 500 });
     app = await electron.launch({
       args: [appDir],
       env: {
@@ -529,7 +529,7 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   test("tells the user that an expired QR code was replaced, and the new one works", async () => {
     await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "grace@example.com", name: "Grace Hopper" });
     const mails = issuer.sent.length;
-    await issuer.issuer.sendOffer((await issuer.issuer.entitlements.findOpenByEmail("grace@example.com"))[0]);
+    await issuer.issuer.mailQrCode((await issuer.issuer.entitlements.findOpenByEmail("grace@example.com"))[0]);
     const old = qrImageFor(issuer, "grace@example.com");
     await new Promise((resolve) => setTimeout(resolve, 2500));
 
@@ -546,7 +546,7 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
 
   test("says so when the credential was withdrawn after the mail", async () => {
     const entitlement = await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "henk@example.com", name: "Henk" });
-    await issuer.issuer.sendOffer(entitlement);
+    await issuer.issuer.mailQrCode(entitlement);
     await issuer.issuer.entitlements.revoke(entitlement.id);
 
     await uploadQr(window, qrImageFor(issuer, "henk@example.com"));

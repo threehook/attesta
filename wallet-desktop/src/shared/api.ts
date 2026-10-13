@@ -9,7 +9,7 @@ export interface HeldCredential {
 
 // Something that needs the user's decision before the wallet acts on it.
 export type Pending =
-  | { id: string; kind: "offer"; issuer: string; types: string[] }
+  | { id: string; kind: "credential"; issuer: string; types: string[] }
   | {
       id: string;
       kind: "presentation";
@@ -57,13 +57,13 @@ export function isSignIn(requested: Array<{ claims: string[] }>): boolean {
   return claims.length > 0 && claims.every((claim) => claim === IDENTITY_CLAIM);
 }
 
-export type Approved = { kind: "offer"; credentials: HeldCredential[] } | { kind: "presentation"; status: number };
+export type Approved = { kind: "credential"; credentials: HeldCredential[] } | { kind: "presentation"; status: number };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 export interface WalletApi {
   list(): Promise<Result<HeldCredential[]>>;
-  // Reads a credential offer or a presentation request without acting on it.
+  // Reads a link for a credential to add, or a presentation request, without acting on it.
   prepare(link: string): Promise<Result<Prepared>>;
   // Reads the QR code in an image (PNG or JPEG) the user chose, which holds the same link, and prepares what it holds.
   prepareImage(image: Uint8Array): Promise<Result<Prepared>>;
