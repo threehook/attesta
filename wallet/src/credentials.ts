@@ -1,5 +1,6 @@
 import { CredoError, Kms, SdJwtVcRecord } from '@credo-ts/core'
-import type { OpenId4VciCredentialBindingResolver, OpenId4VciResolvedCredentialOffer } from '@credo-ts/openid4vc'
+import type { OpenId4VciCredentialBindingResolver, OpenId4VciRequestTokenResponse, OpenId4VciResolvedCredentialOffer } from '@credo-ts/openid4vc'
+import { preAuthorizedCodeGrantIdentifier } from '@credo-ts/openid4vc'
 import type { WalletAgent } from './agent.js'
 
 export interface HeldCredential {
@@ -47,12 +48,64 @@ export async function acceptCredentialOffer(agent: WalletAgent, offerUri: string
 
 /** Accepts an offer that was read with previewCredentialOffer. */
 export async function acceptPreviewedOffer(agent: WalletAgent, offer: CredentialOffer): Promise<HeldCredential[]> {
-  const holder = agent.openid4vc.holder
   const resolvedCredentialOffer = offer.resolved
-  const token = await holder.requestToken({ resolvedCredentialOffer })
-  const { credentials } = await holder.requestCredentials({
+  const token = await agent.openid4vc.holder.requestToken({ resolvedCredentialOffer })
+  return collect(agent, resolvedCredentialOffer, token)
+}
+
+const CLIENT_ID = 'attesta-wallet'
+
+/** Whether the holder gets the credential by logging in at the issuer, instead of with a one-time code in the offer. */
+export function needsLogin(offer: CredentialOffer): boolean {
+  const grants = offer.resolved.credentialOfferPayload.grants
+  return Boolean(grants?.authorization_code) && !grants?.[preAuthorizedCodeGrantIdentifier]
+}
+
+/** A login at the issuer that has started: the address to open in a browser, and what the wallet needs to finish when the browser comes back. */
+export interface IssuerLogin {
+  offer: CredentialOffer
+  /** The address the issuer sends the browser back to; the wallet must be what opens it. */
+  redirectUri: string
+  codeVerifier?: string
+  /** Where the holder logs in: to be opened in a browser. */
+  authorizationRequestUrl: string
+}
+
+/** Starts the login for an offer that needs one; `redirectUri` is where the browser is sent afterwards, an address that opens this wallet. */
+export async function startIssuerLogin(agent: WalletAgent, offer: CredentialOffer, redirectUri: string): Promise<IssuerLogin> {
+  const request = await agent.openid4vc.holder.resolveOpenId4VciAuthorizationRequest(offer.resolved, { clientId: CLIENT_ID, redirectUri })
+  if (!('authorizationRequestUrl' in request)) {
+    throw new CredoError('the issuer asks for something other than a login, which this wallet cannot do')
+  }
+  return { offer, redirectUri, codeVerifier: request.codeVerifier, authorizationRequestUrl: request.authorizationRequestUrl }
+}
+
+/** Finishes a login with the address the browser was sent back to, and stores the credentials the issuer then gives. */
+export async function finishIssuerLogin(agent: WalletAgent, login: IssuerLogin, redirectedTo: string): Promise<HeldCredential[]> {
+  const holder = agent.openid4vc.holder
+  const resolvedCredentialOffer = login.offer.resolved
+  const { authorizationCode } = holder.parseAuthorizationCodeFromAuthorizationResponse({ resolvedCredentialOffer, authorizationResponseRedirectUrl: redirectedTo })
+  const token = await holder.requestToken({
+    resolvedCredentialOffer,
+    code: authorizationCode,
+    clientId: CLIENT_ID,
+    codeVerifier: login.codeVerifier,
+    redirectUri: login.redirectUri,
+  })
+  return collect(agent, resolvedCredentialOffer, token, CLIENT_ID)
+}
+
+// Asks the issuer for the credentials with the token, and keeps them.
+async function collect(
+  agent: WalletAgent,
+  resolvedCredentialOffer: OpenId4VciResolvedCredentialOffer,
+  token: OpenId4VciRequestTokenResponse,
+  clientId?: string,
+): Promise<HeldCredential[]> {
+  const { credentials } = await agent.openid4vc.holder.requestCredentials({
     resolvedCredentialOffer,
     ...token,
+    clientId,
     credentialBindingResolver: bindToNewKey(agent),
   })
 
