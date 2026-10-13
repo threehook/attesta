@@ -106,7 +106,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		errors.As(err, &rejected)
 		d := decisionFor(id, requestOf(rejected))
 		d.Reason, d.DecidedBy, d.Detail = reasonNotVerified, "attesta", err.Error()
-		if !s.decide(w, r, id, d, presentation.Outcome{Reason: reasonOutcomeNotVerified}) {
+		if !s.decide(w, r, id, d, presentation.Outcome{Decision: authz.Deny, Reason: reasonOutcomeNotVerified}) {
 			return
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": "the presentation did not verify"})
@@ -118,7 +118,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	source, ok := s.Policies.Get(presented.Request.PolicyID)
 	if !ok {
 		d.Err = fmt.Errorf("unknown policy %q", presented.Request.PolicyID)
-		if s.decide(w, r, id, d, presentation.Outcome{Reason: "unknown policy"}) {
+		if s.decide(w, r, id, d, presentation.Outcome{Decision: authz.NotApplicable, Reason: "unknown policy"}) {
 			writeError(w, http.StatusNotFound, d.Err.Error())
 		}
 		return
@@ -130,17 +130,17 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
 		d.Err = err
-		if s.decide(w, r, id, d, presentation.Outcome{Reason: "policy evaluation failed"}) {
+		if s.decide(w, r, id, d, presentation.Outcome{Decision: authz.Indeterminate, Reason: "policy evaluation failed"}) {
 			writeError(w, http.StatusInternalServerError, "policy evaluation failed")
 		}
 		return
 	}
 
-	s.Logger.Info("authorize result", "requestId", id, "issuer", presented.Issuer, "resource", presented.Request.Resource, "allow", decision.Allow,
+	s.Logger.Info("authorize result", "requestId", id, "issuer", presented.Issuer, "resource", presented.Request.Resource, "decision", decision.Decision,
 		"reason", decision.Reason)
-	d.Allow, d.Reason, d.DecidedBy = decision.Allow, decision.Reason, "policy"
-	outcome := presentation.Outcome{Allow: decision.Allow, Reason: decision.Reason}
-	if decision.Allow {
+	d.Allow, d.Reason, d.DecidedBy = decision.Decision == authz.Permit, decision.Reason, "policy"
+	outcome := presentation.Outcome{Decision: decision.Decision, Reason: decision.Reason, Obligations: decision.Obligations, Advice: decision.Advice}
+	if decision.Decision == authz.Permit {
 		outcome.Subject = &presented.Subject
 	}
 	if s.decide(w, r, id, d, outcome) {
@@ -175,7 +175,7 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request, id string, d adl
 	if s.Decisions != nil {
 		if err := s.Decisions.Log(r.Context(), d); err != nil {
 			s.Logger.Error("decision log failed", "requestId", id, "error", err)
-			s.Presenter.Complete(id, presentation.Outcome{Allow: false, Reason: "decision could not be logged"})
+			s.Presenter.Complete(id, presentation.Outcome{Decision: authz.Indeterminate, Reason: "decision could not be logged"})
 			writeError(w, http.StatusInternalServerError, "decision could not be logged")
 			return false
 		}
@@ -196,8 +196,33 @@ type presentationOutcomeResponse struct {
 	Status   string `json:"status"`
 	Decision string `json:"decision,omitempty"`
 	Reason   string `json:"reason,omitempty"`
+	// Obligations must be carried out with the decision; advice may be ignored.
+	Obligations []statementResponse `json:"obligations,omitempty"`
+	Advice      []statementResponse `json:"advice,omitempty"`
 	// Subject identifies who was allowed; it is absent for a denial.
 	Subject *subjectResponse `json:"subject,omitempty"`
+}
+
+type statementResponse struct {
+	ID                   string              `json:"id"`
+	AttributeAssignments []attributeResponse `json:"attributeAssignments"`
+}
+
+type attributeResponse struct {
+	AttributeID string `json:"attributeId"`
+	Value       string `json:"value"`
+}
+
+func statementsResponse(statements []authz.Statement) []statementResponse {
+	var out []statementResponse
+	for _, st := range statements {
+		attrs := make([]attributeResponse, len(st.Attributes))
+		for i, a := range st.Attributes {
+			attrs[i] = attributeResponse{AttributeID: a.ID, Value: a.Value}
+		}
+		out = append(out, statementResponse{ID: st.ID, AttributeAssignments: attrs})
+	}
+	return out
 }
 
 type subjectResponse struct {
@@ -220,19 +245,12 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, presentationOutcomeResponse{Status: "pending"})
 		return
 	}
-	resp := presentationOutcomeResponse{Status: "done", Decision: decisionOf(outcome.Allow), Reason: outcome.Reason}
+	resp := presentationOutcomeResponse{Status: "done", Decision: string(outcome.Decision), Reason: outcome.Reason,
+		Obligations: statementsResponse(outcome.Obligations), Advice: statementsResponse(outcome.Advice)}
 	if outcome.Subject != nil {
 		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, Email: outcome.Subject.Email}
 	}
 	writeJSON(w, http.StatusOK, resp)
-}
-
-// decisionOf names the XACML decision for an allow/deny result.
-func decisionOf(allow bool) string {
-	if allow {
-		return "Permit"
-	}
-	return "Deny"
 }
 
 // userRolesHeader carries the roles the calling application asserts for the user, comma-separated.

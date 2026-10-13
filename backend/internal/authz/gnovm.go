@@ -25,10 +25,38 @@ type Input struct {
 	UserRoles []string
 }
 
-// Result is a policy's allow/deny decision and the human-readable reason for it.
+// Decision is one of the decisions standardized by XACML.
+type Decision string
+
+const (
+	Permit        Decision = "Permit"
+	Deny          Decision = "Deny"
+	NotApplicable Decision = "NotApplicable"
+	Indeterminate Decision = "Indeterminate"
+)
+
+func (d Decision) valid() bool {
+	return d == Permit || d == Deny || d == NotApplicable || d == Indeterminate
+}
+
+// Attribute is a named string value that an obligation or advice hands to the application.
+type Attribute struct {
+	ID    string
+	Value string
+}
+
+// Statement is one obligation or one advice. Attributes are sorted by ID.
+type Statement struct {
+	ID         string
+	Attributes []Attribute
+}
+
+// Result is a policy's decision, the human-readable reason for it, and the obligations and advice that go with it.
 type Result struct {
-	Allow  bool
-	Reason string
+	Decision    Decision
+	Reason      string
+	Obligations []Statement
+	Advice      []Statement
 }
 
 // Evaluator runs Gno policy source against an Input and returns a Result.
@@ -36,9 +64,10 @@ type Evaluator interface {
 	// Validate reports whether source compiles as a Gno package, without running any particular function in it. Used to reject bad policy source
 	// before it's stored.
 	Validate(source string) error
-	// Evaluate loads source as a Gno package and calls its exported
-	// Authorize(resource, credType, issuer string, claims map[string]string) (bool, string) function, or, when source defines it,
-	// AuthorizeWithUserRoles(resource, credType, issuer string, claims map[string]string, roles []string) (bool, string).
+	// Evaluate loads source as a Gno package and calls its exported function
+	// Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string).
+	// decision is Permit, Deny, NotApplicable or Indeterminate. In obligations and advice every map is one statement: its "id" key is the identifier
+	// and every other key is an attribute ID with a string value.
 	Evaluate(source string, in Input) (Result, error)
 }
 
@@ -93,10 +122,7 @@ func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 		}
 		m.RunFiles(file)
 
-		expr := fmt.Sprintf("Authorize(%q, %q, %q, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims))
-		if definesFunc(file, "AuthorizeWithUserRoles") {
-			expr = fmt.Sprintf("AuthorizeWithUserRoles(%q, %q, %q, %s, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims), userRolesLiteral(in.UserRoles))
-		}
+		expr := fmt.Sprintf("Authorize(%q, %q, %q, %s, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims), userRolesLiteral(in.UserRoles))
 		ex, err := m.ParseExpr(expr)
 		if err != nil {
 			return fmt.Errorf("parse call expression: %w", err)
@@ -104,13 +130,24 @@ func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 		m.MaybeInjectCurForEval(ex)
 
 		results := m.Eval(ex)
-		if len(results) != 2 {
-			return fmt.Errorf("Authorize: expected 2 results, got %d", len(results))
+		if len(results) != 4 {
+			return fmt.Errorf("Authorize: expected 4 results, got %d", len(results))
 		}
-		if results[0].T == nil || results[0].T.Kind() != gno.BoolKind || results[1].T == nil || results[1].T.Kind() != gno.StringKind {
-			return fmt.Errorf("Authorize: want results (bool, string)")
+		for i := 0; i < 2; i++ {
+			if results[i].T == nil || results[i].T.Kind() != gno.StringKind {
+				return fmt.Errorf("Authorize: want results (string, string, []map[string]string, []map[string]string)")
+			}
 		}
-		result = Result{Allow: results[0].GetBool(), Reason: results[1].GetString()}
+		result.Decision, result.Reason = Decision(results[0].GetString()), results[1].GetString()
+		if !result.Decision.valid() {
+			return fmt.Errorf("Authorize: unknown decision %q", result.Decision)
+		}
+		if result.Obligations, err = statements(m.Store, results[2]); err != nil {
+			return fmt.Errorf("Authorize: obligations: %w", err)
+		}
+		if result.Advice, err = statements(m.Store, results[3]); err != nil {
+			return fmt.Errorf("Authorize: advice: %w", err)
+		}
 		return nil
 	})
 	return result, runErr
@@ -153,16 +190,6 @@ func parseFile(m *gno.Machine, source string) (*gno.FileNode, error) {
 	return file, nil
 }
 
-// definesFunc reports whether file declares the package-level function name.
-func definesFunc(file *gno.FileNode, name string) bool {
-	for _, d := range file.Decls {
-		if fd, ok := d.(*gno.FuncDecl); ok && !fd.IsMethod && string(fd.Name) == name {
-			return true
-		}
-	}
-	return false
-}
-
 // userRolesLiteral renders roles as a Gno []string literal; never nil, so a policy can range over it.
 func userRolesLiteral(roles []string) string {
 	parts := make([]string, len(roles))
@@ -190,4 +217,37 @@ func claimsLiteral(claims map[string]string) string {
 	}
 	b.WriteString("}")
 	return b.String()
+}
+
+// statements reads a []map[string]string returned by a policy.
+func statements(store gno.Store, tv gno.TypedValue) ([]Statement, error) {
+	sv, ok := tv.V.(*gno.SliceValue)
+	if !ok {
+		return nil, nil
+	}
+	base := sv.GetBase(store)
+	var out []Statement
+	for i := 0; i < sv.Length; i++ {
+		mv, ok := base.List[sv.Offset+i].V.(*gno.MapValue)
+		if !ok {
+			return nil, fmt.Errorf("statement %d is a nil map", i)
+		}
+		var st Statement
+		for item := mv.List.Head; item != nil; item = item.Next {
+			if item.Key.T == nil || item.Key.T.Kind() != gno.StringKind || item.Value.T == nil || item.Value.T.Kind() != gno.StringKind {
+				return nil, fmt.Errorf("statement %d: want map[string]string", i)
+			}
+			if k := item.Key.GetString(); k == "id" {
+				st.ID = item.Value.GetString()
+			} else {
+				st.Attributes = append(st.Attributes, Attribute{ID: k, Value: item.Value.GetString()})
+			}
+		}
+		if st.ID == "" {
+			return nil, fmt.Errorf("statement %d has no id", i)
+		}
+		sort.Slice(st.Attributes, func(a, b int) bool { return st.Attributes[a].ID < st.Attributes[b].ID })
+		out = append(out, st)
+	}
+	return out, nil
 }

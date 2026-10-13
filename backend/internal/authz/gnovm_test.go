@@ -2,29 +2,30 @@ package authz
 
 import (
 	"io"
+	"reflect"
 	"testing"
 )
 
 const diplomaPolicyV1 = `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
 	if resource != "diploma-vault" {
-		return false, "unknown resource"
+		return "Deny", "unknown resource", nil, nil
 	}
 	if credType != "Diploma" {
-		return false, "unexpected credential type"
+		return "Deny", "unexpected credential type", nil, nil
 	}
 	if issuer != "trusted-university" {
-		return false, "issuer not trusted"
+		return "Deny", "issuer not trusted", nil, nil
 	}
-	return true, "ok"
+	return "Permit", "ok", nil, nil
 }
 `
 
 const diplomaPolicyV2 = `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
-	return false, "v2 denies everything"
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
+	return "Deny", "v2 denies everything", nil, nil
 }
 `
 
@@ -38,7 +39,7 @@ func TestGnoVMEvaluate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate allow case: %v", err)
 	}
-	if !result.Allow {
+	if !(result.Decision == Permit) {
 		t.Fatalf("Evaluate allow case: got deny, reason %q", result.Reason)
 	}
 
@@ -46,7 +47,7 @@ func TestGnoVMEvaluate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate deny case: %v", err)
 	}
-	if result.Allow {
+	if result.Decision == Permit {
 		t.Fatal("Evaluate deny case: got allow, want deny")
 	}
 }
@@ -62,7 +63,7 @@ func TestGnoVMEvaluateAfterHotReload(t *testing.T) {
 	in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"}
 
 	result, err := vm.Evaluate(diplomaPolicyV1, in)
-	if err != nil || !result.Allow {
+	if err != nil || !(result.Decision == Permit) {
 		t.Fatalf("Evaluate v1: result=%+v err=%v, want allow", result, err)
 	}
 
@@ -70,7 +71,7 @@ func TestGnoVMEvaluateAfterHotReload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Evaluate v2: %v", err)
 	}
-	if result.Allow {
+	if result.Decision == Permit {
 		t.Fatalf("Evaluate v2: got allow, want deny (reason %q)", result.Reason)
 	}
 }
@@ -85,15 +86,24 @@ func TestGnoVMValidate(t *testing.T) {
 		t.Fatalf("Validate well-formed policy: %v", err)
 	}
 
+	const (
+		sig    = "func Authorize(a, b, c string, d map[string]string, e []string) "
+		res    = "(string, string, []map[string]string, []map[string]string)"
+		permit = `{ return "Permit", "", nil, nil }`
+	)
 	for name, source := range map[string]string{
-		"malformed":       "package policy\n\nfunc Authorize( {",
-		"no Authorize":    "package policy",
-		"wrong arg count": "package policy\n\nfunc Authorize(resource string) (bool, string) { return true, \"\" }",
-		"no claims":       "package policy\n\nfunc Authorize(a string, b string, c string) (bool, string) { return true, \"\" }",
-		"wrong arg type":  "package policy\n\nfunc Authorize(a int, b int, c int, d int) (bool, string) { return true, \"\" }",
-		"wrong results":   "package policy\n\nfunc Authorize(a, b, c string, d map[string]string) bool { return true }",
-		"result types":    "package policy\n\nfunc Authorize(a, b, c string, d map[string]string) (string, bool) { return \"\", true }",
-		"panics":          "package policy\n\nfunc Authorize(a, b, c string, d map[string]string) (bool, string) { panic(\"boom\") }",
+		"malformed":        "package policy\n\nfunc Authorize( {",
+		"no Authorize":     "package policy",
+		"wrong arg count":  "package policy\n\nfunc Authorize(resource string) " + res + permit,
+		"no roles":         "package policy\n\nfunc Authorize(a, b, c string, d map[string]string) " + res + permit,
+		"wrong arg type":   "package policy\n\nfunc Authorize(a int, b int, c int, d int, e int) " + res + permit,
+		"bool and string":  "package policy\n\n" + sig + `(bool, string) { return true, "" }`,
+		"too few results":  "package policy\n\n" + sig + `(string, string) { return "Permit", "" }`,
+		"result types":     "package policy\n\n" + sig + `(string, bool, []map[string]string, []map[string]string) { return "Permit", true, nil, nil }`,
+		"unknown decision": "package policy\n\n" + sig + res + `{ return "Allow", "", nil, nil }`,
+		"no statement id":  "package policy\n\n" + sig + res + `{ return "Permit", "", []map[string]string{{"k": "v"}}, nil }`,
+		"nil statement":    "package policy\n\n" + sig + res + `{ return "Permit", "", []map[string]string{nil}, nil }`,
+		"panics":           "package policy\n\n" + sig + res + `{ panic("boom") }`,
 	} {
 		if err := vm.Validate(source); err == nil {
 			t.Errorf("Validate %s policy: want error, got nil", name)
@@ -103,11 +113,11 @@ func TestGnoVMValidate(t *testing.T) {
 
 const departmentPolicy = `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
 	if claims["department"] != "burgerzaken" {
-		return false, "department " + claims["department"] + " may not request"
+		return "Deny", "department " + claims["department"] + " may not request", nil, nil
 	}
-	return true, "ok"
+	return "Permit", "ok", nil, nil
 }
 `
 
@@ -133,7 +143,7 @@ func TestGnoVMEvaluateSeesClaims(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}
-			if got.Allow != tc.allow || got.Reason != tc.reason {
+			if (got.Decision == Permit) != tc.allow || got.Reason != tc.reason {
 				t.Errorf("got %+v, want allow=%v reason=%q", got, tc.allow, tc.reason)
 			}
 		})
@@ -152,13 +162,13 @@ func TestClaimsLiteralIsStable(t *testing.T) {
 
 const userRolesPolicy = `package policy
 
-func AuthorizeWithUserRoles(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (string, string, []map[string]string, []map[string]string) {
 	for _, r := range userRoles {
 		if r == "admin" {
-			return true, "admin"
+			return "Permit", "admin", nil, nil
 		}
 	}
-	return false, "no admin role"
+	return "Deny", "no admin role", nil, nil
 }
 `
 
@@ -178,35 +188,24 @@ func TestGnoVMUserRoles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Evaluate %v: %v", tt.roles, err)
 		}
-		if result.Allow != tt.want {
-			t.Errorf("roles %v: allow = %v (%s), want %v", tt.roles, result.Allow, result.Reason, tt.want)
+		if (result.Decision == Permit) != tt.want {
+			t.Errorf("roles %v: allow = %v (%s), want %v", tt.roles, (result.Decision == Permit), result.Reason, tt.want)
 		}
-	}
-}
-
-func TestGnoVMOldPolicyIgnoresUserRoles(t *testing.T) {
-	vm, err := NewGnoVM(io.Discard)
-	if err != nil {
-		t.Fatalf("NewGnoVM: %v", err)
-	}
-	result, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university", UserRoles: []string{"admin"}})
-	if err != nil || !result.Allow {
-		t.Fatalf("old Authorize policy: allow=%v err=%v", result.Allow, err)
 	}
 }
 
 const claimsAndUserRolesPolicy = `package policy
 
-func AuthorizeWithUserRoles(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (string, string, []map[string]string, []map[string]string) {
 	if claims["department"] != "burgerzaken" {
-		return false, "wrong department"
+		return "Deny", "wrong department", nil, nil
 	}
 	for _, r := range userRoles {
 		if r == "planner" {
-			return true, "ok"
+			return "Permit", "ok", nil, nil
 		}
 	}
-	return false, "no planner role"
+	return "Deny", "no planner role", nil, nil
 }
 `
 
@@ -235,8 +234,56 @@ func TestGnoVMPolicyUsesClaimsAndUserRoles(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
-		if result.Allow != tt.want || result.Reason != tt.reason {
-			t.Errorf("%s: got allow=%v reason=%q, want allow=%v reason=%q", tt.name, result.Allow, result.Reason, tt.want, tt.reason)
+		if (result.Decision == Permit) != tt.want || result.Reason != tt.reason {
+			t.Errorf("%s: got allow=%v reason=%q, want allow=%v reason=%q", tt.name, (result.Decision == Permit), result.Reason, tt.want, tt.reason)
+		}
+	}
+}
+
+const obligationsPolicy = `package policy
+
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
+	obligations := []map[string]string{
+		{"id": "log-access", "retention-days": "30", "channel": "audit"},
+		{"id": "notify-owner"},
+	}
+	advice := []map[string]string{{"id": "show-banner", "text": "welcome"}}
+	return "Permit", "ok", obligations, advice
+}
+`
+
+func TestGnoVMObligationsAndAdvice(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatalf("NewGnoVM: %v", err)
+	}
+	got, err := vm.Evaluate(obligationsPolicy, Input{Resource: "r", Type: "t", Issuer: "i"})
+	if err != nil {
+		t.Fatalf("Evaluate: %v", err)
+	}
+	want := Result{
+		Decision: Permit, Reason: "ok",
+		Obligations: []Statement{
+			{ID: "log-access", Attributes: []Attribute{{ID: "channel", Value: "audit"}, {ID: "retention-days", Value: "30"}}},
+			{ID: "notify-owner"},
+		},
+		Advice: []Statement{{ID: "show-banner", Attributes: []Attribute{{ID: "text", Value: "welcome"}}}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}
+
+func TestGnoVMDecisionsOtherThanPermitAndDeny(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatalf("NewGnoVM: %v", err)
+	}
+	for _, d := range []Decision{NotApplicable, Indeterminate} {
+		source := "package policy\n\nfunc Authorize(a, b, c string, d map[string]string, e []string) (string, string, []map[string]string, []map[string]string) { return \"" + string(d) + "\", \"r\", nil, nil }"
+		got, err := vm.Evaluate(source, Input{})
+		if err != nil || got.Decision != d || got.Obligations != nil || got.Advice != nil {
+			t.Errorf("%s: got %+v, err %v", d, got, err)
 		}
 	}
 }

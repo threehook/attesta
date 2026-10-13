@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"attesta/backend/internal/authz"
 	"attesta/backend/internal/sdjwt"
 )
 
@@ -257,8 +258,8 @@ func TestOutcome(t *testing.T) {
 	if o, err := v.Outcome(id); err != nil || o != nil {
 		t.Fatalf("before an answer: outcome = %v, err = %v, want nil, nil", o, err)
 	}
-	v.Complete(id, Outcome{Allow: true, Reason: "ok"})
-	if o, err := v.Outcome(id); err != nil || o == nil || !o.Allow || o.Reason != "ok" {
+	v.Complete(id, Outcome{Decision: authz.Permit, Reason: "ok"})
+	if o, err := v.Outcome(id); err != nil || o == nil || o.Decision != authz.Permit || o.Reason != "ok" {
 		t.Errorf("after Complete: outcome = %v, err = %v", o, err)
 	}
 	if _, err := v.Outcome("nope"); !errors.Is(err, ErrUnknownRequest) {

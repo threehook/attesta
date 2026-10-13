@@ -4,14 +4,18 @@ import (
 	"errors"
 	"sync"
 	"time"
+
+	"attesta/backend/internal/authz"
 )
 
 // Outcome is the decision on a presentation, kept so the application that started the request can fetch it.
 type Outcome struct {
-	Allow  bool
-	Reason string
-	// Subject is set when the presentation was allowed.
-	Subject *Subject
+	Decision authz.Decision
+	Reason   string
+	// Subject is set when the decision is Permit.
+	Subject     *Subject
+	Obligations []authz.Statement
+	Advice      []authz.Statement
 }
 
 type session struct {

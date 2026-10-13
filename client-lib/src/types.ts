@@ -21,7 +21,22 @@ export interface Subject {
   email: string;
 }
 
-export type AuthorizationOutcome = { status: "pending" } | { status: "done"; decision: "Permit" | "Deny" | "NotApplicable" | "Indeterminate"; reason: string; subject?: Subject };
+export type Decision = "Permit" | "Deny" | "NotApplicable" | "Indeterminate";
+
+export interface AttributeAssignment {
+  attributeId: string;
+  value: string;
+}
+
+// Obligations must be carried out with the decision; advice may be ignored.
+export interface Statement {
+  id: string;
+  attributeAssignments: AttributeAssignment[];
+}
+
+export type AuthorizationOutcome =
+  | { status: "pending" }
+  | { status: "done"; decision: Decision; reason: string; subject?: Subject; obligations?: Statement[]; advice?: Statement[] };
 
 export interface PutPolicyRequest {
   id: string;

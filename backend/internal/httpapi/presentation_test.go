@@ -121,26 +121,26 @@ func TestHandlePresentationResponse(t *testing.T) {
 		completed *presentation.Outcome
 	}{
 		"allowed": {
-			p: &fakePresenter{presented: presented()}, e: &fakeEvaluator{result: authz.Result{Allow: true, Reason: "ok"}},
-			status: http.StatusOK, completed: &presentation.Outcome{Allow: true, Reason: "ok", Subject: &presentation.Subject{Issuer: "did:key:issuer", Email: "ada@example.com"}},
+			p: &fakePresenter{presented: presented()}, e: &fakeEvaluator{result: authz.Result{Decision: authz.Permit, Reason: "ok"}},
+			status: http.StatusOK, completed: &presentation.Outcome{Decision: authz.Permit, Reason: "ok", Subject: &presentation.Subject{Issuer: "did:key:issuer", Email: "ada@example.com"}},
 		},
 		"denied by the policy": {
-			p: &fakePresenter{presented: presented()}, e: &fakeEvaluator{result: authz.Result{Reason: "issuer not trusted"}},
-			status: http.StatusOK, completed: &presentation.Outcome{Reason: "issuer not trusted"},
+			p: &fakePresenter{presented: presented()}, e: &fakeEvaluator{result: authz.Result{Decision: authz.Deny, Reason: "issuer not trusted"}},
+			status: http.StatusOK, completed: &presentation.Outcome{Decision: authz.Deny, Reason: "issuer not trusted"},
 		},
 		"does not verify": {
 			p: &fakePresenter{respondErr: presentation.ErrInvalidPresentation}, e: &fakeEvaluator{},
-			status: http.StatusBadRequest, completed: &presentation.Outcome{Reason: "presentation did not verify"},
+			status: http.StatusBadRequest, completed: &presentation.Outcome{Decision: authz.Deny, Reason: "presentation did not verify"},
 		},
 		"unknown request":  {p: &fakePresenter{respondErr: presentation.ErrUnknownRequest}, e: &fakeEvaluator{}, status: http.StatusNotFound},
 		"already answered": {p: &fakePresenter{respondErr: presentation.ErrAlreadyAnswered}, e: &fakeEvaluator{}, status: http.StatusBadRequest},
 		"policy fails": {
 			p: &fakePresenter{presented: presented()}, e: &fakeEvaluator{err: errors.New("boom")},
-			status: http.StatusInternalServerError, completed: &presentation.Outcome{Reason: "policy evaluation failed"},
+			status: http.StatusInternalServerError, completed: &presentation.Outcome{Decision: authz.Indeterminate, Reason: "policy evaluation failed"},
 		},
 		"policy disappeared": {
 			p: &fakePresenter{presented: &presentation.Presented{Request: presentation.Request{PolicyID: "gone"}}}, e: &fakeEvaluator{},
-			status: http.StatusNotFound, completed: &presentation.Outcome{Reason: "unknown policy"},
+			status: http.StatusNotFound, completed: &presentation.Outcome{Decision: authz.NotApplicable, Reason: "unknown policy"},
 		},
 	}
 	for name, tc := range cases {
@@ -166,7 +166,7 @@ func TestHandlePresentationResponse(t *testing.T) {
 func TestHandlePresentationResponsePassesTheClaimsToThePolicy(t *testing.T) {
 	p := presented()
 	p.Claims = map[string]any{"department": "burgerzaken", "email": "ada@example.com", "level": float64(3), "courses": []any{"a", "b"}}
-	e := &fakeEvaluator{result: authz.Result{Allow: true}}
+	e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit}}
 	s := newPresentationServer(t, &fakePresenter{presented: p}, e)
 
 	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
@@ -190,12 +190,12 @@ func TestHandlePresentationOutcome(t *testing.T) {
 	}{
 		"pending": {p: &fakePresenter{}, status: http.StatusOK, want: presentationOutcomeResponse{Status: "pending"}},
 		"allowed": {
-			p:      &fakePresenter{outcome: &presentation.Outcome{Allow: true, Reason: "ok", Subject: &presentation.Subject{Issuer: "did:key:i", Email: "ada@example.com"}}},
+			p:      &fakePresenter{outcome: &presentation.Outcome{Decision: authz.Permit, Reason: "ok", Subject: &presentation.Subject{Issuer: "did:key:i", Email: "ada@example.com"}}},
 			status: http.StatusOK,
 			want:   presentationOutcomeResponse{Status: "done", Decision: "Permit", Reason: "ok", Subject: &subjectResponse{Issuer: "did:key:i", Email: "ada@example.com"}},
 		},
 		"denied": {
-			p: &fakePresenter{outcome: &presentation.Outcome{Reason: "issuer not trusted"}}, status: http.StatusOK,
+			p: &fakePresenter{outcome: &presentation.Outcome{Decision: authz.Deny, Reason: "issuer not trusted"}}, status: http.StatusOK,
 			want: presentationOutcomeResponse{Status: "done", Decision: "Deny", Reason: "issuer not trusted"},
 		},
 		"unknown": {p: &fakePresenter{outcomeErr: presentation.ErrUnknownRequest}, status: http.StatusNotFound},
@@ -224,7 +224,7 @@ func TestHandlePresentationOutcome(t *testing.T) {
 }
 
 func sameOutcome(a, b presentation.Outcome) bool {
-	if a.Allow != b.Allow || a.Reason != b.Reason || (a.Subject == nil) != (b.Subject == nil) {
+	if a.Decision != b.Decision || a.Reason != b.Reason || (a.Subject == nil) != (b.Subject == nil) {
 		return false
 	}
 	return a.Subject == nil || *a.Subject == *b.Subject
@@ -258,7 +258,7 @@ func TestParseRoles(t *testing.T) {
 
 func TestUserRolesTravelFromTheRequestToThePolicy(t *testing.T) {
 	p := &fakePresenter{presented: presented()}
-	e := &fakeEvaluator{result: authz.Result{Allow: true}}
+	e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit}}
 	s := newPresentationServer(t, p, e)
 
 	doRequest(s, "POST", "/v1/authorize/requests", requestBody, map[string]string{"Att-User-Roles": "admin, editor"})
@@ -304,13 +304,13 @@ func TestTheRequestKeepsTheCallersTraceparent(t *testing.T) {
 }
 
 func TestEveryDecisionIsLoggedBeforeItsOutcomeIsRecorded(t *testing.T) {
-	for name, allow := range map[string]bool{"allow": true, "deny": false} {
+	for name, decision := range map[string]authz.Decision{"permit": authz.Permit, "deny": authz.Deny} {
 		t.Run(name, func(t *testing.T) {
 			pr := presented()
 			pr.Request.TraceParent, pr.Request.UserRoles = callersTraceParent, []string{"laadpalen-aanvrager"}
 			p := &fakePresenter{presented: pr}
 			log := &fakeDecisionLog{}
-			s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Allow: allow, Reason: "r"}})
+			s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Decision: decision, Reason: "r"}})
 			s.Decisions = log
 
 			if rec := answer(s); rec.Code != http.StatusOK {
@@ -320,11 +320,11 @@ func TestEveryDecisionIsLoggedBeforeItsOutcomeIsRecorded(t *testing.T) {
 				t.Fatalf("logged %d decisions, want 1", len(log.decisions))
 			}
 			d := log.decisions[0]
-			if d.Allow != allow || d.Reason != "r" || d.DecidedBy != "policy" || d.TraceParent != callersTraceParent || d.RequestID != "req-1" ||
+			if d.Allow != (decision == authz.Permit) || d.Reason != "r" || d.DecidedBy != "policy" || d.TraceParent != callersTraceParent || d.RequestID != "req-1" ||
 				d.SubjectID != pr.Subject.Email || d.Issuer != pr.Issuer || len(d.UserRoles) != 1 || d.Err != nil {
 				t.Errorf("decision = %+v", d)
 			}
-			if p.completed == nil || p.completed.Allow != allow {
+			if p.completed == nil || p.completed.Decision != decision {
 				t.Errorf("outcome = %+v", p.completed)
 			}
 		})
@@ -349,7 +349,7 @@ func TestAnAnswerThatDoesNotVerifyIsLogged(t *testing.T) {
 		d.TraceParent != callersTraceParent || d.SubjectID != "" || d.Err != nil {
 		t.Errorf("decision = %+v", d)
 	}
-	if p.completed == nil || p.completed.Allow || p.completed.Reason != "presentation did not verify" {
+	if p.completed == nil || p.completed.Decision != authz.Deny || p.completed.Reason != "presentation did not verify" {
 		t.Errorf("outcome = %+v", p.completed)
 	}
 }
@@ -378,20 +378,36 @@ func TestAFailedEvaluationIsLoggedAsAnError(t *testing.T) {
 	if len(log.decisions) != 1 || log.decisions[0].Err == nil || log.decisions[0].SubjectID == "" {
 		t.Errorf("decisions = %+v", log.decisions)
 	}
-	if p.completed == nil || p.completed.Allow {
+	if p.completed == nil || p.completed.Decision != authz.Indeterminate {
 		t.Errorf("outcome = %+v", p.completed)
 	}
 }
 
 func TestNoDecisionIsReturnedWhenItCannotBeLogged(t *testing.T) {
 	p := &fakePresenter{presented: presented()}
-	s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Allow: true, Reason: "ok"}})
+	s := newPresentationServer(t, p, &fakeEvaluator{result: authz.Result{Decision: authz.Permit, Reason: "ok"}})
 	s.Decisions = &fakeDecisionLog{err: errors.New("disk full")}
 
 	if rec := answer(s); rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}
-	if p.completed == nil || p.completed.Allow || p.completed.Reason != "decision could not be logged" || p.completed.Subject != nil {
+	if p.completed == nil || p.completed.Decision != authz.Indeterminate || p.completed.Reason != "decision could not be logged" || p.completed.Subject != nil {
 		t.Errorf("outcome = %+v, want a denial", p.completed)
+	}
+}
+
+func TestOutcomeResponseCarriesObligationsAndAdvice(t *testing.T) {
+	p := &fakePresenter{outcome: &presentation.Outcome{
+		Decision: authz.Permit, Reason: "ok",
+		Obligations: []authz.Statement{{ID: "log-access", Attributes: []authz.Attribute{{ID: "retention-days", Value: "30"}}}, {ID: "notify-owner"}},
+		Advice:      []authz.Statement{{ID: "show-banner", Attributes: []authz.Attribute{{ID: "text", Value: "welcome"}}}},
+	}}
+	s := newPresentationServer(t, p, &fakeEvaluator{})
+	rec := doRequest(s, "GET", "/v1/authorize/requests/req-1", "", nil)
+	const want = `{"status":"done","decision":"Permit","reason":"ok",` +
+		`"obligations":[{"id":"log-access","attributeAssignments":[{"attributeId":"retention-days","value":"30"}]},{"id":"notify-owner","attributeAssignments":[]}],` +
+		`"advice":[{"id":"show-banner","attributeAssignments":[{"attributeId":"text","value":"welcome"}]}]}`
+	if got := strings.TrimSpace(rec.Body.String()); got != want {
+		t.Errorf("body = %s\nwant   %s", got, want)
 	}
 }

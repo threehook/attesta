@@ -11,7 +11,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
   it watches, and hot-deployed through `POST /admin/policies`; hot deployment without a restart is a requirement), `internal/httpapi` is the HTTP layer.
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
 - `github.com/threehook/enforcer-go` (own public repo, MIT, checked out beside this one as `../enforcer-go`): Go library an application uses to enforce Attesta's decisions: start an
-  authorization, read the outcome, act only on allow. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
+  authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.

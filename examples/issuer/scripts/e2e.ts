@@ -39,17 +39,17 @@ try {
 async function deployPolicy(id: string, trustedIssuer: string) {
   const source = `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
 	if resource != "diploma-vault" {
-		return false, "unknown resource: " + resource
+		return "Deny", "unknown resource: " + resource, nil, nil
 	}
 	if credType != "Diploma" {
-		return false, "unexpected credential type: " + credType
+		return "Deny", "unexpected credential type: " + credType, nil, nil
 	}
 	if issuer != "${trustedIssuer}" {
-		return false, "issuer not trusted: " + issuer
+		return "Deny", "issuer not trusted: " + issuer, nil, nil
 	}
-	return true, "credential accepted for resource " + resource
+	return "Permit", "credential accepted for resource " + resource, nil, nil
 }
 `
   const res = await post('/admin/policies', { id, source }, { 'X-Admin-Token': adminToken })

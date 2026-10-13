@@ -73,8 +73,8 @@ func TestExamplePolicies(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Evaluate: %v", err)
 			}
-			if got.Allow != tc.allow || got.Reason != tc.reason {
-				t.Errorf("got allow=%v reason=%q, want allow=%v reason=%q", got.Allow, got.Reason, tc.allow, tc.reason)
+			if (got.Decision == Permit) != tc.allow || got.Reason != tc.reason {
+				t.Errorf("got allow=%v reason=%q, want allow=%v reason=%q", got.Decision == Permit, got.Reason, tc.allow, tc.reason)
 			}
 		})
 	}

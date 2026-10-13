@@ -5,25 +5,25 @@ package policy
 // and the application must have given the employee the laadpalen-aanvrager role.
 // claims holds the disclosed claims by name; the request must ask for department and diploma. The credential's own expiry is checked before this runs,
 // so an employee whose diploma has expired never gets here. userRoles come from the application, not from the credential.
-func AuthorizeWithUserRoles(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (bool, string) {
+func Authorize(resource string, credType string, issuer string, claims map[string]string, userRoles []string) (string, string, []map[string]string, []map[string]string) {
 	trustedIssuers := map[string]bool{
 		"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA": true,
 	}
 
 	if resource != "request_laadpaal" {
-		return false, "Onbekende bron: " + resource
+		return "Deny", "Onbekende bron: " + resource, nil, nil
 	}
 	if credType != "Employee" {
-		return false, "Onverwacht bewijs: " + credType
+		return "Deny", "Onverwacht bewijs: " + credType, nil, nil
 	}
 	if !trustedIssuers[issuer] {
-		return false, "Uitgever niet vertrouwd: " + issuer
+		return "Deny", "Uitgever niet vertrouwd: " + issuer, nil, nil
 	}
 	if claims["department"] != "burgerzaken" {
-		return false, "Niet geautoriseerd vanwege afdeling"
+		return "Deny", "Niet geautoriseerd vanwege afdeling", nil, nil
 	}
 	if claims["diploma"] != "laadpalen-management" {
-		return false, "Niet geautoriseerd vanwege opleiding"
+		return "Deny", "Niet geautoriseerd vanwege opleiding", nil, nil
 	}
 	hasRole := false
 	for _, role := range userRoles {
@@ -32,7 +32,7 @@ func AuthorizeWithUserRoles(resource string, credType string, issuer string, cla
 		}
 	}
 	if !hasRole {
-		return false, "Niet geautoriseerd vanwege rol"
+		return "Deny", "Niet geautoriseerd vanwege rol", nil, nil
 	}
-	return true, "Geautoriseerd"
+	return "Permit", "Geautoriseerd", nil, nil
 }
