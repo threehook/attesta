@@ -1,2 +1,4 @@
 github.com/threehook/enforcer-go v0.1.0 h1:l6GT7Pn8yyBWklLHEVWKK9Tt5bBwpnevnufQFpnFHF8=
 github.com/threehook/enforcer-go v0.1.0/go.mod h1:v2tp3AWHsAz36Bb6XoGKbmQAECigqYRwkyxnomwdXLo=
+github.com/threehook/enforcer-go v0.2.0 h1:ETofW3m6VW3YEckG+9B0NvhfLst0fV+SZzJm9PC8JOU=
+github.com/threehook/enforcer-go v0.2.0/go.mod h1:v2tp3AWHsAz36Bb6XoGKbmQAECigqYRwkyxnomwdXLo=

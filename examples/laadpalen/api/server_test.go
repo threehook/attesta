@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/threehook/enforcer-go"
 )
 
 // fakeAttesta stands in for the sidecar. Its requests are numbered req-1, req-2, ... in the order they were started.
@@ -56,7 +58,7 @@ var (
 const freeAddress = `{"postcode":"1111BB","huisnummer":"2"}`
 
 func authorizedAttesta() *fakeAttesta {
-	return &fakeAttesta{answer: outcome{Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: jerry}}
+	return &fakeAttesta{answer: outcome{Status: "done", Decision: enforcer.DecisionPermit, Reason: "Geautoriseerd", Subject: jerry}}
 }
 
 func newTestServer(f *fakeAttesta) *server {
@@ -296,7 +298,7 @@ func TestSubmissionAttestaDeniesGetsNoResult(t *testing.T) {
 	f := authorizedAttesta()
 	s := newTestServer(f)
 	c := signedIn(t, s, f)
-	f.answers = map[string]outcome{"req-2": {Status: "done", Allow: false, Reason: "Niet geautoriseerd vanwege afdeling"}}
+	f.answers = map[string]outcome{"req-2": {Status: "done", Decision: enforcer.DecisionDeny, Reason: "Niet geautoriseerd vanwege afdeling"}}
 	id := submitAs(t, s, f, c, freeAddress)
 
 	v := statusOf(t, s, id)
@@ -312,7 +314,7 @@ func TestSubmissionWithAnotherEmployeesCredentialIsDenied(t *testing.T) {
 	f := authorizedAttesta()
 	s := newTestServer(f)
 	c := signedIn(t, s, f)
-	f.answers = map[string]outcome{"req-2": {Status: "done", Allow: true, Reason: "Geautoriseerd", Subject: tom}}
+	f.answers = map[string]outcome{"req-2": {Status: "done", Decision: enforcer.DecisionPermit, Reason: "Geautoriseerd", Subject: tom}}
 	id := submitAs(t, s, f, c, freeAddress)
 
 	v := statusOf(t, s, id)

@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/threehook/enforcer-go"
 )
 
 // What this app asks Attesta. Signing in asks for the employee credential and nothing beyond the email that identifies them; a laadpaal request asks
@@ -298,10 +300,10 @@ func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 
 	sub.answered = true
 	sub.view.Status = "done"
-	sub.view.Authorized = got.Allow
+	sub.view.Authorized = got.Decision == enforcer.DecisionPermit
 	sub.view.Reason = got.Reason
 	sub.view.Debug.Outcome = raw
-	if !got.Allow || got.Subject == nil {
+	if got.Decision != enforcer.DecisionPermit || got.Subject == nil {
 		sub.view.Authorized = false
 		s.logger.Info("submission not authorized", "requestId", id, "reason", got.Reason)
 		return nil

@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"testing"
 	"time"
+
+	"github.com/threehook/enforcer-go"
 )
 
 func TestAuthorizedSignInStartsASession(t *testing.T) {
@@ -61,7 +63,7 @@ func TestPollingAgainDoesNotStartAnotherSession(t *testing.T) {
 }
 
 func TestDeniedSignInStartsNoSession(t *testing.T) {
-	s := newTestServer(&fakeAttesta{answer: outcome{Status: "done", Allow: false, Reason: "Uitgever niet vertrouwd: did:key:x"}})
+	s := newTestServer(&fakeAttesta{answer: outcome{Status: "done", Decision: enforcer.DecisionDeny, Reason: "Uitgever niet vertrouwd: did:key:x"}})
 	call(s, "POST", "/api/sign-in", "")
 	rec := call(s, "GET", "/api/sign-in/req-1", "")
 	var v submissionView
