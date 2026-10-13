@@ -52,12 +52,6 @@
         "schemes": [
           "openid4vp"
         ]
-      },
-      {
-        "name": "attesta wallet, after logging in at an issuer",
-        "schemes": [
-          "attesta-wallet"
-        ]
       }
     ],
     "mac": {

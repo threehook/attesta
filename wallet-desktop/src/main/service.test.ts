@@ -4,19 +4,10 @@ import { join } from "node:path";
 import type { WalletAgent } from "@attesta/wallet";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const core = vi.hoisted(() => ({
-  resolvePresentationRequest: vi.fn(),
-  submitPresentation: vi.fn(),
-  listCredentials: vi.fn(),
-  previewCredentialOffer: vi.fn(),
-  needsLogin: vi.fn(),
-  startIssuerLogin: vi.fn(),
-  finishIssuerLogin: vi.fn(),
-  acceptPreviewedOffer: vi.fn(),
-}));
+const core = vi.hoisted(() => ({ resolvePresentationRequest: vi.fn(), submitPresentation: vi.fn(), listCredentials: vi.fn() }));
 vi.mock("@attesta/wallet", async (importOriginal) => ({ ...(await importOriginal<object>()), ...core }));
 
-import { LOGIN_CALLBACK, WalletError, WalletService } from "./service.js";
+import { WalletError, WalletService } from "./service.js";
 import { WalletSettings } from "./settings.js";
 
 const api = "https://api.attesta.example";
@@ -37,11 +28,6 @@ beforeEach(() => {
   core.resolvePresentationRequest.mockReset();
   core.listCredentials.mockReset().mockResolvedValue([]);
   core.submitPresentation.mockReset().mockResolvedValue({ status: 200 });
-  core.previewCredentialOffer.mockReset();
-  core.needsLogin.mockReset().mockReturnValue(false);
-  core.startIssuerLogin.mockReset();
-  core.finishIssuerLogin.mockReset();
-  core.acceptPreviewedOffer.mockReset().mockResolvedValue([]);
 });
 
 // Reading real offers and requests is covered end to end (e2e/wallet.spec.ts); here the wallet core is replaced to cover what the service decides.
@@ -215,122 +201,5 @@ describe("signing in", () => {
     await s.approve(first.id, true);
     expect(s.forgetSignIn({ application: api, ...jerry }).signIns).toEqual([]);
     expect((await s.prepare(link)).kind).toBe("presentation");
-  });
-});
-
-const issuer = "https://issuer.example/oid4vci/diploma";
-const offerLink = "openid-credential-offer://?credential_offer=x";
-const loginUrl = "https://issuer.example/oid4vci/diploma/authorize?request_uri=r";
-const offered = { issuer, types: ["Employee"], resolved: {} };
-const login = (url = loginUrl) => ({ offer: offered, redirectUri: LOGIN_CALLBACK, codeVerifier: "v", authorizationRequestUrl: url });
-
-describe("WalletService, an offer that needs a login at the issuer", () => {
-  beforeEach(() => {
-    core.previewCredentialOffer.mockResolvedValue(offered);
-    core.needsLogin.mockReturnValue(true);
-    core.startIssuerLogin.mockResolvedValue(login());
-  });
-
-  it("says that the offer needs a login, and starts nothing before the user agrees", async () => {
-    const prepared = await service().prepare(offerLink);
-
-    expect(prepared).toMatchObject({ kind: "offer", issuer, types: ["Employee"], login: true });
-    expect(core.startIssuerLogin).not.toHaveBeenCalled();
-    expect(core.acceptPreviewedOffer).not.toHaveBeenCalled();
-  });
-
-  it("gives the address to open in a browser once the user agrees, and adds nothing yet", async () => {
-    const s = service();
-    const prepared = (await s.prepare(offerLink)) as { id: string };
-
-    const approved = await s.approve(prepared.id);
-
-    expect(approved).toEqual({ kind: "login", url: loginUrl });
-    expect(core.startIssuerLogin).toHaveBeenCalledWith({}, offered, LOGIN_CALLBACK);
-    expect(core.finishIssuerLogin).not.toHaveBeenCalled();
-  });
-
-  it("does not send the user to an address that is not the issuer's", async () => {
-    core.startIssuerLogin.mockResolvedValue(login("https://elsewhere.example/login"));
-    const s = service();
-    const prepared = (await s.prepare(offerLink)) as { id: string };
-
-    await expect(s.approve(prepared.id)).rejects.toThrow("ander adres");
-    await expect(s.completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow("geen aanmelding bezig");
-  });
-
-  it("keeps the credentials the issuer gives when the browser comes back", async () => {
-    const held = [{ id: "1", type: "Employee", issuer: "did:key:x", claims: {} }];
-    core.finishIssuerLogin.mockResolvedValue(held);
-    const s = service();
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-
-    const done = await s.completeLogin(`  ${LOGIN_CALLBACK}?code=c&state=s `);
-
-    expect(done).toBe(held);
-    expect(core.finishIssuerLogin).toHaveBeenCalledWith({}, login(), `${LOGIN_CALLBACK}?code=c&state=s`);
-  });
-
-  it("finishes a login once", async () => {
-    core.finishIssuerLogin.mockResolvedValue([]);
-    const s = service();
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-    await s.completeLogin(`${LOGIN_CALLBACK}?code=c`);
-
-    await expect(s.completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow("geen aanmelding bezig");
-  });
-
-  it("refuses a return from a login it never started", async () => {
-    await expect(service().completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow(WalletError);
-    expect(core.finishIssuerLogin).not.toHaveBeenCalled();
-  });
-
-  it("forgets a login that took too long", async () => {
-    let now = 1_000;
-    const s = new WalletService({} as WalletAgent, settings(), () => now);
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-    now += 11 * 60 * 1000;
-
-    await expect(s.completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow("geen aanmelding bezig");
-  });
-
-  it("lets a new login replace the one under way", async () => {
-    core.finishIssuerLogin.mockResolvedValue([]);
-    const s = service();
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-    core.startIssuerLogin.mockResolvedValue(login(`${loginUrl}2`));
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-
-    await s.completeLogin(`${LOGIN_CALLBACK}?code=c`);
-
-    expect(core.finishIssuerLogin).toHaveBeenCalledWith({}, login(`${loginUrl}2`), expect.any(String));
-  });
-
-  it("tells the user when the issuer has no credential for them", async () => {
-    const refusal = Object.assign(new Error("request failed"), { response: { credentialErrorResponseResult: { data: { error: "credential_request_denied" } } } });
-    core.finishIssuerLogin.mockRejectedValue(refusal);
-    const s = service();
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-
-    await expect(s.completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow("Er staat geen credential voor u klaar");
-  });
-
-  it("passes on any other failure as it is", async () => {
-    core.finishIssuerLogin.mockRejectedValue(new Error("the issuer did not answer"));
-    const s = service();
-    await s.approve(((await s.prepare(offerLink)) as { id: string }).id);
-
-    await expect(s.completeLogin(`${LOGIN_CALLBACK}?code=c`)).rejects.toThrow("did not answer");
-  });
-
-  it("still adds an offer with a one-time code at once", async () => {
-    core.needsLogin.mockReturnValue(false);
-    core.acceptPreviewedOffer.mockResolvedValue([{ id: "1" }]);
-    const s = service();
-    const prepared = (await s.prepare(offerLink)) as { id: string; login: boolean };
-
-    expect(prepared.login).toBe(false);
-    expect(await s.approve(prepared.id)).toEqual({ kind: "offer", credentials: [{ id: "1" }] });
-    expect(core.startIssuerLogin).not.toHaveBeenCalled();
   });
 });

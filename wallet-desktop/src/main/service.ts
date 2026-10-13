@@ -1,15 +1,11 @@
 import { randomUUID } from "node:crypto";
 import {
   acceptPreviewedOffer,
-  finishIssuerLogin,
   listCredentials,
-  needsLogin,
   previewCredentialOffer,
   resolvePresentationRequest,
-  startIssuerLogin,
   submitPresentation,
   type CredentialOffer,
-  type IssuerLogin,
   type PresentationRequest,
   type WalletAgent,
 } from "@attesta/wallet";
@@ -18,13 +14,9 @@ import { applicationOf, type WalletSettings } from "./settings.js";
 
 const OFFER_SCHEME = "openid-credential-offer://";
 const PRESENTATION_SCHEME = "openid4vp://";
-/** Where a browser is sent after the user logged in at an issuer: an address that opens this wallet. */
-export const LOGIN_CALLBACK = "attesta-wallet://callback";
 const PENDING_LIFETIME_MS = 10 * 60 * 1000;
 
 export class WalletError extends Error {}
-
-export const isLoginCallback = (link: string) => link.trim().startsWith(`${LOGIN_CALLBACK}`);
 
 
 type Waiting = { expires: number } & (
@@ -38,8 +30,6 @@ type Waiting = { expires: number } & (
 
 export class WalletService {
   private readonly waiting = new Map<string, Waiting>();
-  // The login at an issuer that is under way. There is one at a time: a new one replaces it.
-  private loggingIn?: { login: IssuerLogin; expires: number };
 
   constructor(
     private readonly agent: WalletAgent,
@@ -60,7 +50,7 @@ export class WalletService {
     if (trimmed.startsWith(OFFER_SCHEME)) {
       const offer = await previewCredentialOffer(this.agent, trimmed);
       this.waiting.set(id, { kind: "offer", offer, expires });
-      return { id, kind: "offer", issuer: offer.issuer, types: offer.types, login: needsLogin(offer) };
+      return { id, kind: "offer", issuer: offer.issuer, types: offer.types };
     }
     if (trimmed.startsWith(PRESENTATION_SCHEME)) {
       const request = await resolvePresentationRequest(this.agent, trimmed);
@@ -80,7 +70,6 @@ export class WalletService {
   async approve(id: string, remember = false): Promise<Approved> {
     const item = this.take(id);
     if (item.kind === "offer") {
-      if (needsLogin(item.offer)) return this.startLogin(item.offer);
       return { kind: "offer", credentials: await acceptPreviewedOffer(this.agent, item.offer) };
     }
     const { status } = await submitPresentation(this.agent, item.request);
@@ -90,31 +79,6 @@ export class WalletService {
       else if (item.identity) this.settings.rememberSignIn(application, item.identity);
     }
     return { kind: "presentation", status };
-  }
-
-  // The user agreed to the offer; the credential comes after a login at the issuer, in a browser that only ever goes to the issuer.
-  private async startLogin(offer: CredentialOffer): Promise<Approved> {
-    const login = await startIssuerLogin(this.agent, offer, LOGIN_CALLBACK);
-    if (new URL(login.authorizationRequestUrl).origin !== new URL(offer.issuer).origin) {
-      throw new WalletError("De uitgever stuurt u naar een ander adres dan zijn eigen. Dat opent de wallet niet.");
-    }
-    this.loggingIn = { login, expires: this.now() + PENDING_LIFETIME_MS };
-    return { kind: "login", url: login.authorizationRequestUrl };
-  }
-
-  /** The browser came back from the login at the issuer with this address: the credentials the issuer gives are kept. */
-  async completeLogin(redirectedTo: string): Promise<HeldCredential[]> {
-    const current = this.loggingIn;
-    this.loggingIn = undefined;
-    if (!current || current.expires < this.now()) {
-      throw new WalletError("Er is geen aanmelding bezig. Open het credential bij de uitgever opnieuw.");
-    }
-    try {
-      return await finishIssuerLogin(this.agent, current.login, redirectedTo.trim());
-    } catch (error) {
-      if (refusalOf(error) === "credential_request_denied") throw new WalletError("Er staat geen credential voor u klaar bij deze uitgever.");
-      throw error;
-    }
   }
 
   settingsView(): Settings {
@@ -176,10 +140,4 @@ export class WalletService {
       if (item.expires < this.now()) this.waiting.delete(id);
     }
   }
-}
-
-// The error the issuer answered a credential request with, when it was one.
-function refusalOf(error: unknown): string | undefined {
-  const data = (error as { response?: { credentialErrorResponseResult?: { data?: { error?: unknown } } } })?.response?.credentialErrorResponseResult?.data;
-  return typeof data?.error === "string" ? data.error : undefined;
 }

@@ -26,7 +26,6 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
                 <li key={type}>{type}</li>
               ))}
             </ul>
-            {pending.login && <p>U meldt zich eerst aan bij de uitgever, in uw browser. Het credential komt daarna in uw wallet.</p>}
           </>
         ) : signIn ? (
           <>
@@ -81,7 +80,7 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
             {signIn ? "Annuleren" : "Weigeren"}
           </button>
           <button type="button" className="primary" onClick={() => onApprove(remember)} disabled={busy || (pending.kind === "presentation" && !pending.satisfiable)}>
-            {pending.kind === "offer" ? (pending.login ? "Aanmelden" : "Toevoegen") : signIn ? "Bevestigen" : "Delen"}
+            {pending.kind === "offer" ? "Toevoegen" : signIn ? "Bevestigen" : "Delen"}
           </button>
         </div>
       </div>

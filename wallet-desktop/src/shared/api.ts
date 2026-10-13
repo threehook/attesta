@@ -9,14 +9,7 @@ export interface HeldCredential {
 
 // Something that needs the user's decision before the wallet acts on it.
 export type Pending =
-  | {
-      id: string;
-      kind: "offer";
-      issuer: string;
-      types: string[];
-      /** Whether the credential comes after the user logged in at the issuer, in a browser, instead of at once. */
-      login: boolean;
-    }
+  | { id: string; kind: "offer"; issuer: string; types: string[] }
   | {
       id: string;
       kind: "presentation";
@@ -64,11 +57,7 @@ export function isSignIn(requested: Array<{ claims: string[] }>): boolean {
   return claims.length > 0 && claims.every((claim) => claim === IDENTITY_CLAIM);
 }
 
-export type Approved =
-  | { kind: "offer"; credentials: HeldCredential[] }
-  | { kind: "presentation"; status: number }
-  // The user has to log in at the issuer: this address is to be opened in a browser, which ends by opening the wallet again.
-  | { kind: "login"; url: string };
+export type Approved = { kind: "offer"; credentials: HeldCredential[] } | { kind: "presentation"; status: number };
 
 export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -85,8 +74,6 @@ export interface WalletApi {
   forgetSignIn(choice: SignInChoice): Promise<Result<Settings>>;
   // Called with what the main process made of a link the operating system handed to the app (openid-credential-offer:// and openid4vp://).
   onLink(callback: (result: Result<Pending>) => void): void;
-  // Called with what the credentials turned out to be when the user came back from logging in at an issuer.
-  onLoginDone(callback: (result: Result<HeldCredential[]>) => void): void;
   // Called when the settings changed outside the window, such as by choosing "Always share" in a popup.
   onSettingsChanged(callback: () => void): void;
 }
@@ -100,6 +87,5 @@ export const channels = {
   forgetApplication: "wallet:forget-application",
   forgetSignIn: "wallet:forget-sign-in",
   link: "wallet:link",
-  loginDone: "wallet:login-done",
   settingsChanged: "wallet:settings-changed",
 } as const;
