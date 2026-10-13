@@ -26,7 +26,7 @@ Key design decisions:
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string)`; `decision` is `Permit`, `Deny`, `NotApplicable` or `Indeterminate` (XACML), anything else is an error. `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. Every map in `obligations` and `advice` is one statement: its `id` key is the identifier and every other key is an attribute ID with a string value. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every offer, and every disclosure unless they chose to always share with that application |
-| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer` and `examples/laadpalen/gui` |
+| TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer/api`, `examples/issuer/gui` and `examples/laadpalen/gui` |
 
 ## Repo layout
 
@@ -48,12 +48,12 @@ client-lib/                TypeScript package @attesta/client: typed client for 
 wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that accepts credential offers, answers presentation requests, and has a CLI
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
-  issuer/                  demo credential issuer (Express + Credo): issues Diploma credentials through OpenID4VCI, form at /
+  issuer/                  demo credential issuer: api/ (Express + Credo, OpenID4VCI) and gui/ (the pages, form at /)
   laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    issuer/           deployment/service for examples/issuer (https://issuer.attesta.corbencreatives.nl, and LoadBalancer on localhost:4000)
+    issuer/           deployments/services for examples/issuer/api and examples/issuer/gui (https://issuer.attesta.corbencreatives.nl, and LoadBalancer on localhost:4000)
     laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach Attesta at https://api.attesta.corbencreatives.nl)
     ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
   cloud/              (empty for now)
@@ -65,7 +65,7 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 
 | GUI | Where | Used for |
 |---|---|---|
-| Issuer | `examples/issuer` | The organisation's staff creates a verifiable credential for an employee and gets the offer link for the employee's wallet. The pages are in Dutch. |
+| Issuer | `examples/issuer/gui` | The organisation's staff creates a verifiable credential for an employee and gets the offer link for the employee's wallet. The pages are in Dutch. |
 | Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
 | Wallet | `wallet-desktop` | The employee's wallet: confirms every offer, and every disclosure unless the employee chose to always share with that application. |
 
@@ -151,7 +151,7 @@ pnpm --filter @attesta/wallet-desktop package                  # the wallet: ope
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.
 
-`examples/issuer/scripts/e2e.ts` runs the same flow unattended against a running backend.
+`examples/issuer/api/scripts/e2e.ts` runs the same flow unattended against a running backend.
 
 ## Known risks and limits
 

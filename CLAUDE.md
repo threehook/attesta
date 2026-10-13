@@ -14,7 +14,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
   authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
-- `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
+- `examples/issuer/`: demo issuer, split in `api/` (Express + Credo, OpenID4VCI endpoints and the JSON API that creates offers) and `gui/` (the pages, which only call the API). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
 Flow: page `POST /v1/authorize/requests` -> `openid4vp://` link -> user pastes it into the wallet and confirms -> wallet posts to
@@ -48,7 +48,7 @@ The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secr
 - Askar's SQLite store cannot open a path containing `@`; Electron's default data folder came from the scoped package name, so the app has
   `productName` "attesta wallet" and `createWalletAgent` refuses such a path.
 - Electron 39's installer hangs on Node 24.16+/26.1+ (nodejs/node#62557); Electron 44 fixes it and downloads its binary on first run, not during install.
-- Kubernetes injects `<SERVICE>_PORT`-style variables; with Service `attesta-issuer` that is `ATTESTA_ISSUER_PORT`, our own setting. Deployments set
+- Kubernetes injects `<SERVICE>_PORT`-style variables; with Service `attesta-issuer-api` that is `ATTESTA_ISSUER_API_PORT`, close to our own `ATTESTA_ISSUER_PORT`. Deployments set
   `enableServiceLinks: false`. Avoid config variable names equal to a Service name plus `_PORT`/`_HOST`.
 - The Makefile does `kubectl apply` then `kubectl set image` with a unique tag; re-applying a manifest alone resets the image to the nonexistent `:dev`.
 - The issuer image is Debian-based because Askar's Linux library is built for glibc. The old and new LoadBalancers share host port 4000.
