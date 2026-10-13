@@ -32,7 +32,7 @@ type startedWith struct {
 	claims, userRoles                  []string
 }
 
-func (f *fakeAttesta) start(_ context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error) {
+func (f *fakeAttesta) Start(_ context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error) {
 	f.started = append(f.started, startedWith{resource, policyID, credentialType, claims, userRoles})
 	if f.startErr != nil {
 		return authorizationRequest{}, f.startErr
@@ -40,7 +40,7 @@ func (f *fakeAttesta) start(_ context.Context, resource, policyID, credentialTyp
 	return authorizationRequest{RequestID: fmt.Sprintf("req-%d", len(f.started)), Link: "openid4vp://?x=1"}, nil
 }
 
-func (f *fakeAttesta) outcome(_ context.Context, id string) (outcome, json.RawMessage, error) {
+func (f *fakeAttesta) Outcome(_ context.Context, id string) (outcome, json.RawMessage, error) {
 	f.outcomeCalls++
 	if a, ok := f.answers[id]; ok {
 		return a, json.RawMessage(f.raw), f.outcomeErr

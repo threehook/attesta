@@ -1,9 +1,10 @@
-# Built with examples/laadpalen/api as the context (see the Makefile's docker-build-laadpalen-api); the module has no dependencies.
+# Built with examples/laadpalen/api as the context (see the Makefile's docker-build-laadpalen-api); the module needs go.mod and go.sum for enforcer-go.
 FROM golang:1.27-alpine AS builder
 WORKDIR /src
 
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY *.go ./
+RUN go mod download
 RUN CGO_ENABLED=0 go build -o /out/laadpalen-api .
 
 FROM alpine:3.20

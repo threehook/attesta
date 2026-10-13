@@ -130,7 +130,7 @@ func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 
 // handleSignIn starts a sign-in: Attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
 func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
-	started, err := s.attesta.start(r.Context(), signInResource, signInPolicyID, credentialType, nil, nil)
+	started, err := s.attesta.Start(r.Context(), signInResource, signInPolicyID, credentialType, nil, nil)
 	if err != nil {
 		s.logger.Error("starting the sign-in failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon het aanmelden niet starten"})
@@ -171,7 +171,7 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	started, err := s.attesta.start(r.Context(), resource, policyID, credentialType, claimsAsked, s.userRoles[strings.ToLower(sess.subject.Email)])
+	started, err := s.attesta.Start(r.Context(), resource, policyID, credentialType, claimsAsked, s.userRoles[strings.ToLower(sess.subject.Email)])
 	if err != nil {
 		s.logger.Error("starting the authorization failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon de autorisatie niet starten"})
@@ -282,7 +282,7 @@ func newToken() string {
 
 // settle asks Attesta for the decision on a submission and, when there is one, finishes the submission. Callers hold s.mu.
 func (s *server) settle(ctx context.Context, id string, sub *submission) error {
-	got, raw, err := s.attesta.outcome(ctx, id)
+	got, raw, err := s.attesta.Outcome(ctx, id)
 	if errors.Is(err, errUnknownRequest) {
 		sub.answered = true
 		sub.view.Status = "expired"

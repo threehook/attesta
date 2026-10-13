@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/threehook/enforcer-go"
 )
 
 func main() {
@@ -26,7 +28,7 @@ func run() error {
 	// The Attesta sidecar in the same pod.
 	attestaURL := getenv("ATTESTA_URL", "http://127.0.0.1:8080")
 
-	app := newServer(newAttestaClient(attestaURL), logger)
+	app := newServer(enforcer.New(attestaURL), logger)
 	// Where wallets answer Attesta; wallets know the application by this origin.
 	if public, err := url.Parse(os.Getenv("ATTESTA_PUBLIC_URL")); err == nil && public.Scheme != "" && public.Host != "" {
 		app.application = public.Scheme + "://" + public.Host
