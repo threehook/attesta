@@ -6,10 +6,11 @@ import { join } from 'node:path'
 import { AskarModule } from '@credo-ts/askar'
 import { Agent, DidsApi, type KeyDidCreateOptions } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
-import { OpenId4VciCredentialFormatProfile, OpenId4VcIssuanceSessionState, type OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcModule } from '@credo-ts/openid4vc'
+import { OpenId4VciCredentialFormatProfile, OpenId4VcIssuanceSessionRecord, OpenId4VcIssuanceSessionState, type OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
-import { MemoryEntitlementStore, PostgresEntitlementStore, type DatabaseOptions, type Entitlement, type EntitlementStore } from './entitlements.js'
+import type { DatabaseOptions } from '@attesta/issuer-pg'
+import { MemoryEntitlementStore, PostgresEntitlementStore, type Entitlement, type EntitlementStore } from './entitlements.js'
 
 export interface DiplomaClaims {
   name: string
@@ -39,6 +40,15 @@ export interface EmployeeClaims {
   description?: string
 }
 
+/** The authorization server that identifies the holder, reached by its `issuer` address; this issuer is its client. */
+export interface LoginServer {
+  issuer: string
+  clientId: string
+  clientSecret: string
+  /** Where the holder's wallet is sent back to after the login. */
+  walletRedirectUris: string[]
+}
+
 export interface IssuerOptions {
   port: number
   /** Where wallets reach this issuer; it appears in every offer and in the issuer's metadata. */
@@ -50,6 +60,8 @@ export interface IssuerOptions {
   database?: DatabaseOptions
   /** How long a claim holds an entitlement while the credential is made, in milliseconds. */
   entitlementLeaseMs?: number
+  /** The login server holders log in at when their wallet asks for a credential; without it only offers can be used. */
+  login?: LoginServer
   allowInsecureHttp?: boolean
   /** Derives the issuer's signing key (and so its DID) from this text, instead of generating a random key on first start. */
   seed?: string
@@ -73,6 +85,14 @@ export const DEFAULT_DESCRIPTIONS: Record<CredentialType, string> = {
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
 // The form sends dd-mm-yyyy; API clients may send YYYY-MM-DD.
 const toIsoDate = (v: string) => v.trim().replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1')
+
+// The email the login server vouched for: the library verified the signed result before it let the wallet go on.
+function loggedInEmail(session: OpenId4VcIssuanceSessionRecord): string {
+  const idToken = session.chainedIdentity?.externalAccessTokenResponse?.id_token
+  const email = typeof idToken === 'string' ? (JSON.parse(Buffer.from(idToken.split('.')[1], 'base64url').toString()) as { email?: unknown }).email : undefined
+  if (typeof email !== 'string' || email === '') throw new Error('the login did not give an email address')
+  return email
+}
 
 const sameClaims = (a: Record<string, string>, b: Record<string, string>) =>
   Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
@@ -118,6 +138,17 @@ export async function startIssuer(options: IssuerOptions) {
     return entitlement
   }
 
+  // The entitlement a session claimed, for when the library reports its credential made. A restart forgets it; the claim then runs out and can be taken again.
+  const claimedBySession = new Map<string, string>()
+
+  // The credential is made from the entitlement the holder logged in for: their oldest open one of the requested type.
+  async function claimForHolder(email: string, type: string): Promise<Entitlement> {
+    for (const entitlement of await entitlements.findOpenByEmail(email)) {
+      if (entitlement.type === type && (await entitlements.claim(entitlement.id))) return entitlement
+    }
+    throw new Error('there is no open entitlement for this holder')
+  }
+
   const app = express()
   const agent = new Agent({
     config: { allowInsecureHttpUrls: options.allowInsecureHttp ?? false },
@@ -137,8 +168,14 @@ export async function startIssuer(options: IssuerOptions) {
         app,
         issuer: {
           baseUrl: `${options.publicUrl}/oid4vci`,
-          credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession }) => {
-            const entitlement = await claimEntitlement((issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId)
+          getDynamicIssuanceSession: ({ requestedCredentialConfigurations, clientId }) => {
+            if (!options.login) return undefined
+            return { authorizationFlow: 'chained', authorizationServerUrl: options.login.issuer, credentialConfigurationIds: Object.keys(requestedCredentialConfigurations), clientId }
+          },
+          credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession, credentialConfigurationId }) => {
+            const offered = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
+            const entitlement = offered ? await claimEntitlement(offered) : await claimForHolder(loggedInEmail(issuanceSession), credentialConfigurationId)
+            claimedBySession.set(issuanceSession.id, entitlement.id)
             const { payload, sd } = credentialContent(entitlement.type as CredentialType, entitlement.claims, options.issuerName)
 
             const dids = agentContext.resolve(DidsApi)
@@ -166,8 +203,10 @@ export async function startIssuer(options: IssuerOptions) {
 
   // The entitlement is issued once the library has made the credential; without this event the claim runs out and the entitlement can be claimed again.
   agent.events.on<OpenId4VcIssuanceSessionStateChangedEvent>(OpenId4VcIssuerEvents.IssuanceSessionStateChanged, async ({ payload: { issuanceSession } }) => {
-    const id = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
-    if (!id || issuanceSession.state !== OpenId4VcIssuanceSessionState.Completed) return
+    if (issuanceSession.state !== OpenId4VcIssuanceSessionState.Completed) return
+    const id = claimedBySession.get(issuanceSession.id) ?? (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
+    if (!id) return
+    claimedBySession.delete(issuanceSession.id)
     try {
       await entitlements.markIssued(id)
     } catch (error) {
@@ -183,10 +222,21 @@ export async function startIssuer(options: IssuerOptions) {
   // An issuer kept in the store by an earlier version may lack a credential type, so the supported types are written on every start.
   const credentialConfigurationsSupported = { [DIPLOMA]: sdJwtConfiguration(DIPLOMA), [EMPLOYEE]: sdJwtConfiguration(EMPLOYEE) }
   const display = options.issuerName ? [{ name: options.issuerName }] : undefined
+  const authorizationServerConfigs = options.login
+    ? [
+        {
+          type: 'chained' as const,
+          issuer: options.login.issuer,
+          clientAuthentication: { type: 'clientSecret' as const, clientId: options.login.clientId, clientSecret: options.login.clientSecret },
+          scopesMapping: { [DIPLOMA]: ['openid', 'email'], [EMPLOYEE]: ['openid', 'email'] },
+          redirectUris: options.login.walletRedirectUris,
+        },
+      ]
+    : undefined
   if ((await agent.openid4vc.issuer.getAllIssuers()).some((issuer) => issuer.issuerId === ISSUER_ID)) {
-    await agent.openid4vc.issuer.updateIssuerMetadata({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display })
+    await agent.openid4vc.issuer.updateIssuerMetadata({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display, authorizationServerConfigs })
   } else {
-    await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display })
+    await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display, authorizationServerConfigs })
   }
 
   // Records the entitlement, then makes the offer that leads the wallet to it. The offer holds no claims.
