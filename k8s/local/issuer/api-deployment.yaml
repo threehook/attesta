@@ -24,17 +24,14 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4001
+          # Where the mail with the QR code goes: the mail server's settings are in this Secret (make k8s-issuer-mail). By default it is the mail catcher.
+          envFrom:
+            - secretRef:
+                name: attesta-issuer-smtp
           env:
             # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into the QR codes and the issuer metadata.
             - name: ATTESTA_ISSUER_PUBLIC_URL
               value: https://issuer.attesta.corbencreatives.nl
-            # The mail with the QR code that gives a person their credential. In the demo it goes to the mail catcher; an organisation points it at its own mail server.
-            - name: ATTESTA_ISSUER_SMTP_HOST
-              value: issuer-mailpit
-            - name: ATTESTA_ISSUER_SMTP_PORT
-              value: "1025"
-            - name: ATTESTA_ISSUER_MAIL_FROM
-              value: credentials@attesta.corbencreatives.nl
             - name: ATTESTA_ISSUER_DB_HOST
               value: issuer-postgres:5432
             - name: ATTESTA_ISSUER_DB_USER

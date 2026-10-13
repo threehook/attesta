@@ -19,7 +19,10 @@ configured to trust the issuer's DID. It has two parts:
     followed by that runs out after two minutes (`entitlementLeaseMs`), and the entitlement can be claimed again until it passes its end or is revoked.
   - It keeps its store and its entitlements (`src/entitlements.ts`, the SQL in `migrations/`) in Postgres when `ATTESTA_ISSUER_DB_HOST` is set (`_USER`, `_PASSWORD`); without it
     they live in `ATTESTA_ISSUER_DIR` (SQLite) and in memory, which loses them when the API stops. The mail goes to the SMTP server in `ATTESTA_ISSUER_SMTP_HOST`/`_PORT`
-    from `ATTESTA_ISSUER_MAIL_FROM`; in the cluster that is Mailpit, a mail catcher whose page is at http://localhost:8025.
+    from `ATTESTA_ISSUER_MAIL_FROM`, logging in with `ATTESTA_ISSUER_SMTP_USER`/`_PASSWORD` when a user is set. A user means a secured connection: STARTTLS (port 587, the default) or TLS from the start
+    (port 465), and the issuer refuses to send its password over an unsecured one (`ATTESTA_ISSUER_SMTP_TLS` = `none`, `starttls` or `tls` overrides). In the cluster these settings are one Secret,
+    `attesta-issuer-smtp`. It starts as Mailpit, a mail catcher whose page is at http://localhost:8025 and which keeps every mail and delivers none. For real delivery run
+    `make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender>`; it asks for the password and restarts the API. The sender must be an address or domain that the mail server allows.
   - The issuer's identity is a `did:key` created on first start and kept in its store, so the DID is stable across restarts. The email is what identifies the person to verifiers.
 - `gui/` (`@attesta/issuer-gui`) serves the pages: `/` and the forms at `/diploma` and `/employee`. A form posts to the page, which passes it to the API and says that a mail
   with a QR code is on its way. The page has no key and no store; it only calls the API.

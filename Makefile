@@ -31,7 +31,7 @@ DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
+	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana
 
@@ -126,11 +126,29 @@ k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
-# The issuer database's account, random, created once. Changing it later does not change the database that already exists.
+# The issuer database's account, random, created once. Changing it later does not change the database that already exists. The mail settings start as the mail
+# catcher in the cluster; k8s-issuer-mail replaces them.
 k8s-issuer-secret:
+	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-smtp -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-smtp -n $(NAMESPACE) \
+			--from-literal=ATTESTA_ISSUER_SMTP_HOST=issuer-mailpit --from-literal=ATTESTA_ISSUER_SMTP_PORT=1025 \
+			--from-literal=ATTESTA_ISSUER_MAIL_FROM=credentials@attesta.corbencreatives.nl
 	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-db -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-db -n $(NAMESPACE) \
 			--from-literal=user=issuer --from-literal=password=$$(openssl rand -hex 24)
+
+# Points the issuer at a real mail server: make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender> [SMTP_PORT=587]. The password is asked for and
+# goes straight into the Secret, never on a command line. Port 587 secures the connection with STARTTLS and port 465 with TLS.
+SMTP_PORT ?= 587
+SMTP_SECRET ?= attesta-issuer-smtp
+k8s-issuer-mail:
+	@test -n "$(SMTP_HOST)" -a -n "$(SMTP_USER)" -a -n "$(MAIL_FROM)" || { echo "usage: make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender> [SMTP_PORT=587]"; exit 1; }
+	@printf 'Password or key for $(SMTP_USER) at $(SMTP_HOST) (typing is hidden): '; stty -echo; read -r password; stty echo; echo; \
+		printf '%s' "$$password" | kubectl --context $(KUBE_CONTEXT) create secret generic $(SMTP_SECRET) -n $(NAMESPACE) \
+			--from-literal=ATTESTA_ISSUER_SMTP_HOST=$(SMTP_HOST) --from-literal=ATTESTA_ISSUER_SMTP_PORT=$(SMTP_PORT) \
+			--from-literal=ATTESTA_ISSUER_SMTP_USER=$(SMTP_USER) --from-file=ATTESTA_ISSUER_SMTP_PASSWORD=/dev/stdin \
+			--from-literal=ATTESTA_ISSUER_MAIL_FROM=$(MAIL_FROM) --dry-run=client -o yaml | kubectl --context $(KUBE_CONTEXT) apply -f -
+	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/attesta-issuer-api -n $(NAMESPACE)
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it — and the issuer's data: its volume claim and its Secret.
 k8s-issuer-delete:
