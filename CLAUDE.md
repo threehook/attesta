@@ -48,6 +48,7 @@ The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secr
 - Askar's SQLite store cannot open a path containing `@`; Electron's default data folder came from the scoped package name, so the app has
   `productName` "attesta wallet" and `createWalletAgent` refuses such a path.
 - Electron 39's installer hangs on Node 24.16+/26.1+ (nodejs/node#62557); Electron 44 fixes it and downloads its binary on first run, not during install.
+- The Postgres image creates a database named after `POSTGRES_USER`; the issuer's Askar store then finds it empty and fails instead of provisioning, so the Deployment sets `POSTGRES_DB`.
 - Kubernetes injects `<SERVICE>_PORT`-style variables; with Service `attesta-issuer-api` that is `ATTESTA_ISSUER_API_PORT`, close to our own `ATTESTA_ISSUER_PORT`. Deployments set
   `enableServiceLinks: false`. Avoid config variable names equal to a Service name plus `_PORT`/`_HOST`.
 - The Makefile does `kubectl apply` then `kubectl set image` with a unique tag; re-applying a manifest alone resets the image to the nonexistent `:dev`.
