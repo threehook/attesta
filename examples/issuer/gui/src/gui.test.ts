@@ -94,6 +94,17 @@ describe('issuer pages', () => {
     expect(await (await fetch(`${baseUrl}/employee`)).text()).toContain(`name="description" value="${DESCRIPTIONS.Employee}"`)
   })
 
+  it('accepts a date in the form with the way it asks for one', async () => {
+    const html = await (await fetch(`${baseUrl}/employee`)).text()
+
+    const pattern = new RegExp(`^(?:${/name="diplomaValidUntil"[^>]*pattern="([^"]+)"/.exec(html)![1]})$`)
+
+    expect(pattern.test('12-10-2027')).toBe(true)
+    expect(pattern.test('30-06-2031')).toBe(true)
+    expect(pattern.test('2027-10-12')).toBe(false)
+    expect(pattern.test('12/10/2027')).toBe(false)
+  })
+
   it('serves the employee form', async () => {
     const html = await (await fetch(`${baseUrl}/employee`)).text()
 

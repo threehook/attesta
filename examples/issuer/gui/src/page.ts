@@ -61,7 +61,7 @@ export function renderEmployeeForm(departments: string[], description: string, c
   <label>Afdeling <select name="department">${options}</select></label>
   <label>Organisatie <input name="organisation" value="Gemeente Vlierdam" required></label>
   <label>Diploma <input name="diploma" value="laadpalen-management" required></label>
-  <label>Diploma geldig tot <input name="diplomaValidUntil" placeholder="dd-mm-jjjj" pattern="\d{2}-\d{2}-\d{4}" title="dd-mm-jjjj" inputmode="numeric" required></label>
+  <label>Diploma geldig tot <input name="diplomaValidUntil" placeholder="dd-mm-jjjj" pattern="\\d{2}-\\d{2}-\\d{4}" title="dd-mm-jjjj" inputmode="numeric" required></label>
   <label>Omschrijving <input name="description" value="${escape(description)}"></label>
   <button type="submit">Credential aanmaken</button>
 </form>`,
