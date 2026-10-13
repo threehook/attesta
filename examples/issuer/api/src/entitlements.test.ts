@@ -12,6 +12,8 @@ const database = postgres
 const employee = { type: 'Employee', claims: { name: 'Jerry Smith', department: 'burgerzaken' } }
 const hour = 3_600_000
 
+const LEASE_MS = 200
+
 function contract(name: string, open: () => Promise<EntitlementStore>) {
   describe(name, () => {
     let store: EntitlementStore | undefined
@@ -34,6 +36,17 @@ function contract(name: string, open: () => Promise<EntitlementStore>) {
       expect(found).toEqual([created])
       expect(created).toMatchObject({ email, type: 'Employee', claims: employee.claims, status: 'open' })
       expect(created.issuedAt).toBeUndefined()
+    })
+
+    it('finds an entitlement by id whatever its status', async () => {
+      const s = await start()
+      const { id } = await s.create({ ...employee, email })
+      await s.claim(id)
+      await s.markIssued(id)
+
+      expect(await s.find(id)).toMatchObject({ id, status: 'issued' })
+      expect((await s.find(id))?.issuedAt).toBeInstanceOf(Date)
+      expect(await s.find(randomUUID())).toBeUndefined()
     })
 
     it('finds only the entitlements of that person', async () => {
@@ -59,34 +72,82 @@ function contract(name: string, open: () => Promise<EntitlementStore>) {
       expect((await s.findOpenByEmail(email)).map((e) => e.id)).toEqual([current.id])
     })
 
-    it('issues an entitlement once', async () => {
+    it('claims an entitlement for one request only, and hides it while it is claimed', async () => {
       const s = await start()
       const { id } = await s.create({ ...employee, email })
 
-      expect(await s.markIssued(id)).toBe(true)
-      expect(await s.markIssued(id)).toBe(false)
+      expect(await s.claim(id)).toBe(true)
+      expect(await s.claim(id)).toBe(false)
+      expect(await s.find(id)).toMatchObject({ status: 'claimed' })
+      expect((await s.find(id))?.claimedAt).toBeInstanceOf(Date)
       expect(await s.findOpenByEmail(email)).toEqual([])
     })
 
-    it('lets only one of two simultaneous requests issue it', async () => {
+    it('lets only one of two simultaneous requests claim it', async () => {
       const s = await start()
       const { id } = await s.create({ ...employee, email })
 
-      const results = await Promise.all([s.markIssued(id), s.markIssued(id)])
+      const results = await Promise.all([s.claim(id), s.claim(id)])
 
       expect(results.filter(Boolean)).toHaveLength(1)
     })
 
-    it('does not issue a revoked entitlement, nor revoke an issued one', async () => {
+    it('issues a claimed entitlement once', async () => {
       const s = await start()
-      const revoked = await s.create({ ...employee, email })
+      const { id } = await s.create({ ...employee, email })
+      await s.claim(id)
+
+      expect(await s.markIssued(id)).toBe(true)
+      expect(await s.markIssued(id)).toBe(false)
+      expect(await s.claim(id)).toBe(false)
+      expect(await s.findOpenByEmail(email)).toEqual([])
+    })
+
+    it('does not issue an entitlement that was not claimed', async () => {
+      const s = await start()
+      const { id } = await s.create({ ...employee, email })
+
+      expect(await s.markIssued(id)).toBe(false)
+      expect(await s.find(id)).toMatchObject({ status: 'open' })
+    })
+
+    it('can be claimed again when a claim was not followed by issuing, for as long as it lasts', async () => {
+      const s = await start()
+      const { id } = await s.create({ ...employee, email })
+      await s.claim(id)
+
+      await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 100))
+
+      expect((await s.findOpenByEmail(email)).map((e) => e.id)).toEqual([id])
+      expect(await s.claim(id)).toBe(true)
+      expect(await s.markIssued(id)).toBe(true)
+    })
+
+    it('does not give back a claimed entitlement that is past its end', async () => {
+      const s = await start()
+      const { id } = await s.create({ ...employee, email, validUntil: new Date(Date.now() + LEASE_MS) })
+      await s.claim(id)
+
+      await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 100))
+
+      expect(await s.findOpenByEmail(email)).toEqual([])
+      expect(await s.claim(id)).toBe(false)
+    })
+
+    it('revokes an entitlement that is open or claimed, but not one that was issued', async () => {
+      const s = await start()
+      const open = await s.create({ ...employee, email })
+      const claimed = await s.create({ ...employee, email })
       const issued = await s.create({ ...employee, email })
+      await s.claim(claimed.id)
+      await s.claim(issued.id)
+      await s.markIssued(issued.id)
 
-      expect(await s.revoke(revoked.id)).toBe(true)
-      expect(await s.markIssued(issued.id)).toBe(true)
-
-      expect(await s.markIssued(revoked.id)).toBe(false)
+      expect(await s.revoke(open.id)).toBe(true)
+      expect(await s.revoke(claimed.id)).toBe(true)
       expect(await s.revoke(issued.id)).toBe(false)
+      expect(await s.claim(open.id)).toBe(false)
+      expect(await s.markIssued(claimed.id)).toBe(false)
       expect(await s.findOpenByEmail(email)).toEqual([])
     })
 
@@ -99,7 +160,7 @@ function contract(name: string, open: () => Promise<EntitlementStore>) {
   })
 }
 
-contract('in-memory entitlements', async () => new MemoryEntitlementStore())
+contract('in-memory entitlements', async () => new MemoryEntitlementStore(LEASE_MS))
 
 describe.skipIf(!database)('postgres entitlements', () => {
   afterAll(async () => {
@@ -112,7 +173,7 @@ describe.skipIf(!database)('postgres entitlements', () => {
     await admin.end()
   })
 
-  contract('as a store', () => PostgresEntitlementStore.connect(database!, `entitlements_test_${process.pid}`))
+  contract('as a store', () => PostgresEntitlementStore.connect(database!, `entitlements_test_${process.pid}`, LEASE_MS))
 
   it('keeps entitlements across a restart and migrates only once', async () => {
     const name = `entitlements_test_${process.pid}`
