@@ -36,7 +36,7 @@ spec:
               value: https://api.attesta.corbencreatives.nl
             # The roles this app gives employees, by email: "ada@example.com=laadpalen-aanvrager;bob@example.com=reader". Sent to attesta as Att-User-Roles.
             - name: LAADPALEN_USER_ROLES
-              value: "jsmith@vlierdam.nl=laadpalen-aanvrager"
+              value: "jsmith@vlierdam.nl=laadpalen-aanvrager;jwever@example.com=laadpalen-aanvrager"
           ports:
             - containerPort: 8787
           readinessProbe:
