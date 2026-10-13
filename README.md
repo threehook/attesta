@@ -65,7 +65,7 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 
 | GUI | Where | Used for |
 |---|---|---|
-| Issuer | `examples/issuer/gui` | The organisation's staff creates a verifiable credential for an employee and gets the offer link for the employee's wallet. The pages are in Dutch. |
+| Issuer | `examples/issuer/gui` | The organisation's staff records a verifiable credential for an employee, who then fetches it with their wallet ("Mijn credential ophalen") after logging in with a link sent to their email. The pages are in Dutch. |
 | Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
 | Wallet | `wallet-desktop` | The employee's wallet: confirms every offer (and fetches a credential itself after a login at the issuer), and every disclosure unless the employee chose to always share with that application. |
 
@@ -146,7 +146,7 @@ The laadpalen app and its policies are in [examples/laadpalen](examples/laadpale
 
 ```sh
 make k8s-issuer-apply laadpalen                                # the issuer (form at http://localhost:4000) and the laadpalen app
-pnpm --filter @attesta/wallet-desktop package                  # the wallet: open the app, then paste the offer link from the issuer form, or choose "Mijn credential ophalen" on the issuer page and log in with the mailed link (needs https)
+pnpm --filter @attesta/wallet-desktop package                  # the wallet: record a credential on the issuer's form, then choose "Mijn credential ophalen" on the issuer page and log in with the mailed link (needs https)
 ```
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.

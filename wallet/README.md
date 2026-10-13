@@ -7,6 +7,9 @@ it.
 - `createWalletAgent({ storeId, storeKey, path })` opens the store, or keeps it in memory when `path` is omitted.
 - `previewCredentialOffer(agent, offerUri)` reads an offer and reports who offers what without accepting it; `acceptPreviewedOffer` then accepts it.
 - `acceptCredentialOffer(agent, offerUri)` does both in one step, running the pre-authorized code flow and binds each credential to a fresh key held in the agent's key store.
+- `needsLogin(offer)` tells whether the credential comes after a login at the issuer, as when the issuer's page gives a link that only names the issuer and the credential.
+  `startIssuerLogin(agent, offer, redirectUri)` then gives the address to open in a browser, and `finishIssuerLogin(agent, login, redirectedTo)` takes the address the browser ended with
+  (`redirectUri` with a code) and keeps the credentials the issuer gives.
 - `listCredentials(agent)` returns the held credentials with their type, issuer and claims.
 - `resolvePresentationRequest(agent, link)` reads an `openid4vp://` request from a verifier and reports who asks for what and whether the wallet can answer;
   `submitPresentation(agent, request)` answers it, disclosing only the requested claims.
