@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { openDatabase, type DatabaseOptions } from '@attesta/issuer-pg'
+import { type DatabaseOptions, openDatabase } from './database.js'
 import type pg from 'pg'
 
 export type EntitlementStatus = 'open' | 'claimed' | 'issued' | 'revoked'

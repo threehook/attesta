@@ -11,7 +11,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@attesta/issuer-pg": "workspace:*",
     "@credo-ts/askar": "0.7.2",
     "@credo-ts/core": "0.7.2",
     "@credo-ts/node": "0.7.2",
@@ -19,14 +18,18 @@
     "@openid4vc/oauth2": "^0.6.0",
     "@openwallet-foundation/askar-nodejs": "0.6.1",
     "express": "^5.2.1",
+    "nodemailer": "^7.0.13",
     "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2"
   },
   "devDependencies": {
     "@attesta/wallet": "workspace:*",
     "@types/express": "^5.0.6",
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^7.0.12",
     "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vitest": "^5.0.3"

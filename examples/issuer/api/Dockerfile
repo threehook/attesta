@@ -6,12 +6,10 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY wallet/package.json wallet/package.json
-COPY examples/issuer/pg/package.json examples/issuer/pg/package.json
 COPY examples/issuer/api/package.json examples/issuer/api/package.json
 RUN pnpm install --frozen-lockfile --filter @attesta/issuer-api...
 
 COPY wallet/ wallet/
-COPY examples/issuer/pg/ examples/issuer/pg/
 COPY examples/issuer/api/ examples/issuer/api/
 
 USER node

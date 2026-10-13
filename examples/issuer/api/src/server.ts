@@ -1,6 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { startIssuer } from './issuer.js'
+import { SmtpMailer } from './mail.js'
 
 // Fixes the issuer's DID so the example policy can name it; override ATTESTA_ISSUER_SEED for anything but local development.
 const DEV_SEED = 'dev-only-insecure-issuer-seed'
@@ -16,24 +17,20 @@ const database = dbHost
   ? { host: dbHost, user: process.env.ATTESTA_ISSUER_DB_USER ?? 'issuer', password: process.env.ATTESTA_ISSUER_DB_PASSWORD ?? '' }
   : undefined
 
-// Holders log in at the login server for a credential; without one nothing can be issued.
-const loginUrl = process.env.ATTESTA_ISSUER_LOGIN_URL
-if (!loginUrl) throw new Error('ATTESTA_ISSUER_LOGIN_URL is required: the address of the login server')
-const login = {
-  issuer: loginUrl,
-  clientId: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_ID ?? 'attesta-issuer',
-  clientSecret: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_SECRET ?? 'dev-only-insecure-login-secret',
-  walletRedirectUris: (process.env.ATTESTA_ISSUER_WALLET_REDIRECT_URIS ?? 'attesta-wallet://callback').split(','),
-}
+const mailer = new SmtpMailer(
+  { host: process.env.ATTESTA_ISSUER_SMTP_HOST ?? 'localhost', port: Number(process.env.ATTESTA_ISSUER_SMTP_PORT ?? 1025) },
+  process.env.ATTESTA_ISSUER_MAIL_FROM ?? 'credentials@attesta.local',
+)
 
 const issuer = await startIssuer({
+  mailer,
+  offerLifetimeSeconds: process.env.ATTESTA_ISSUER_OFFER_LIFETIME_SECONDS ? Number(process.env.ATTESTA_ISSUER_OFFER_LIFETIME_SECONDS) : undefined,
   port,
   publicUrl,
   storeKey: process.env.ATTESTA_ISSUER_KEY ?? 'dev-only-insecure-issuer-key',
   path: process.env.ATTESTA_ISSUER_DIR ?? join(homedir(), '.attesta-issuer'),
   database,
-  allowInsecureHttp: publicUrl.startsWith('http://') || loginUrl.startsWith('http://'),
-  login,
+  allowInsecureHttp: publicUrl.startsWith('http://'),
   seed: process.env.ATTESTA_ISSUER_SEED ?? DEV_SEED,
   issuerName: process.env.ATTESTA_ISSUER_NAME ?? 'Gemeente Vlierdam',
 })

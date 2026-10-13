@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { createWalletAgent, listCredentials, type WalletAgent } from '@attesta/wallet'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { DEFAULT_DESCRIPTIONS, endOfDay, type EmployeeClaims } from './issuer.js'
-import { fetchCredential, startTestIssuer, type TestIssuer } from './testing.js'
+import { fetchCredential, receive, startTestIssuer, type TestIssuer } from './testing.js'
 
 async function until<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 50; i++) {
@@ -61,7 +61,7 @@ describe('issuer and wallet', () => {
     const { entitlementId } = (await res.json()) as { entitlementId: string }
 
     expect(await test.issuer.entitlements.find(entitlementId)).toMatchObject({ email: 'grace@example.com', type: 'Diploma', status: 'open' })
-    const accepted = await fetchCredential(wallet, test, 'Diploma', 'grace@example.com')
+    const accepted = await receive(wallet, test, 'grace@example.com')
     expect(accepted[0].claims).toMatchObject({ name: 'Grace Hopper' })
   })
 
@@ -135,8 +135,6 @@ describe('issuer and wallet', () => {
       did: test.issuer.did,
       departments: ['burgerzaken', 'secretariaat'],
       descriptions: DEFAULT_DESCRIPTIONS,
-      credentialIssuer: `${test.url}/oid4vci/diploma`,
-      credentialTypes: ['Diploma', 'Employee'],
     })
   })
 
@@ -153,26 +151,15 @@ describe('issuer and wallet', () => {
   })
 
   it('issues nothing for an entitlement that was revoked', async () => {
-    const { id } = await test.issuer.createEmployeeEntitlement(employee)
-    await test.issuer.entitlements.revoke(id)
+    const entitlement = await test.issuer.createEmployeeEntitlement(employee)
+    await test.issuer.sendOffer(entitlement)
+    await test.issuer.entitlements.revoke(entitlement.id)
 
-    await expect(fetchCredential(wallet, test, 'Employee', employee.email)).rejects.toMatchObject({
+    await expect(receive(wallet, test, employee.email)).rejects.toMatchObject({
       response: { credentialErrorResponseResult: { data: { error: 'credential_request_denied' } } },
     })
 
     expect(await listCredentials(wallet)).toEqual([])
-  })
-
-  it('gives the holder their entitlement again after an attempt that did not end in a credential', async () => {
-    const { id } = await test.issuer.createEmployeeEntitlement(employee)
-    // An attempt that took the entitlement and then broke off.
-    await test.issuer.entitlements.claim(id)
-    await expect(fetchCredential(wallet, test, 'Employee', employee.email)).rejects.toThrow()
-
-    await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 100))
-
-    expect((await fetchCredential(wallet, test, 'Employee', employee.email))[0].type).toBe('Employee')
-    await until(() => test.issuer.entitlements.find(id), (e) => e?.status === 'issued')
   })
 
   it('makes one entitlement for the same person and credential, and another for a different one', async () => {
@@ -210,7 +197,7 @@ describe('issuer and wallet', () => {
   it('accepts the valid-until date as dd-mm-yyyy', async () => {
     await post(`${test.url}/entitlements/employee`, { ...employee, diplomaValidUntil: '30-06-2031' })
 
-    expect((await fetchCredential(wallet, test, 'Employee', employee.email))[0].claims).toMatchObject({ exp: endOfDay('2031-06-30') })
+    expect((await receive(wallet, test, employee.email))[0].claims).toMatchObject({ exp: endOfDay('2031-06-30') })
   })
 
   it('still issues both credential types after a restart on the same store', async () => {

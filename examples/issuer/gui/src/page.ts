@@ -11,7 +11,6 @@ const logoOf = ({ issuerName }: Chrome) => ({ src: '/logo.svg', alt: issuerName 
 const footerOf = ({ issuerName, did }: Chrome) => `Uitgever: ${issuerName ? `${issuerName} · ` : ''}${did}`
 
 const [LAADPALEN] = MENU[0].items
-const [OPHALEN] = MENU[1].items
 const home: Crumb[] = [{ label: 'Home', href: '/' }]
 
 export function renderWelcome(chrome: Chrome): string {
@@ -77,28 +76,7 @@ export function renderCreated(email: string, chrome: Chrome, employee: boolean):
     title: 'Credential klaargezet',
     crumbs: employee ? [...home, { label: LAADPALEN.label, href: LAADPALEN.href }] : home,
     active: employee ? LAADPALEN.id : undefined,
-    body: `<p class="intro">Het credential staat klaar voor <strong>${escape(email)}</strong>. De medewerker haalt het op via <a href="${escape(OPHALEN.href)}">${escape(OPHALEN.label)}</a>
-      en meldt zich aan met een link die per e-mail wordt gestuurd.</p>`,
-    footer: footerOf(chrome),
-    logo: logoOf(chrome),
-  })
-}
-
-/** What the wallet needs to ask this issuer for a credential: the issuer's identifier and the type, no secret. */
-export const requestLink = (credentialIssuer: string, type: string) =>
-  `openid-credential-offer://?credential_offer=${encodeURIComponent(JSON.stringify({ credential_issuer: credentialIssuer, credential_configuration_ids: [type], grants: { authorization_code: {} } }))}`
-
-const NAMES: Record<string, string> = { Employee: 'Medewerker, voor het aanvragen van laadpalen', Diploma: 'Diploma' }
-
-export function renderRetrieve(credentialIssuer: string, types: string[], chrome: Chrome): string {
-  const links = types.map((type) => `<li><a class="button" href="${escape(requestLink(credentialIssuer, type))}">${escape(NAMES[type] ?? type)}</a></li>`).join('')
-  return renderPage({
-    title: OPHALEN.label,
-    crumbs: home,
-    active: OPHALEN.id,
-    body: types.length
-      ? `<p class="intro">Kies het credential en open het in uw wallet. U meldt zich daarna aan met een link die u per e-mail krijgt, en het credential komt in uw wallet.</p><ul class="actions">${links}</ul>`
-      : '<p class="intro">Credentials ophalen is hier niet beschikbaar.</p>',
+    body: `<p class="intro">Er is een e-mail met een QR-code gestuurd naar <strong>${escape(email)}</strong>. De medewerker zet die in de wallet, en het credential komt er vanzelf in.</p>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
   })

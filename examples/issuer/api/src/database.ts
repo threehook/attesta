@@ -2,6 +2,8 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import pg from 'pg'
 
+// How the issuer opens its Postgres databases: creating one when it is missing, and applying SQL migrations.
+
 export interface DatabaseOptions {
   /** `host` or `host:port`. */
   host: string

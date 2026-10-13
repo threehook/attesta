@@ -21,7 +21,7 @@ beforeEach(async () => {
     req.on('end', () => {
       res.setHeader('content-type', 'application/json')
       if (req.method === 'GET' && req.url === '/info') {
-        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], descriptions: DESCRIPTIONS, credentialIssuer: 'https://issuer.example/oid4vci/diploma', credentialTypes: ['Employee'] }))
+        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], descriptions: DESCRIPTIONS }))
         return
       }
       posted.push({ path: req.url ?? '', body: JSON.parse(raw) })
@@ -30,7 +30,7 @@ beforeEach(async () => {
         res.end(JSON.stringify({ error: refuse }))
         return
       }
-      res.end(JSON.stringify({ entitlementId: 'e-1' }))
+      res.end(JSON.stringify({ entitlementId: 'e-1', mailedTo: 'x' }))
     })
   })
   await new Promise<void>((resolve) => api.listen(0, resolve))
@@ -102,23 +102,14 @@ describe('issuer pages', () => {
     expect(html).toContain('<option value="secretariaat">Secretariaat</option>')
   })
 
-  it('offers the holder a link that opens the wallet to ask for a credential, with no secret in it', async () => {
-    const html = await (await fetch(`${baseUrl}/ophalen`)).text()
-
-    const href = /href="(openid-credential-offer:[^"]+)"/.exec(html)![1].replaceAll('&#38;', '&')
-    const offer = JSON.parse(decodeURIComponent(href.split('credential_offer=')[1]))
-    expect(offer).toEqual({ credential_issuer: 'https://issuer.example/oid4vci/diploma', credential_configuration_ids: ['Employee'], grants: { authorization_code: {} } })
-    expect(html).toContain('<a href="/ophalen" aria-current="page">Mijn credential ophalen</a>')
-    expect(html).toContain('<li><a href="/">Home</a></li><li aria-current="page">Mijn credential ophalen</li>')
-  })
-
-  it('posts a form to the API and says the credential is ready, with no link to give out', async () => {
+  it('posts a form to the API and says that a mail with a QR code is on its way', async () => {
     const res = await fetch(`${baseUrl}/employee`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
 
     expect(posted).toEqual([{ path: '/entitlements/employee', body: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } }])
     const html = await res.text()
     expect(html).toContain('<strong>jerry@example.com</strong>')
-    expect(html).toContain('<a href="/ophalen">Mijn credential ophalen</a>')
+    expect(html).toContain('e-mail met een QR-code')
+    expect(html).not.toContain('PIN')
     expect(html).not.toContain('openid-credential-offer')
     expect(html).toContain('<li><a href="/">Home</a></li><li><a href="/employee">Aanvragen laadpalen</a></li><li aria-current="page">Credential klaargezet</li>')
   })

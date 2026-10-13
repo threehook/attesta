@@ -3,8 +3,6 @@ packages:
   - examples/laadpalen/gui
   - examples/issuer/api
   - examples/issuer/gui
-  - examples/issuer/login
-  - examples/issuer/pg
   - wallet
   - wallet-desktop
 

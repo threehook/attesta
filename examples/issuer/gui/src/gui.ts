@@ -2,7 +2,7 @@ import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import express from 'express'
 import { LOGO_SVG } from './logo.js'
-import { renderCreated, renderEmployeeForm, renderForm, renderRetrieve, renderWelcome, type Chrome } from './page.js'
+import { renderCreated, renderEmployeeForm, renderForm, renderWelcome, type Chrome } from './page.js'
 
 export interface GuiOptions {
   port: number
@@ -16,8 +16,6 @@ interface Info {
   did: string
   departments: string[]
   descriptions: { Diploma: string; Employee: string }
-  credentialIssuer: string
-  credentialTypes: string[]
 }
 
 export async function startGui(options: GuiOptions) {
@@ -42,10 +40,6 @@ export async function startGui(options: GuiOptions) {
   app.get('/diploma', async (_req, res) => {
     const i = await info()
     res.type('html').send(renderForm(i.descriptions.Diploma, chromeOf(i), i.issuerName))
-  })
-  app.get('/ophalen', async (_req, res) => {
-    const i = await info()
-    res.type('html').send(renderRetrieve(i.credentialIssuer, i.credentialTypes, chromeOf(i)))
   })
   app.get('/employee', async (_req, res) => {
     const i = await info()
