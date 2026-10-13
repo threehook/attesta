@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto'
-import { readdirSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import pg from 'pg'
+import { openDatabase, type DatabaseOptions } from '@attesta/issuer-pg'
+import type pg from 'pg'
 
 export type EntitlementStatus = 'open' | 'claimed' | 'issued' | 'revoked'
 
@@ -94,13 +94,6 @@ export class MemoryEntitlementStore implements EntitlementStore {
   async close() {}
 }
 
-export interface DatabaseOptions {
-  /** `host` or `host:port`. */
-  host: string
-  user: string
-  password: string
-}
-
 // Open, or claimed longer ago than the lease (in milliseconds), and not past its end.
 const CLAIMABLE = `(status = 'open' OR (status = 'claimed' AND claimed_at + make_interval(secs => $lease::double precision / 1000) <= now()))
   AND (valid_until IS NULL OR valid_until > now())`
@@ -139,26 +132,7 @@ export class PostgresEntitlementStore implements EntitlementStore {
 
   /** Connects to the database, creating it and bringing its tables up to date when needed. */
   static async connect(options: DatabaseOptions, database: string, leaseMs = DEFAULT_LEASE_MS): Promise<PostgresEntitlementStore> {
-    const [host, port] = options.host.split(':')
-    const config = { host, port: port ? Number(port) : 5432, user: options.user, password: options.password }
-    const admin = new pg.Client({ ...config, database: 'postgres' })
-    await admin.connect()
-    try {
-      // The lock keeps replicas that start together from creating the database at the same moment.
-      await admin.query('SELECT pg_advisory_lock(7010)')
-      const exists = await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [database])
-      if (exists.rowCount === 0) await admin.query(`CREATE DATABASE ${pg.escapeIdentifier(database)}`)
-    } finally {
-      await admin.end()
-    }
-    const pool = new pg.Pool({ ...config, database })
-    try {
-      await migrate(pool)
-    } catch (error) {
-      await pool.end()
-      throw error
-    }
-    return new PostgresEntitlementStore(pool, leaseMs)
+    return new PostgresEntitlementStore(await openDatabase(options, database, MIGRATIONS), leaseMs)
   }
 
   async create({ email, type, claims, validUntil }: NewEntitlement): Promise<Entitlement> {
@@ -199,30 +173,5 @@ export class PostgresEntitlementStore implements EntitlementStore {
 
   async close() {
     await this.pool.end()
-  }
-}
-
-// Applies the .sql files in migrations/ that have not run yet, in name order. The lock keeps replicas that start together from racing.
-async function migrate(pool: pg.Pool) {
-  const client = await pool.connect()
-  try {
-    await client.query('SELECT pg_advisory_lock(7011)')
-    await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())')
-    const done = new Set((await client.query<{ name: string }>('SELECT name FROM schema_migrations')).rows.map((r) => r.name))
-    for (const name of readdirSync(MIGRATIONS).filter((f) => f.endsWith('.sql')).sort()) {
-      if (done.has(name)) continue
-      await client.query('BEGIN')
-      try {
-        await client.query(readFileSync(join(MIGRATIONS, name), 'utf8'))
-        await client.query('INSERT INTO schema_migrations (name) VALUES ($1)', [name])
-        await client.query('COMMIT')
-      } catch (error) {
-        await client.query('ROLLBACK')
-        throw error
-      }
-    }
-  } finally {
-    await client.query('SELECT pg_advisory_unlock(7011)').catch(() => {})
-    client.release()
   }
 }

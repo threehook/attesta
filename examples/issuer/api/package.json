@@ -15,6 +15,7 @@
     "@credo-ts/core": "0.7.2",
     "@credo-ts/node": "0.7.2",
     "@credo-ts/openid4vc": "0.7.2",
+    "@attesta/issuer-pg": "workspace:*",
     "@openwallet-foundation/askar-nodejs": "0.6.1",
     "express": "^5.2.1",
     "pg": "^8.23.1",
