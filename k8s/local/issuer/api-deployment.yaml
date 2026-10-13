@@ -1,42 +1,42 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: attesta-issuer
+  name: attesta-issuer-api
   namespace: attesta
   labels:
-    app: attesta-issuer
+    app: attesta-issuer-api
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: attesta-issuer
+      app: attesta-issuer-api
   template:
     metadata:
       labels:
-        app: attesta-issuer
+        app: attesta-issuer-api
     spec:
-      # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4000 for every Service in the namespace, which can
+      # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4001 for every Service in the namespace, which can
       # collide with our own settings of the same name.
       enableServiceLinks: false
       containers:
-        - name: attesta-issuer
-          image: attesta-issuer:dev
+        - name: attesta-issuer-api
+          image: attesta-issuer-api:dev
           imagePullPolicy: IfNotPresent
           ports:
-            - containerPort: 4000
+            - containerPort: 4001
           env:
             # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into every offer.
             - name: ATTESTA_ISSUER_PUBLIC_URL
               value: https://issuer.attesta.corbencreatives.nl
           readinessProbe:
             httpGet:
-              path: /
-              port: 4000
+              path: /info
+              port: 4001
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /
-              port: 4000
+              path: /info
+              port: 4001
             initialDelaySeconds: 10
             periodSeconds: 10

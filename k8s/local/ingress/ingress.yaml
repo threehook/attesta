@@ -34,10 +34,17 @@ spec:
     - host: issuer.attesta.corbencreatives.nl
       http:
         paths:
+          - path: /oid4vci
+            pathType: Prefix
+            backend:
+              service:
+                name: attesta-issuer-api
+                port:
+                  number: 4001
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: attesta-issuer
+                name: attesta-issuer-gui
                 port:
                   number: 4000

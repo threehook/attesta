@@ -6,9 +6,9 @@ IMAGE := $(IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
 NAMESPACE := attesta
 KUBE_CONTEXT := docker-desktop
 
-ISSUER_IMAGE_REPO := attesta-issuer
 # Same unique-tag reasoning as IMAGE above.
-ISSUER_IMAGE := $(ISSUER_IMAGE_REPO):dev-$(shell date +%Y%m%d%H%M%S)
+ISSUER_API_IMAGE := attesta-issuer-api:dev-$(shell date +%Y%m%d%H%M%S)
+ISSUER_GUI_IMAGE := attesta-issuer-gui:dev-$(shell date +%Y%m%d%H%M%S)
 
 LAADPALEN_API_IMAGE := laadpalen-api:dev-$(shell date +%Y%m%d%H%M%S)
 LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
@@ -31,7 +31,7 @@ DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs \
+	docker-build-issuer k8s-issuer-apply k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana
 
@@ -106,27 +106,35 @@ k8s-ensure-policies:
 	else kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE); fi
 
-# Built with the repo root as context (see examples/issuer/Dockerfile) — the pnpm workspace install needs the other workspace packages' manifests.
+# Built with the repo root as context (see the Dockerfiles in examples/issuer/api and examples/issuer/gui) — the pnpm workspace install needs the other workspace packages' manifests.
 docker-build-issuer:
-	docker build -f examples/issuer/Dockerfile -t $(ISSUER_IMAGE) .
+	docker build -f examples/issuer/api/Dockerfile -t $(ISSUER_API_IMAGE) .
+	docker build -f examples/issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
 
 # Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
 # policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.
+# attesta-issuer is the single deployment this one replaces; its LoadBalancer would hold host port 4000.
 k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/deployment.yaml -f k8s/local/issuer/service.yaml
-	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer attesta-issuer=$(ISSUER_IMAGE) -n $(NAMESPACE)
-	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) delete deployment/attesta-issuer service/attesta-issuer -n $(NAMESPACE) --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
+	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=$(ISSUER_API_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=$(ISSUER_GUI_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it.
 k8s-issuer-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/deployment.yaml -f k8s/local/issuer/service.yaml --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml --ignore-not-found
 
 k8s-issuer-restart:
-	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/attesta-issuer -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/attesta-issuer-api deployment/attesta-issuer-gui -n $(NAMESPACE)
 
 k8s-issuer-logs:
-	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer -f
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer-api -f
+
+k8s-issuer-gui-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer-gui -f
 
 # The laadpalen example: an app backend with attesta as its sidecar, and its page (examples/laadpalen). The page is at https://laadpalen.attesta.corbencreatives.nl and wallets
 # post to https://api.attesta.corbencreatives.nl (k8s-ingress); the backend image is built here too, since the sidecar is that same image. The example needs the demo issuer (k8s-issuer-apply).

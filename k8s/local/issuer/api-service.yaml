@@ -1,13 +1,12 @@
+# Only the pages and the Ingress's /oid4vci path reach this Service; creating offers is not exposed.
 apiVersion: v1
 kind: Service
 metadata:
-  name: attesta-issuer
+  name: attesta-issuer-api
   namespace: attesta
-# LoadBalancer: Docker Desktop auto-forwards this to localhost:4000, no port-forward needed.
 spec:
   selector:
-    app: attesta-issuer
+    app: attesta-issuer-api
   ports:
-    - port: 4000
-      targetPort: 4000
-  type: LoadBalancer
+    - port: 4001
+      targetPort: 4001
