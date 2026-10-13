@@ -2,8 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createWalletAgent, listCredentials, type WalletAgent } from '@attesta/wallet'
-import { Kms } from '@credo-ts/core'
+import { createWalletAgent, finishIssuerLogin, listCredentials, needsLogin, previewCredentialOffer, startIssuerLogin, type WalletAgent } from '@attesta/wallet'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startLogin } from '../../login/src/login.js'
 import type { Mail } from '../../login/src/mail.js'
@@ -82,20 +81,18 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
 
   /** The wallet starts from the issuer's address and the credential type; the holder logs in as `email`. Returns the credentials the wallet got. */
   async function fetchCredential(type: string, email: string) {
-    const holder = wallet.openid4vc.holder
     const offer = `openid-credential-offer://?credential_offer=${encodeURIComponent(
       JSON.stringify({ credential_issuer: `${issuerUrl}/oid4vci/diploma`, credential_configuration_ids: [type], grants: { authorization_code: {} } }),
     )}`
-    const resolved = await holder.resolveCredentialOffer(offer)
-    const auth = await holder.resolveOpenId4VciAuthorizationRequest(resolved, { clientId: 'attesta-wallet', redirectUri: WALLET_REDIRECT, scope: [type] })
-    if (!('authorizationRequestUrl' in auth)) throw new Error('expected a redirect to the browser')
+    const preview = await previewCredentialOffer(wallet, offer)
+    expect(needsLogin(preview)).toBe(true)
+    const started = await startIssuerLogin(wallet, preview, WALLET_REDIRECT)
 
     // The browser: the issuer's authorize address leads to the login server's email page.
-    const toLogin = await fetch(auth.authorizationRequestUrl, { redirect: 'manual' })
-    const emailPage = await (await fetch(toLogin.headers.get('location')!)).text()
+    const toLogin = await fetch(started.authorizationRequestUrl, { redirect: 'manual' })
     const loginBase = new URL(toLogin.headers.get('location')!)
-    const requestId = /name="request" value="([^"]+)"/.exec(emailPage)![1]
-    await fetch(`${loginBase.origin}/login/email`, form({ request: requestId, email }))
+    const emailPage = await (await fetch(loginBase)).text()
+    await fetch(`${loginBase.origin}/login/email`, form({ request: /name="request" value="([^"]+)"/.exec(emailPage)![1], email }))
 
     // The mail program: the link opens a page with a button.
     const mail = mails.at(-1)
@@ -105,18 +102,7 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
 
     // Back through the issuer to the wallet's own address.
     const back = await fetch(unescape(/<a class="button" href="([^"]+)"/.exec(done)![1]), { redirect: 'manual' })
-    const code = new URL(back.headers.get('location')!).searchParams.get('code')!
-    const token2 = await holder.requestToken({ resolvedCredentialOffer: resolved, code, clientId: 'attesta-wallet', codeVerifier: auth.codeVerifier, redirectUri: WALLET_REDIRECT })
-    const { credentials } = await holder.requestCredentials({
-      resolvedCredentialOffer: resolved,
-      ...token2,
-      clientId: 'attesta-wallet',
-      credentialBindingResolver: async () => {
-        const { publicJwk } = await wallet.kms.createKey({ type: { kty: 'OKP', crv: 'Ed25519' } })
-        return { method: 'jwk', keys: [Kms.PublicJwk.fromPublicJwk(publicJwk)] }
-      },
-    })
-    return credentials
+    return finishIssuerLogin(wallet, started, back.headers.get('location')!)
   }
 
   it('gives the wallet the credential of the entitlement for the email that logged in, and marks it issued', async () => {
@@ -126,12 +112,7 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
     const credentials = await fetchCredential('Employee', 'Jerry@Example.com')
 
     expect(credentials).toHaveLength(1)
-    expect(wallet.sdJwtVc.fromCompact((credentials[0].record as { firstCredential: { compact: string } }).firstCredential.compact).prettyClaims).toMatchObject({
-      vct: 'Employee',
-      name: 'Jerry Smith',
-      email: 'jerry@example.com',
-      department: 'burgerzaken',
-    })
+    expect(credentials[0]).toMatchObject({ type: 'Employee', claims: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } })
     expect(await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
   })
 
@@ -152,7 +133,7 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
 
     const credentials = await fetchCredential('Employee', employee.email)
 
-    expect(wallet.sdJwtVc.fromCompact((credentials[0].record as { firstCredential: { compact: string } }).firstCredential.compact).prettyClaims).toMatchObject({ vct: 'Employee' })
+    expect(credentials[0].type).toBe('Employee')
     expect((await issuer.entitlements.findOpenByEmail(employee.email)).map((e) => e.type)).toEqual(['Diploma'])
   })
 

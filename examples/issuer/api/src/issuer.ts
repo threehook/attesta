@@ -272,7 +272,15 @@ export async function startIssuer(options: IssuerOptions) {
   const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })
   // What the page needs to show the forms and the issuer it issues as.
   app.get('/info', (_req, res) => {
-    res.json({ issuerName: options.issuerName, did: issuerDid.did, departments: DEPARTMENTS, descriptions: DEFAULT_DESCRIPTIONS })
+    res.json({
+      issuerName: options.issuerName,
+      did: issuerDid.did,
+      departments: DEPARTMENTS,
+      descriptions: DEFAULT_DESCRIPTIONS,
+      // What a wallet needs to ask for a credential itself: the issuer's identifier, and the types it can ask for.
+      credentialIssuer: `${options.publicUrl}/oid4vci/${ISSUER_ID}`,
+      credentialTypes: options.login ? [DIPLOMA, EMPLOYEE] : [],
+    })
   })
   app.post('/offers', async (req, res) => {
     const { name, email, degree, university, description } = req.body ?? {}

@@ -37,6 +37,17 @@ export const MENU: MenuGroup[] = [
       },
     ],
   },
+  {
+    label: 'Medewerker',
+    items: [
+      {
+        id: 'ophalen',
+        label: 'Mijn credential ophalen',
+        href: '/ophalen',
+        description: 'Haal het verifiable credential op dat voor u klaarstaat. U meldt zich aan met een link die per e-mail wordt gestuurd.',
+      },
+    ],
+  },
 ]
 
 const theme = `
@@ -87,6 +98,8 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid 
 button{padding:9px 16px;font:inherit;font-weight:600;color:var(--accent-text);background:var(--accent);border:0;border-radius:6px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
 code{word-break:break-all}
+.actions{list-style:none;margin:0;padding:0;display:grid;gap:12px;max-width:36rem}
+a.button{display:block;padding:12px 16px;border-radius:8px;background:var(--accent);color:var(--accent-text);font-weight:600;text-decoration:none}
 @media (max-width:720px){
   body{grid-template-columns:1fr;grid-template-areas:"header" "menu" "main" "footer"}
   nav.menu{border-right:0;border-bottom:1px solid var(--border)}

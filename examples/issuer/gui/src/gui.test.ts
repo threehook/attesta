@@ -21,7 +21,7 @@ beforeEach(async () => {
     req.on('end', () => {
       res.setHeader('content-type', 'application/json')
       if (req.method === 'GET' && req.url === '/info') {
-        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], descriptions: DESCRIPTIONS }))
+        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], descriptions: DESCRIPTIONS, credentialIssuer: 'https://issuer.example/oid4vci/diploma', credentialTypes: ['Employee'] }))
         return
       }
       posted.push({ path: req.url ?? '', body: JSON.parse(raw) })
@@ -100,6 +100,16 @@ describe('issuer pages', () => {
     expect(html).toContain('name="diplomaValidUntil"')
     expect(html).toContain('<option value="burgerzaken">Burgerzaken</option>')
     expect(html).toContain('<option value="secretariaat">Secretariaat</option>')
+  })
+
+  it('offers the holder a link that opens the wallet to ask for a credential, with no secret in it', async () => {
+    const html = await (await fetch(`${baseUrl}/ophalen`)).text()
+
+    const href = /href="(openid-credential-offer:[^"]+)"/.exec(html)![1].replaceAll('&#38;', '&')
+    const offer = JSON.parse(decodeURIComponent(href.split('credential_offer=')[1]))
+    expect(offer).toEqual({ credential_issuer: 'https://issuer.example/oid4vci/diploma', credential_configuration_ids: ['Employee'], grants: { authorization_code: {} } })
+    expect(html).toContain('<a href="/ophalen" aria-current="page">Mijn credential ophalen</a>')
+    expect(html).toContain('<li><a href="/">Home</a></li><li aria-current="page">Mijn credential ophalen</li>')
   })
 
   it('posts a form to the API and shows the offer link', async () => {

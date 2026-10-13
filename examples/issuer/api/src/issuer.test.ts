@@ -160,7 +160,14 @@ describe('diploma issuer and wallet', () => {
   it('tells the pages which issuer it is and what the forms offer', async () => {
     const info = await (await fetch(`${baseUrl}/info`)).json()
 
-    expect(info).toEqual({ issuerName: 'Gemeente Utrecht', did: issuer.did, departments: ['burgerzaken', 'secretariaat'], descriptions: DEFAULT_DESCRIPTIONS })
+    expect(info).toEqual({
+      issuerName: 'Gemeente Utrecht',
+      did: issuer.did,
+      departments: ['burgerzaken', 'secretariaat'],
+      descriptions: DEFAULT_DESCRIPTIONS,
+      credentialIssuer: `${baseUrl}/oid4vci/diploma`,
+      credentialTypes: [],
+    })
   })
 
   it('records an entitlement with the offer and marks it issued once the wallet has the credential', async () => {
