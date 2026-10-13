@@ -5,9 +5,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { startIssuer } from "../../examples/issuer/api/src/issuer.js";
-import { startLogin } from "../../examples/issuer/login/src/login.js";
-import { MemoryLoginStore } from "../../examples/issuer/login/src/store.js";
+import { browserLogin, requestLink, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { addCredential, captureBrowser, handOver as handOverTo, openLink as openLinkIn, openedByApp } from "./issuing.js";
 
 const appDir = join(import.meta.dirname, "..");
 
@@ -22,7 +21,7 @@ async function freePort(): Promise<number> {
 }
 
 test.describe.serial("desktop wallet", () => {
-  let issuer: Awaited<ReturnType<typeof startIssuer>>;
+  let test_: TestIssuer;
   let verifier: Server;
   let responseUri: string;
   const answers: URLSearchParams[] = [];
@@ -32,8 +31,7 @@ test.describe.serial("desktop wallet", () => {
   let identityPort: number;
 
   test.beforeAll(async () => {
-    const issuerPort = await freePort();
-    issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: "e2e", allowInsecureHttp: true });
+    test_ = await startTestIssuer();
 
     verifier = createServer((req, res) => {
       let body = "";
@@ -60,12 +58,13 @@ test.describe.serial("desktop wallet", () => {
       },
     });
     window = await app.firstWindow();
+    await captureBrowser(app);
   });
 
   test.afterAll(async () => {
     await app?.close();
     verifier?.close();
-    await issuer?.close();
+    await test_?.close();
   });
 
   // A request for the Diploma credential the wallet holds by now, answered to the stand-in verifier.
@@ -104,16 +103,24 @@ test.describe.serial("desktop wallet", () => {
     await expect(window.getByRole("status")).toContainText("geen credential-aanbod");
   });
 
-  test("shows an offer, and adds the credential only once the user agrees", async () => {
-    const offer = await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  test("shows what is asked, and adds the credential only once the user agreed and logged in at the issuer", async () => {
+    await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
 
-    await openLink(offer);
+    await openLink(requestLink(test_.url, "Diploma"));
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Credential toevoegen?");
     await expect(dialog).toContainText("Diploma");
+    await expect(dialog).toContainText("U meldt zich eerst aan bij de uitgever");
     await expect(window.locator("footer")).not.toContainText("credential");
+    expect(await openedByApp(app)).toEqual([]);
 
-    await dialog.getByRole("button", { name: "Toevoegen" }).click();
+    await dialog.getByRole("button", { name: "Aanmelden" }).click();
+    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
+    const [address] = await openedByApp(app);
+    expect(new URL(address).origin).toBe(test_.url);
+    await handOverTo(app, await browserLogin(address, "ada@example.com", test_.mails));
+    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
+
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
     await expect(card).toContainText("Diploma");
@@ -123,12 +130,13 @@ test.describe.serial("desktop wallet", () => {
     await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
 
-  test("adds nothing when the user declines an offer", async () => {
-    const offer = await issuer.createOffer({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" });
+  test("opens nothing in the browser and adds nothing when the user declines", async () => {
+    const before = (await openedByApp(app)).length;
 
-    await openLink(offer);
+    await openLink(requestLink(test_.url, "Diploma"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
 
+    expect(await openedByApp(app)).toHaveLength(before);
     await goTo("Credentials");
     await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
   });
@@ -417,9 +425,8 @@ test("starts with its data in a folder whose path has spaces, as the system app 
 });
 
 test("opens a link handed to the app when it starts", async () => {
-  const issuerPort = await freePort();
-  const issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: "e2e-2", allowInsecureHttp: true });
-  const offer = await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  const issuer = await startTestIssuer();
+  const offer = requestLink(issuer.url, "Diploma");
   const app = await electron.launch({
     args: [appDir, offer],
     env: {
@@ -440,9 +447,8 @@ test("opens a link handed to the app when it starts", async () => {
 
 test("opens a new window for a link that arrives after its window was closed", async () => {
   test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
-  const issuerPort = await freePort();
-  const issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: "e2e-4", allowInsecureHttp: true });
-  const offer = await issuer.createOffer({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  const issuer = await startTestIssuer();
+  const offer = requestLink(issuer.url, "Diploma");
   const app = await electron.launch({
     args: [appDir],
     env: {
@@ -458,7 +464,7 @@ test("opens a new window for a link that arrives after its window was closed", a
     await expect(first.getByText("Nog geen credentials")).toBeVisible();
     await first.close();
     // What macOS sends when a link is opened while the app runs without a window.
-    await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), offer);
+    await handOverTo(app, offer);
     const next = await app.waitForEvent("window");
     await expect(next.getByRole("dialog")).toContainText("Credential toevoegen?");
   } finally {
@@ -467,37 +473,15 @@ test("opens a new window for a link that arrives after its window was closed", a
   }
 });
 
-// The wallet asks an issuer for a credential itself: the user agrees, logs in at the issuer in a browser (played here by the test, which gets the
-// address the wallet would open), and the browser ends by opening the wallet again.
-test.describe.serial("desktop wallet, a credential from an issuer after logging in", () => {
+// More about the way a credential arrives: what the app does with an issuer that has nothing for the user, and with a return it did not ask for.
+test.describe.serial("desktop wallet, a login at an issuer that goes another way", () => {
   const CALLBACK = "attesta-wallet://callback";
-  let issuer: Awaited<ReturnType<typeof startIssuer>>;
-  let login: Awaited<ReturnType<typeof startLogin>>;
-  let issuerUrl: string;
+  let issuer: TestIssuer;
   let app: ElectronApplication;
   let window: Page;
-  const mails: Array<{ to: string; text: string }> = [];
 
   test.beforeAll(async () => {
-    const [issuerPort, loginPort] = [await freePort(), await freePort()];
-    issuerUrl = `http://localhost:${issuerPort}`;
-    const loginUrl = `http://localhost:${loginPort}/login`;
-    login = await startLogin({
-      port: loginPort,
-      issuer: loginUrl,
-      publicUrl: loginUrl,
-      basePath: "/login",
-      client: { clientId: "attesta-issuer", clientSecret: "secret", redirectUris: [`${issuerUrl}/oid4vci/diploma/redirect`] },
-      store: new MemoryLoginStore(),
-      mailer: { send: async (mail) => void mails.push(mail) },
-    });
-    issuer = await startIssuer({
-      port: issuerPort,
-      publicUrl: issuerUrl,
-      storeKey: "e2e-login",
-      allowInsecureHttp: true,
-      login: { issuer: loginUrl, clientId: "attesta-issuer", clientSecret: "secret", walletRedirectUris: [CALLBACK] },
-    });
+    issuer = await startTestIssuer();
     app = await electron.launch({
       args: [appDir],
       env: {
@@ -508,67 +492,29 @@ test.describe.serial("desktop wallet, a credential from an issuer after logging 
       },
     });
     window = await app.firstWindow();
-    // The browser is not opened: what the wallet would open is kept for the test.
-    await app.evaluate(({ shell }) => {
-      const opened: string[] = [];
-      (globalThis as unknown as { opened: string[] }).opened = opened;
-      shell.openExternal = async (url: string) => void opened.push(url);
-    });
+    await captureBrowser(app);
   });
 
   test.afterAll(async () => {
     await app?.close();
-    await login?.close();
     await issuer?.close();
   });
 
-  const opened = () => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened);
-  const handOver = (link: string) => app.evaluate(({ app: electronApp }, l) => electronApp.emit("open-url", { preventDefault() {} }, l), link);
   const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
+  const credentials = () => window.getByRole("region", { name: "Credentials" }).locator("article");
 
-  // What the issuer's page gives the holder: a link that names the issuer and the credential, and no secret.
-  const requestLink = (type: string) =>
-    `openid-credential-offer://?credential_offer=${encodeURIComponent(
-      JSON.stringify({ credential_issuer: `${issuerUrl}/oid4vci/diploma`, credential_configuration_ids: [type], grants: { authorization_code: {} } }),
-    )}`;
+  test("adds an employee credential after the login", async () => {
+    await issuer.issuer.createEmployeeEntitlement({
+      name: "Jerry Smith",
+      email: "jerry@example.com",
+      department: "burgerzaken",
+      organisation: "Gemeente Vlierdam",
+      diploma: "laadpalen-management",
+      diplomaValidUntil: "2031-06-30",
+    });
 
-  const openLink = async (link: string) => {
-    await goTo("Link openen");
-    await window.getByLabel("Link").fill(link);
-    await window.getByRole("button", { name: "Openen" }).click();
-  };
+    await addCredential(app, window, issuer, "Employee", "jerry@example.com");
 
-  // The holder's browser: logs in at the address the wallet opened, as `email`, and returns the address it ends with, which opens the wallet.
-  async function browser(address: string, email: string): Promise<string> {
-    const toLogin = await fetch(address, { redirect: "manual" });
-    const page = new URL(toLogin.headers.get("location")!);
-    const emailPage = await (await fetch(page)).text();
-    const form = (fields: Record<string, string>) => ({ method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields) });
-    await fetch(`${page.origin}/login/email`, form({ request: /name="request" value="([^"]+)"/.exec(emailPage)![1], email }));
-    const token = new URL(/(https?:\/\/\S+)/.exec(mails.at(-1)!.text)![1]).searchParams.get("token")!;
-    const done = await (await fetch(`${page.origin}/login/confirm`, form({ token }))).text();
-    const back = await fetch(/<a class="button" href="([^"]+)"/.exec(done)![1].replaceAll("&#38;", "&"), { redirect: "manual" });
-    return back.headers.get("location")!;
-  }
-
-  test("adds the credential once the user agreed and logged in at the issuer", async () => {
-    await issuer.createEmployeeOffer({ name: "Jerry Smith", email: "jerry@example.com", department: "burgerzaken", organisation: "Gemeente Vlierdam", diploma: "laadpalen-management", diplomaValidUntil: "2031-06-30" });
-
-    await openLink(requestLink("Employee"));
-    const dialog = window.getByRole("dialog");
-    await expect(dialog).toContainText("Credential toevoegen?");
-    await expect(dialog).toContainText("Employee");
-    await expect(dialog).toContainText("U meldt zich eerst aan bij de uitgever");
-    expect(await opened()).toEqual([]);
-
-    await dialog.getByRole("button", { name: "Aanmelden" }).click();
-    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
-    const [address] = await opened();
-    expect(await opened()).toHaveLength(1);
-    expect(new URL(address).origin).toBe(issuerUrl);
-
-    await handOver(await browser(address, "jerry@example.com"));
-    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
     await expect(card).toContainText("Employee");
@@ -577,35 +523,26 @@ test.describe.serial("desktop wallet, a credential from an issuer after logging 
   });
 
   test("says so when the issuer has no credential for the user", async () => {
-    await openLink(requestLink("Employee"));
+    await openLinkIn(window, requestLink(issuer.url, "Employee"));
     await window.getByRole("dialog").getByRole("button", { name: "Aanmelden" }).click();
     await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
-    const address = (await opened()).at(-1)!;
+    const address = (await openedByApp(app)).at(-1)!;
 
-    await handOver(await browser(address, "nobody@example.com"));
+    await handOverTo(app, await browserLogin(address, "nobody@example.com", issuer.mails));
 
     await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
     await goTo("Credentials");
-    await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
+    await expect(credentials()).toHaveCount(1);
   });
 
   test("does nothing with a return from a login it did not start", async () => {
-    const before = (await opened()).length;
+    const before = (await openedByApp(app)).length;
 
-    await handOver(`${CALLBACK}?code=made-up&state=x`);
+    await handOverTo(app, `${CALLBACK}?code=made-up&state=x`);
 
     await expect(window.getByRole("status")).toContainText("Er is geen aanmelding bezig");
-    expect(await opened()).toHaveLength(before);
+    expect(await openedByApp(app)).toHaveLength(before);
     await goTo("Credentials");
-    await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
-  });
-
-  test("opens nothing in the browser when the user declines", async () => {
-    const before = (await opened()).length;
-
-    await openLink(requestLink("Employee"));
-    await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
-
-    expect(await opened()).toHaveLength(before);
+    await expect(credentials()).toHaveCount(1);
   });
 });
