@@ -1,18 +1,19 @@
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage, shell } from "electron";
 import { createWalletAgent, type WalletAgent } from "@attesta/wallet";
-import { channels, type Pending, type Result, type Shared, type SignInChoice } from "../shared/api.js";
+import { channels, type HeldCredential, type Pending, type Result, type Shared, type SignInChoice } from "../shared/api.js";
 import { devSwitches } from "./dev-switches.js";
 import { IDENTITY_PORT, startIdentityServer } from "./identity-server.js";
 import { loadOrCreateStoreKey } from "./keystore.js";
-import { WalletService } from "./service.js";
+import { isLoginCallback, WalletService } from "./service.js";
 import { decision, nothingToShare, promptFor } from "./prompt.js";
 import { applicationOf, WalletSettings } from "./settings.js";
 import { claimLabel } from "../shared/labels.js";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
-const LINK_SCHEMES = ["openid-credential-offer", "openid4vp"];
+// attesta-wallet is what an issuer's login ends with: the browser is sent back to the wallet.
+const LINK_SCHEMES = ["openid-credential-offer", "openid4vp", "attesta-wallet"];
 
 // Development and tests can change where the wallet keeps its data, which key protects it, and allow plain http; an installed app cannot.
 const dev = devSwitches(process.env, app.isPackaged);
@@ -30,6 +31,7 @@ let service: WalletService | undefined;
 // Links that arrived before the wallet had started, and what the window shows once it has loaded.
 const queuedLinks: string[] = [];
 const queuedResults: Result<Pending>[] = [];
+const queuedLogins: Result<HeldCredential[]>[] = [];
 
 const isWalletLink = (arg: string) => LINK_SCHEMES.some((scheme) => arg.startsWith(`${scheme}:`));
 
@@ -41,6 +43,10 @@ function deliverLink(link: string) {
 // Reads a link the system handed to the app. A presentation request never opens the window: it is answered when the user chose to share with the
 // application, and otherwise asked about in a popup. Only a credential offer is shown in the window.
 async function handleLink(wallet: WalletService, link: string) {
+  if (isLoginCallback(link)) {
+    await finishLogin(wallet, link);
+    return;
+  }
   const result = await handled(() => wallet.prepare(link));
   const presentation = link.trim().startsWith("openid4vp:");
   if (!result.ok) {
@@ -53,6 +59,27 @@ async function handleLink(wallet: WalletService, link: string) {
   } else {
     show({ ok: true, value: result.value });
   }
+}
+
+// The browser came back from the login at an issuer: the credential is kept, and the window says so.
+async function finishLogin(wallet: WalletService, link: string) {
+  const done = await handled(() => wallet.completeLogin(link));
+  if (done.ok && Notification.isSupported()) new Notification({ title: "Credential toegevoegd", body: done.value.map((credential) => credential.type).join(", ") }).show();
+  if (window && !window.webContents.isLoading()) {
+    window.webContents.send(channels.loginDone, done);
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  } else {
+    queuedLogins.push(done);
+    if (!window) createWindow();
+  }
+}
+
+// The issuer's login page opens in the user's own browser. Only the address of the issuer the user agreed to gets there, never anything else.
+async function openInBrowser(url: string) {
+  const { protocol } = new URL(url);
+  if (protocol !== "https:" && protocol !== "http:") throw new Error("Dit adres kan niet in een browser worden geopend.");
+  await shell.openExternal(url);
 }
 
 async function askToShare(wallet: WalletService, request: Extract<Pending, { kind: "presentation" }>) {
@@ -143,6 +170,7 @@ function createWindow() {
   });
   window.webContents.on("did-finish-load", () => {
     for (const result of queuedResults.splice(0)) window?.webContents.send(channels.link, result);
+    for (const result of queuedLogins.splice(0)) window?.webContents.send(channels.loginDone, result);
   });
   void window.loadFile(join(here, "../renderer/index.html"));
 }
@@ -167,7 +195,13 @@ async function start() {
 
   ipcMain.handle(channels.list, () => handled(() => wallet.list()));
   ipcMain.handle(channels.prepare, (_event, link: string) => handled(() => wallet.prepare(link)));
-  ipcMain.handle(channels.approve, (_event, id: string, remember?: boolean) => handled(() => wallet.approve(id, remember === true)));
+  ipcMain.handle(channels.approve, (_event, id: string, remember?: boolean) =>
+    handled(async () => {
+      const approved = await wallet.approve(id, remember === true);
+      if (approved.kind === "login") await openInBrowser(approved.url);
+      return approved;
+    }),
+  );
   ipcMain.handle(channels.decline, (_event, id: string) => handled(() => wallet.decline(id) ?? null));
   ipcMain.handle(channels.settings, () => handled(() => wallet.settingsView()));
   ipcMain.handle(channels.forgetApplication, (_event, application: string) => handled(() => wallet.forgetApplication(String(application))));

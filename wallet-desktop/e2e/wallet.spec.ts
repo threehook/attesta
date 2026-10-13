@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import { startIssuer } from "../../examples/issuer/api/src/issuer.js";
+import { startLogin } from "../../examples/issuer/login/src/login.js";
+import { MemoryLoginStore } from "../../examples/issuer/login/src/store.js";
 
 const appDir = join(import.meta.dirname, "..");
 
@@ -463,4 +465,147 @@ test("opens a new window for a link that arrives after its window was closed", a
     await app.close();
     await issuer.close();
   }
+});
+
+// The wallet asks an issuer for a credential itself: the user agrees, logs in at the issuer in a browser (played here by the test, which gets the
+// address the wallet would open), and the browser ends by opening the wallet again.
+test.describe.serial("desktop wallet, a credential from an issuer after logging in", () => {
+  const CALLBACK = "attesta-wallet://callback";
+  let issuer: Awaited<ReturnType<typeof startIssuer>>;
+  let login: Awaited<ReturnType<typeof startLogin>>;
+  let issuerUrl: string;
+  let app: ElectronApplication;
+  let window: Page;
+  const mails: Array<{ to: string; text: string }> = [];
+
+  test.beforeAll(async () => {
+    const [issuerPort, loginPort] = [await freePort(), await freePort()];
+    issuerUrl = `http://localhost:${issuerPort}`;
+    const loginUrl = `http://localhost:${loginPort}/login`;
+    login = await startLogin({
+      port: loginPort,
+      issuer: loginUrl,
+      publicUrl: loginUrl,
+      basePath: "/login",
+      client: { clientId: "attesta-issuer", clientSecret: "secret", redirectUris: [`${issuerUrl}/oid4vci/diploma/redirect`] },
+      store: new MemoryLoginStore(),
+      mailer: { send: async (mail) => void mails.push(mail) },
+    });
+    issuer = await startIssuer({
+      port: issuerPort,
+      publicUrl: issuerUrl,
+      storeKey: "e2e-login",
+      allowInsecureHttp: true,
+      login: { issuer: loginUrl, clientId: "attesta-issuer", clientSecret: "secret", walletRedirectUris: [CALLBACK] },
+    });
+    app = await electron.launch({
+      args: [appDir],
+      env: {
+        ...process.env,
+        ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+        ATTESTA_WALLET_KEY: "e2e-wallet-key-login",
+        ATTESTA_ALLOW_INSECURE_HTTP: "1",
+      },
+    });
+    window = await app.firstWindow();
+    // The browser is not opened: what the wallet would open is kept for the test.
+    await app.evaluate(({ shell }) => {
+      const opened: string[] = [];
+      (globalThis as unknown as { opened: string[] }).opened = opened;
+      shell.openExternal = async (url: string) => void opened.push(url);
+    });
+  });
+
+  test.afterAll(async () => {
+    await app?.close();
+    await login?.close();
+    await issuer?.close();
+  });
+
+  const opened = () => app.evaluate(() => (globalThis as unknown as { opened: string[] }).opened);
+  const handOver = (link: string) => app.evaluate(({ app: electronApp }, l) => electronApp.emit("open-url", { preventDefault() {} }, l), link);
+  const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
+
+  // What the issuer's page gives the holder: a link that names the issuer and the credential, and no secret.
+  const requestLink = (type: string) =>
+    `openid-credential-offer://?credential_offer=${encodeURIComponent(
+      JSON.stringify({ credential_issuer: `${issuerUrl}/oid4vci/diploma`, credential_configuration_ids: [type], grants: { authorization_code: {} } }),
+    )}`;
+
+  const openLink = async (link: string) => {
+    await goTo("Link openen");
+    await window.getByLabel("Link").fill(link);
+    await window.getByRole("button", { name: "Openen" }).click();
+  };
+
+  // The holder's browser: logs in at the address the wallet opened, as `email`, and returns the address it ends with, which opens the wallet.
+  async function browser(address: string, email: string): Promise<string> {
+    const toLogin = await fetch(address, { redirect: "manual" });
+    const page = new URL(toLogin.headers.get("location")!);
+    const emailPage = await (await fetch(page)).text();
+    const form = (fields: Record<string, string>) => ({ method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(fields) });
+    await fetch(`${page.origin}/login/email`, form({ request: /name="request" value="([^"]+)"/.exec(emailPage)![1], email }));
+    const token = new URL(/(https?:\/\/\S+)/.exec(mails.at(-1)!.text)![1]).searchParams.get("token")!;
+    const done = await (await fetch(`${page.origin}/login/confirm`, form({ token }))).text();
+    const back = await fetch(/<a class="button" href="([^"]+)"/.exec(done)![1].replaceAll("&#38;", "&"), { redirect: "manual" });
+    return back.headers.get("location")!;
+  }
+
+  test("adds the credential once the user agreed and logged in at the issuer", async () => {
+    await issuer.createEmployeeOffer({ name: "Jerry Smith", email: "jerry@example.com", department: "burgerzaken", organisation: "Gemeente Vlierdam", diploma: "laadpalen-management", diplomaValidUntil: "2031-06-30" });
+
+    await openLink(requestLink("Employee"));
+    const dialog = window.getByRole("dialog");
+    await expect(dialog).toContainText("Credential toevoegen?");
+    await expect(dialog).toContainText("Employee");
+    await expect(dialog).toContainText("U meldt zich eerst aan bij de uitgever");
+    expect(await opened()).toEqual([]);
+
+    await dialog.getByRole("button", { name: "Aanmelden" }).click();
+    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
+    const [address] = await opened();
+    expect(await opened()).toHaveLength(1);
+    expect(new URL(address).origin).toBe(issuerUrl);
+
+    await handOver(await browser(address, "jerry@example.com"));
+    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
+    await goTo("Credentials");
+    const card = window.getByRole("region", { name: "Credentials" });
+    await expect(card).toContainText("Employee");
+    await expect(card).toContainText("jerry@example.com");
+    await expect(card).toContainText("burgerzaken");
+  });
+
+  test("says so when the issuer has no credential for the user", async () => {
+    await openLink(requestLink("Employee"));
+    await window.getByRole("dialog").getByRole("button", { name: "Aanmelden" }).click();
+    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
+    const address = (await opened()).at(-1)!;
+
+    await handOver(await browser(address, "nobody@example.com"));
+
+    await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
+    await goTo("Credentials");
+    await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
+  });
+
+  test("does nothing with a return from a login it did not start", async () => {
+    const before = (await opened()).length;
+
+    await handOver(`${CALLBACK}?code=made-up&state=x`);
+
+    await expect(window.getByRole("status")).toContainText("Er is geen aanmelding bezig");
+    expect(await opened()).toHaveLength(before);
+    await goTo("Credentials");
+    await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
+  });
+
+  test("opens nothing in the browser when the user declines", async () => {
+    const before = (await opened()).length;
+
+    await openLink(requestLink("Employee"));
+    await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
+
+    expect(await opened()).toHaveLength(before);
+  });
 });

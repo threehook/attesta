@@ -57,6 +57,11 @@ export function App() {
       if (incoming.ok) setPending(incoming.value);
       else setNotice({ kind: "error", text: incoming.error });
     });
+    window.wallet.onLoginDone((done) => {
+      if (done.ok) setNotice({ kind: "info", text: `${done.value.length} credential(s) toegevoegd aan uw wallet.` });
+      else setNotice({ kind: "error", text: done.error });
+      void refresh();
+    });
   }, [refresh]);
 
   async function approve(remember: boolean) {
@@ -68,6 +73,8 @@ export function App() {
       setSettingsVersion((v) => v + 1);
       if (!result.ok) {
         setNotice({ kind: "error", text: result.error });
+      } else if (result.value.kind === "login") {
+        setNotice({ kind: "info", text: "Meld u aan in uw browser. Het credential komt daarna in uw wallet." });
       } else if (result.value.kind === "offer") {
         setNotice({ kind: "info", text: `${result.value.credentials.length} credential(s) toegevoegd aan uw wallet.` });
         await refresh();

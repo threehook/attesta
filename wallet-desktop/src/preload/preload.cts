@@ -11,6 +11,7 @@ const channels = {
   forgetApplication: "wallet:forget-application",
   forgetSignIn: "wallet:forget-sign-in",
   link: "wallet:link",
+  loginDone: "wallet:login-done",
   settingsChanged: "wallet:settings-changed",
 };
 
@@ -24,6 +25,9 @@ const api: WalletApi = {
   forgetSignIn: (choice) => ipcRenderer.invoke(channels.forgetSignIn, choice),
   onLink: (callback) => {
     ipcRenderer.on(channels.link, (_event, result) => callback(result));
+  },
+  onLoginDone: (callback) => {
+    ipcRenderer.on(channels.loginDone, (_event, result) => callback(result));
   },
   onSettingsChanged: (callback) => {
     ipcRenderer.on(channels.settingsChanged, () => callback());
