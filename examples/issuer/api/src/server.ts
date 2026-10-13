@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { startIssuer } from './issuer.js'
-import { SmtpMailer } from './mail.js'
+import { SmtpMailer, type SmtpTls } from './mail.js'
 
 // Fixes the issuer's DID so the example policy can name it; override ATTESTA_ISSUER_SEED for anything but local development.
 const DEV_SEED = 'dev-only-insecure-issuer-seed'
@@ -17,9 +17,18 @@ const database = dbHost
   ? { host: dbHost, user: process.env.ATTESTA_ISSUER_DB_USER ?? 'issuer', password: process.env.ATTESTA_ISSUER_DB_PASSWORD ?? '' }
   : undefined
 
+// Where the mail goes: a mail catcher unless the organisation set a real server. The settings come from one Secret in the cluster.
+const smtpTls = process.env.ATTESTA_ISSUER_SMTP_TLS
+if (smtpTls && !['none', 'starttls', 'tls'].includes(smtpTls)) throw new Error(`ATTESTA_ISSUER_SMTP_TLS must be none, starttls or tls, got "${smtpTls}"`)
 const mailer = new SmtpMailer(
-  { host: process.env.ATTESTA_ISSUER_SMTP_HOST ?? 'localhost', port: Number(process.env.ATTESTA_ISSUER_SMTP_PORT ?? 1025) },
-  process.env.ATTESTA_ISSUER_MAIL_FROM ?? 'credentials@attesta.local',
+  {
+    host: process.env.ATTESTA_ISSUER_SMTP_HOST || 'localhost',
+    port: Number(process.env.ATTESTA_ISSUER_SMTP_PORT || 1025),
+    user: process.env.ATTESTA_ISSUER_SMTP_USER || undefined,
+    password: process.env.ATTESTA_ISSUER_SMTP_PASSWORD || undefined,
+    tls: smtpTls as SmtpTls | undefined,
+  },
+  process.env.ATTESTA_ISSUER_MAIL_FROM || 'credentials@attesta.local',
 )
 
 const issuer = await startIssuer({
