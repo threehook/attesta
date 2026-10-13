@@ -167,6 +167,24 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
     })
   })
 
+  it('gives a holder who lost their credential a new one only when the organisation makes a new entitlement', async () => {
+    await issuer.createEmployeeOffer(employee)
+    const [first] = await issuer.entitlements.findOpenByEmail(employee.email)
+    await fetchCredential('Employee', employee.email)
+    await until(() => issuer.entitlements.find(first.id), (e) => e?.status === 'issued')
+    await expect(fetchCredential('Employee', employee.email)).rejects.toMatchObject({
+      response: { credentialErrorResponseResult: { data: { error: 'credential_request_denied' } } },
+    })
+
+    await issuer.createEmployeeOffer(employee)
+    const [second] = await issuer.entitlements.findOpenByEmail(employee.email)
+    const again = await fetchCredential('Employee', employee.email)
+
+    expect(second.id).not.toBe(first.id)
+    expect(again).toHaveLength(1)
+    await until(() => issuer.entitlements.find(second.id), (e) => e?.status === 'issued')
+  })
+
   it('marks an entitlement issued after a restart, when the issuer stopped before it could', async () => {
     // Until told otherwise this store cannot record that a credential was made, as if the issuer had stopped just then.
     class Forgetful extends MemoryEntitlementStore {

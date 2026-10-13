@@ -8,7 +8,7 @@ trust the issuer's DID. It has these parts:
   creates offers: `POST /offers` for a `Diploma`, `POST /employee/offers` for an `Employee` (name, email, `department` of `burgerzaken` or `secretariaat`,
   organisation, diploma course and the date the diploma is valid until; the credential expires at the end of that day, and a date in the past is refused),
   both answering `{ "offerUri": ..., "entitlementId": ... }`. A request records an entitlement for the person's email; the offer holds no claims and only leads the wallet
-  to that entitlement. Posting the same form again gives a new offer to the same entitlement. The credential is signed from the entitlement when the wallet asks for it: the issuer claims
+  to that entitlement. An entitlement is issued once. Posting the same form again gives a new offer to the same entitlement while it is open; for a holder who lost their credential, the organisation posts the form again after the first was issued, which makes a new entitlement. The credential is signed from the entitlement when the wallet asks for it: the issuer claims
   it first, so no one else can take it, and marks it issued when the library reports the credential made. A claim that is not followed by that runs out after two minutes
   (`entitlementLeaseMs`), and the entitlement can be claimed again until it passes its end or is revoked. `GET /info` tells the pages the issuer's name and DID, the departments and the default descriptions.
   The email is what identifies the person to verifiers. The issuer's identity is a `did:key` created on first start and kept in its store, so the DID is stable across restarts.
