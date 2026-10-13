@@ -6,6 +6,15 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DEFAULT_DESCRIPTIONS, endOfDay, startIssuer, type EmployeeClaims } from './issuer.js'
 
+async function until<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+  for (let i = 0; i < 50; i++) {
+    const value = await read()
+    if (done(value)) return value
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  throw new Error('gave up waiting')
+}
+
 async function freePort(): Promise<number> {
   const server = createServer()
   await new Promise<void>((resolve) => server.listen(0, resolve))
@@ -13,6 +22,8 @@ async function freePort(): Promise<number> {
   await new Promise((resolve) => server.close(resolve))
   return port
 }
+
+const LEASE_MS = 300
 
 const employee: EmployeeClaims = {
   name: 'Jerry Smith',
@@ -31,7 +42,7 @@ describe('diploma issuer and wallet', () => {
   beforeEach(async () => {
     const port = await freePort()
     baseUrl = `http://localhost:${port}`
-    issuer = await startIssuer({ port, publicUrl: baseUrl, storeKey: 'issuer-test-key', allowInsecureHttp: true, issuerName: 'Gemeente Utrecht' })
+    issuer = await startIssuer({ port, publicUrl: baseUrl, storeKey: 'issuer-test-key', allowInsecureHttp: true, issuerName: 'Gemeente Utrecht', entitlementLeaseMs: LEASE_MS })
     wallet = await createWalletAgent({ storeId: 'wallet', storeKey: 'wallet-test-key', allowInsecureHttp: true })
   })
 
@@ -152,6 +163,61 @@ describe('diploma issuer and wallet', () => {
     expect(info).toEqual({ issuerName: 'Gemeente Utrecht', did: issuer.did, departments: ['burgerzaken', 'secretariaat'], descriptions: DEFAULT_DESCRIPTIONS })
   })
 
+  it('records an entitlement with the offer and marks it issued once the wallet has the credential', async () => {
+    const offerUri = await issuer.createEmployeeOffer(employee)
+
+    const [open] = await issuer.entitlements.findOpenByEmail('JERRY@example.com')
+    expect(open).toMatchObject({ type: 'Employee', status: 'open', claims: { name: 'Jerry Smith', department: 'burgerzaken', description: DEFAULT_DESCRIPTIONS.Employee } })
+    expect(offerUri).not.toContain('Jerry')
+
+    const accepted = await acceptCredentialOffer(wallet, offerUri)
+
+    expect(accepted[0].claims).toMatchObject({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' })
+    expect(await issuer.entitlements.findOpenByEmail('jerry@example.com')).toEqual([])
+    expect(await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
+  })
+
+  it('issues nothing for an entitlement that was revoked', async () => {
+    const offerUri = await issuer.createEmployeeOffer(employee)
+    const [open] = await issuer.entitlements.findOpenByEmail(employee.email)
+    await issuer.entitlements.revoke(open.id)
+
+    await expect(acceptCredentialOffer(wallet, offerUri)).rejects.toThrow()
+
+    expect(await listCredentials(wallet)).toEqual([])
+  })
+
+  it('gives a retry the entitlement of an attempt that did not end in a credential', async () => {
+    const first = await issuer.createEmployeeOffer(employee)
+    const [open] = await issuer.entitlements.findOpenByEmail(employee.email)
+    // An attempt that took the entitlement and then broke off.
+    await issuer.entitlements.claim(open.id)
+    await expect(acceptCredentialOffer(wallet, first)).rejects.toThrow()
+    expect(await issuer.entitlements.findOpenByEmail(employee.email)).toEqual([])
+
+    await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 100))
+    const retry = await issuer.createEmployeeOffer(employee)
+
+    expect((await issuer.entitlements.findOpenByEmail(employee.email)).map((e) => e.id)).toEqual([open.id])
+    expect((await acceptCredentialOffer(wallet, retry))[0].type).toBe('Employee')
+    await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')
+  })
+
+  it('makes one entitlement for the same person and credential, and another for a different one', async () => {
+    await issuer.createEmployeeOffer(employee)
+    await issuer.createEmployeeOffer(employee)
+    await issuer.createEmployeeOffer({ ...employee, diploma: 'other-course' })
+
+    expect(await issuer.entitlements.findOpenByEmail(employee.email)).toHaveLength(2)
+  })
+
+  it('answers an offer request with the entitlement it made', async () => {
+    const res = await fetch(`${baseUrl}/employee/offers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(employee) })
+    const body = (await res.json()) as { offerUri: string; entitlementId: string }
+
+    expect(await issuer.entitlements.find(body.entitlementId)).toMatchObject({ email: 'jerry@example.com', status: 'open' })
+  })
+
   it('offers each credential type under its own name', async () => {
     const offer = await previewCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
 
@@ -231,17 +297,23 @@ describe.skipIf(!process.env.ATTESTA_TEST_POSTGRES)('issuer on postgres', () => 
     }
     const options = { storeKey: 'k', allowInsecureHttp: true, database, seed: 'postgres seed' }
     const wallet = await createWalletAgent({ storeId: 'wallet-pg', storeKey: 'wallet-test-key', allowInsecureHttp: true })
-    const first = await startIssuer({ ...options, port: await freePort(), publicUrl: 'http://localhost:1' })
+    const port = await freePort()
+    const settings = { ...options, port, publicUrl: `http://localhost:${port}` }
+    const first = await startIssuer(settings)
     const { id } = await first.entitlements.create({ email: 'pg@example.com', type: 'Employee', claims: {} })
+    const waiting = await first.createEmployeeOffer({ ...employee, email: 'waiting@example.com' })
+    const [{ id: waitingId }] = await first.entitlements.findOpenByEmail('waiting@example.com')
     await first.close()
 
-    const port = await freePort()
-    const second = await startIssuer({ ...options, port, publicUrl: `http://localhost:${port}` })
+    const second = await startIssuer(settings)
     try {
       expect(second.did).toBe(first.did)
       expect((await second.entitlements.findOpenByEmail('pg@example.com')).map((e) => e.id)).toContain(id)
-      const staff = await acceptCredentialOffer(wallet, await second.createEmployeeOffer(employee))
-      expect(staff[0].type).toBe('Employee')
+      // An offer made before the restart still works, and issues from the entitlement it points to.
+      const staff = await acceptCredentialOffer(wallet, waiting)
+      expect(staff[0].claims).toMatchObject({ email: 'waiting@example.com' })
+      expect(await second.entitlements.findOpenByEmail('waiting@example.com')).toEqual([])
+      expect(await until(() => second.entitlements.find(waitingId), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
     } finally {
       await second.close()
       await wallet.shutdown()

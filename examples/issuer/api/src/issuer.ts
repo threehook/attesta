@@ -6,10 +6,10 @@ import { join } from 'node:path'
 import { AskarModule } from '@credo-ts/askar'
 import { Agent, DidsApi, type KeyDidCreateOptions } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
-import { OpenId4VciCredentialFormatProfile, OpenId4VcModule } from '@credo-ts/openid4vc'
+import { OpenId4VciCredentialFormatProfile, OpenId4VcIssuanceSessionState, type OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
-import { MemoryEntitlementStore, PostgresEntitlementStore, type DatabaseOptions, type EntitlementStore } from './entitlements.js'
+import { MemoryEntitlementStore, PostgresEntitlementStore, type DatabaseOptions, type Entitlement, type EntitlementStore } from './entitlements.js'
 
 export interface DiplomaClaims {
   name: string
@@ -48,6 +48,8 @@ export interface IssuerOptions {
   path?: string
   /** A Postgres server for everything the issuer keeps: its store and its entitlements. Without it they live in `path`, or in memory. */
   database?: DatabaseOptions
+  /** How long a claim holds an entitlement while the credential is made, in milliseconds. */
+  entitlementLeaseMs?: number
   allowInsecureHttp?: boolean
   /** Derives the issuer's signing key (and so its DID) from this text, instead of generating a random key on first start. */
   seed?: string
@@ -71,6 +73,9 @@ export const DEFAULT_DESCRIPTIONS: Record<CredentialType, string> = {
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
 // The form sends dd-mm-yyyy; API clients may send YYYY-MM-DD.
 const toIsoDate = (v: string) => v.trim().replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1')
+
+const sameClaims = (a: Record<string, string>, b: Record<string, string>) =>
+  Object.keys(a).length === Object.keys(b).length && Object.entries(a).every(([key, value]) => b[key] === value)
 
 const asText = (v: unknown) => (typeof v === 'string' ? v : undefined)
 
@@ -103,7 +108,16 @@ const sdJwtConfiguration = (type: CredentialType) => ({
 
 export async function startIssuer(options: IssuerOptions) {
   if (options.path && !options.database) mkdirSync(options.path, { recursive: true })
-  const entitlements: EntitlementStore = options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE) : new MemoryEntitlementStore()
+  const entitlements: EntitlementStore = options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE, options.entitlementLeaseMs) : new MemoryEntitlementStore(options.entitlementLeaseMs)
+  // The credential is made from the entitlement the offer points to. Claiming it keeps anyone else from taking it; it counts as issued once the library says so.
+  async function claimEntitlement(id: string | undefined): Promise<Entitlement> {
+    const entitlement = id ? await entitlements.find(id) : undefined
+    if (!entitlement || (entitlement.validUntil && entitlement.validUntil.getTime() <= Date.now()) || !(await entitlements.claim(entitlement.id))) {
+      throw new Error('there is no open entitlement for this offer')
+    }
+    return entitlement
+  }
+
   const app = express()
   const agent = new Agent({
     config: { allowInsecureHttpUrls: options.allowInsecureHttp ?? false },
@@ -124,8 +138,8 @@ export async function startIssuer(options: IssuerOptions) {
         issuer: {
           baseUrl: `${options.publicUrl}/oid4vci`,
           credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession }) => {
-            const { type, ...claims } = issuanceSession.issuanceMetadata as unknown as { type: CredentialType } & Record<string, string>
-            const { payload, sd } = credentialContent(type, claims, options.issuerName)
+            const entitlement = await claimEntitlement((issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId)
+            const { payload, sd } = credentialContent(entitlement.type as CredentialType, entitlement.claims, options.issuerName)
 
             const dids = agentContext.resolve(DidsApi)
             const [issuerDid] = await dids.getCreatedDids({ method: 'key' })
@@ -150,6 +164,17 @@ export async function startIssuer(options: IssuerOptions) {
   })
   await agent.initialize()
 
+  // The entitlement is issued once the library has made the credential; without this event the claim runs out and the entitlement can be claimed again.
+  agent.events.on<OpenId4VcIssuanceSessionStateChangedEvent>(OpenId4VcIssuerEvents.IssuanceSessionStateChanged, async ({ payload: { issuanceSession } }) => {
+    const id = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
+    if (!id || issuanceSession.state !== OpenId4VcIssuanceSessionState.Completed) return
+    try {
+      await entitlements.markIssued(id)
+    } catch (error) {
+      console.error(`could not record that entitlement ${id} was issued`, error)
+    }
+  })
+
   // The issuer's identity is a did:key created once and kept in the store, so its DID is stable across restarts.
   if ((await agent.dids.getCreatedDids({ method: 'key' })).length === 0) {
     const key = options.seed ? await importSeedKey(agent, options.seed) : await agent.kms.createKey({ type: { kty: 'OKP', crv: 'Ed25519' } })
@@ -164,14 +189,20 @@ export async function startIssuer(options: IssuerOptions) {
     await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display })
   }
 
-  async function createOffer(type: CredentialType, claims: DiplomaClaims | EmployeeClaims): Promise<string> {
+  // Records the entitlement, then makes the offer that leads the wallet to it. The offer holds no claims.
+  async function createOffer(type: CredentialType, claims: DiplomaClaims | EmployeeClaims): Promise<{ offerUri: string; entitlementId: string }> {
+    const stored = { ...claims, description: claims.description?.trim() || DEFAULT_DESCRIPTIONS[type] } as Record<string, string>
+    const validUntil = type === EMPLOYEE ? new Date(endOfDay((claims as EmployeeClaims).diplomaValidUntil) * 1000) : undefined
+    // The same person asking again for the same credential gets a new offer to the entitlement they already have.
+    const same = (await entitlements.findOpenByEmail(claims.email)).find((e) => e.type === type && sameClaims(e.claims, stored))
+    const entitlement = same ?? (await entitlements.create({ email: claims.email, type, claims: stored, validUntil }))
     const { credentialOffer } = await agent.openid4vc.issuer.createCredentialOffer({
       issuerId: ISSUER_ID,
       credentialConfigurationIds: [type],
       preAuthorizedCodeFlowConfig: {},
-      issuanceMetadata: { type, ...claims, description: claims.description?.trim() || DEFAULT_DESCRIPTIONS[type] },
+      issuanceMetadata: { entitlementId: entitlement.id },
     })
-    return credentialOffer
+    return { offerUri: credentialOffer, entitlementId: entitlement.id }
   }
 
   // Registered after the OpenID4VCI routes, as the module recommends.
@@ -191,7 +222,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'email is not an email address' })
       return
     }
-    res.json({ offerUri: await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }) })
+    res.json(await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
   })
   app.post('/employee/offers', async (req, res) => {
     const { name, email, department, organisation, diploma, diplomaValidUntil: validUntil, description } = req.body ?? {}
@@ -216,7 +247,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    res.json({ offerUri: await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }) })
+    res.json(await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
   })
 
   const server: Server = await new Promise((resolve) => {
@@ -228,8 +259,8 @@ export async function startIssuer(options: IssuerOptions) {
     /** The DID that signs every credential; verifiers trust the issuer by this identifier. */
     did: issuerDid.did,
     entitlements,
-    createOffer: (claims: DiplomaClaims) => createOffer(DIPLOMA, claims),
-    createEmployeeOffer: (claims: EmployeeClaims) => createOffer(EMPLOYEE, claims),
+    createOffer: async (claims: DiplomaClaims) => (await createOffer(DIPLOMA, claims)).offerUri,
+    createEmployeeOffer: async (claims: EmployeeClaims) => (await createOffer(EMPLOYEE, claims)).offerUri,
     async close() {
       await new Promise((resolve) => server.close(resolve))
       await agent.shutdown()
