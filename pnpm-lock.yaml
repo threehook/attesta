@@ -37,6 +37,9 @@ importers:
       '@credo-ts/openid4vc':
         specifier: 0.7.2
         version: 0.7.2(supports-color@7.2.0)(typescript@7.0.2)
+      '@openid4vc/oauth2':
+        specifier: ^0.6.0
+        version: 0.6.0
       '@openwallet-foundation/askar-nodejs':
         specifier: 0.6.1
         version: 0.6.1

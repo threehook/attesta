@@ -11,11 +11,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@attesta/issuer-pg": "workspace:*",
     "@credo-ts/askar": "0.7.2",
     "@credo-ts/core": "0.7.2",
     "@credo-ts/node": "0.7.2",
     "@credo-ts/openid4vc": "0.7.2",
-    "@attesta/issuer-pg": "workspace:*",
+    "@openid4vc/oauth2": "^0.6.0",
     "@openwallet-foundation/askar-nodejs": "0.6.1",
     "express": "^5.2.1",
     "pg": "^8.23.1",

@@ -6,8 +6,9 @@ import { join } from 'node:path'
 import { AskarModule } from '@credo-ts/askar'
 import { Agent, DidsApi, type KeyDidCreateOptions } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
-import { OpenId4VciCredentialFormatProfile, OpenId4VcIssuanceSessionRecord, OpenId4VcIssuanceSessionState, type OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcModule } from '@credo-ts/openid4vc'
+import { OpenId4VciCredentialFormatProfile, OpenId4VcIssuanceSessionRecord, OpenId4VcIssuanceSessionRepository, OpenId4VcIssuanceSessionState, type OpenId4VcIssuanceSessionStateChangedEvent, OpenId4VcIssuerEvents, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
+import { Oauth2ErrorCodes, Oauth2ServerErrorResponseError } from '@openid4vc/oauth2'
 import express from 'express'
 import type { DatabaseOptions } from '@attesta/issuer-pg'
 import { MemoryEntitlementStore, PostgresEntitlementStore, type Entitlement, type EntitlementStore } from './entitlements.js'
@@ -58,6 +59,8 @@ export interface IssuerOptions {
   path?: string
   /** A Postgres server for everything the issuer keeps: its store and its entitlements. Without it they live in `path`, or in memory. */
   database?: DatabaseOptions
+  /** Where entitlements are kept, instead of `database` or memory. */
+  entitlements?: EntitlementStore
   /** How long a claim holds an entitlement while the credential is made, in milliseconds. */
   entitlementLeaseMs?: number
   /** The login server holders log in at when their wallet asks for a credential; without it only offers can be used. */
@@ -85,6 +88,10 @@ export const DEFAULT_DESCRIPTIONS: Record<CredentialType, string> = {
 /** Seconds since the epoch at the end of the given YYYY-MM-DD day, UTC. */
 // The form sends dd-mm-yyyy; API clients may send YYYY-MM-DD.
 const toIsoDate = (v: string) => v.trim().replace(/^(\d{2})-(\d{2})-(\d{4})$/, '$3-$2-$1')
+
+// What the wallet is told when there is nothing to issue: a standard OpenID4VCI error, so it can say so to the person.
+const noEntitlement = () =>
+  new Oauth2ServerErrorResponseError({ error: Oauth2ErrorCodes.CredentialRequestDenied, error_description: 'there is no open entitlement for you' })
 
 // The email the login server vouched for: the library verified the signed result before it let the wallet go on.
 function loggedInEmail(session: OpenId4VcIssuanceSessionRecord): string {
@@ -128,25 +135,22 @@ const sdJwtConfiguration = (type: CredentialType) => ({
 
 export async function startIssuer(options: IssuerOptions) {
   if (options.path && !options.database) mkdirSync(options.path, { recursive: true })
-  const entitlements: EntitlementStore = options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE, options.entitlementLeaseMs) : new MemoryEntitlementStore(options.entitlementLeaseMs)
+  const entitlements: EntitlementStore = options.entitlements ?? (options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE, options.entitlementLeaseMs) : new MemoryEntitlementStore(options.entitlementLeaseMs))
   // The credential is made from the entitlement the offer points to. Claiming it keeps anyone else from taking it; it counts as issued once the library says so.
   async function claimEntitlement(id: string | undefined): Promise<Entitlement> {
     const entitlement = id ? await entitlements.find(id) : undefined
     if (!entitlement || (entitlement.validUntil && entitlement.validUntil.getTime() <= Date.now()) || !(await entitlements.claim(entitlement.id))) {
-      throw new Error('there is no open entitlement for this offer')
+      throw noEntitlement()
     }
     return entitlement
   }
-
-  // The entitlement a session claimed, for when the library reports its credential made. A restart forgets it; the claim then runs out and can be taken again.
-  const claimedBySession = new Map<string, string>()
 
   // The credential is made from the entitlement the holder logged in for: their oldest open one of the requested type.
   async function claimForHolder(email: string, type: string): Promise<Entitlement> {
     for (const entitlement of await entitlements.findOpenByEmail(email)) {
       if (entitlement.type === type && (await entitlements.claim(entitlement.id))) return entitlement
     }
-    throw new Error('there is no open entitlement for this holder')
+    throw noEntitlement()
   }
 
   const app = express()
@@ -175,7 +179,9 @@ export async function startIssuer(options: IssuerOptions) {
           credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession, credentialConfigurationId }) => {
             const offered = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
             const entitlement = offered ? await claimEntitlement(offered) : await claimForHolder(loggedInEmail(issuanceSession), credentialConfigurationId)
-            claimedBySession.set(issuanceSession.id, entitlement.id)
+            // The session remembers its entitlement, so that it is marked issued when the credential is made, also after a restart.
+            issuanceSession.issuanceMetadata = { ...issuanceSession.issuanceMetadata, entitlementId: entitlement.id }
+            await agentContext.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository).update(agentContext, issuanceSession)
             const { payload, sd } = credentialContent(entitlement.type as CredentialType, entitlement.claims, options.issuerName)
 
             const dids = agentContext.resolve(DidsApi)
@@ -204,15 +210,21 @@ export async function startIssuer(options: IssuerOptions) {
   // The entitlement is issued once the library has made the credential; without this event the claim runs out and the entitlement can be claimed again.
   agent.events.on<OpenId4VcIssuanceSessionStateChangedEvent>(OpenId4VcIssuerEvents.IssuanceSessionStateChanged, async ({ payload: { issuanceSession } }) => {
     if (issuanceSession.state !== OpenId4VcIssuanceSessionState.Completed) return
-    const id = claimedBySession.get(issuanceSession.id) ?? (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
+    const id = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
     if (!id) return
-    claimedBySession.delete(issuanceSession.id)
     try {
       await entitlements.markIssued(id)
     } catch (error) {
       console.error(`could not record that entitlement ${id} was issued`, error)
     }
   })
+
+  // A credential made just before the issuer stopped may not have been marked issued; its session still names the entitlement.
+  const sessions = await agent.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository).findByQuery(agent.context, { state: OpenId4VcIssuanceSessionState.Completed })
+  for (const session of sessions) {
+    const id = (session.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
+    if (id) await entitlements.markIssued(id)
+  }
 
   // The issuer's identity is a did:key created once and kept in the store, so its DID is stable across restarts.
   if ((await agent.dids.getCreatedDids({ method: 'key' })).length === 0) {

@@ -1,11 +1,15 @@
+import { mkdtempSync, rmSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createWalletAgent, listCredentials, type WalletAgent } from '@attesta/wallet'
 import { Kms } from '@credo-ts/core'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startLogin } from '../../login/src/login.js'
 import type { Mail } from '../../login/src/mail.js'
 import { MemoryLoginStore } from '../../login/src/store.js'
-import { startIssuer } from './issuer.js'
+import { MemoryEntitlementStore } from './entitlements.js'
+import { type IssuerOptions, startIssuer } from './issuer.js'
 
 async function freePort(): Promise<number> {
   const server = createServer()
@@ -39,7 +43,8 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
   let issuerUrl: string
   let mails: Mail[]
 
-  beforeEach(async () => {
+  /** Starts the login server and an issuer that logs holders in at it. */
+  async function boot(extra: Partial<IssuerOptions> = {}) {
     mails = []
     const [issuerPort, loginPort] = [await freePort(), await freePort()]
     issuerUrl = `http://localhost:${issuerPort}`
@@ -60,7 +65,12 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
       storeKey: 'login-test-key',
       allowInsecureHttp: true,
       login: { issuer: loginUrl, clientId: 'attesta-issuer', clientSecret: 'secret', walletRedirectUris: [WALLET_REDIRECT] },
+      ...extra,
     })
+  }
+
+  beforeEach(async () => {
+    await boot()
     wallet = await createWalletAgent({ storeId: 'wallet', storeKey: 'wallet-test-key', allowInsecureHttp: true })
   })
 
@@ -128,7 +138,9 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
   it('issues nothing to a holder who has no entitlement', async () => {
     await issuer.createEmployeeOffer(employee)
 
-    await expect(fetchCredential('Employee', 'someone.else@example.com')).rejects.toThrow()
+    await expect(fetchCredential('Employee', 'someone.else@example.com')).rejects.toMatchObject({
+      response: { credentialErrorResponseResult: { data: { error: 'credential_request_denied' } } },
+    })
 
     expect(await issuer.entitlements.findOpenByEmail(employee.email)).toHaveLength(1)
     expect(await listCredentials(wallet)).toEqual([])
@@ -150,6 +162,38 @@ describe('a wallet that asks for its credential, with a holder who logs in', () 
     await fetchCredential('Employee', employee.email)
     await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')
 
-    await expect(fetchCredential('Employee', employee.email)).rejects.toThrow()
+    await expect(fetchCredential('Employee', employee.email)).rejects.toMatchObject({
+      response: { credentialErrorResponseResult: { data: { error: 'credential_request_denied' } } },
+    })
+  })
+
+  it('marks an entitlement issued after a restart, when the issuer stopped before it could', async () => {
+    // Until told otherwise this store cannot record that a credential was made, as if the issuer had stopped just then.
+    class Forgetful extends MemoryEntitlementStore {
+      forget = true
+      override async markIssued(id: string) {
+        return this.forget ? false : super.markIssued(id)
+      }
+    }
+    const store = new Forgetful()
+    const dir = mkdtempSync(join(tmpdir(), 'issuer-'))
+    const claims = { name: 'Jerry Smith', email: employee.email, department: 'burgerzaken', organisation: 'o', diploma: 'd', diplomaValidUntil: '2031-06-30' }
+    try {
+      await issuer.close()
+      await login.close()
+      await boot({ path: dir, seed: 'restart seed', entitlements: store })
+      const { id } = await store.create({ email: employee.email, type: 'Employee', claims })
+      expect(await fetchCredential('Employee', employee.email)).toHaveLength(1)
+      expect(await store.find(id)).toMatchObject({ status: 'claimed' })
+      await issuer.close()
+
+      store.forget = false
+      const port = await freePort()
+      issuer = await startIssuer({ port, publicUrl: `http://localhost:${port}`, storeKey: 'login-test-key', allowInsecureHttp: true, path: dir, seed: 'restart seed', entitlements: store })
+
+      expect(await store.find(id)).toMatchObject({ status: 'issued' })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })
