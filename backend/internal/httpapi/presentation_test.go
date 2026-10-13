@@ -183,7 +183,6 @@ func TestHandlePresentationResponsePassesTheClaimsToThePolicy(t *testing.T) {
 }
 
 func TestHandlePresentationOutcome(t *testing.T) {
-	yes, no := true, false
 	cases := map[string]struct {
 		p      *fakePresenter
 		status int
@@ -193,11 +192,11 @@ func TestHandlePresentationOutcome(t *testing.T) {
 		"allowed": {
 			p:      &fakePresenter{outcome: &presentation.Outcome{Allow: true, Reason: "ok", Subject: &presentation.Subject{Issuer: "did:key:i", Email: "ada@example.com"}}},
 			status: http.StatusOK,
-			want:   presentationOutcomeResponse{Status: "done", Allow: &yes, Reason: "ok", Subject: &subjectResponse{Issuer: "did:key:i", Email: "ada@example.com"}},
+			want:   presentationOutcomeResponse{Status: "done", Decision: "Permit", Reason: "ok", Subject: &subjectResponse{Issuer: "did:key:i", Email: "ada@example.com"}},
 		},
 		"denied": {
 			p: &fakePresenter{outcome: &presentation.Outcome{Reason: "issuer not trusted"}}, status: http.StatusOK,
-			want: presentationOutcomeResponse{Status: "done", Allow: &no, Reason: "issuer not trusted"},
+			want: presentationOutcomeResponse{Status: "done", Decision: "Deny", Reason: "issuer not trusted"},
 		},
 		"unknown": {p: &fakePresenter{outcomeErr: presentation.ErrUnknownRequest}, status: http.StatusNotFound},
 	}
@@ -215,8 +214,8 @@ func TestHandlePresentationOutcome(t *testing.T) {
 			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
 			}
-			if got.Status != tc.want.Status || got.Reason != tc.want.Reason || (got.Allow == nil) != (tc.want.Allow == nil) ||
-				(got.Allow != nil && *got.Allow != *tc.want.Allow) || (got.Subject == nil) != (tc.want.Subject == nil) ||
+			if got.Status != tc.want.Status || got.Reason != tc.want.Reason || got.Decision != tc.want.Decision ||
+				(got.Subject == nil) != (tc.want.Subject == nil) ||
 				(got.Subject != nil && *got.Subject != *tc.want.Subject) {
 				t.Errorf("response = %+v, want %+v", got, tc.want)
 			}

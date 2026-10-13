@@ -76,12 +76,12 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
 
       const outcome = (await (await fetch(`${backend}/v1/authorize/requests/${requestId}`)).json()) as {
         status: string;
-        allow: boolean;
+        decision: string;
         reason: string;
         subject?: { issuer: string; email: string };
       };
       expect(outcome.status).toBe("done");
-      expect(outcome.allow).toBe(trusted);
+      expect(outcome.decision).toBe(trusted ? "Permit" : "Deny");
       if (trusted) {
         expect(outcome.subject).toEqual({ issuer: issuer.did, email: "ada@example.com" });
       } else {

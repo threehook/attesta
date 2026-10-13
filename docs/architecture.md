@@ -26,7 +26,7 @@ sequenceDiagram
     Note over B: 4. verify issuer signature, disclosures, key binding
     Note over B: 5. evaluate the Gno policy (resource, type, issuer DID, claims)
     A->>B: 6. GET /v1/authorize/requests/{id}, polled
-    B-->>A: status, allow, reason, subject
+    B-->>A: status, decision, reason, subject
 ```
 
 This is the flow between a relying application, the shared backend and the desktop wallet. It no longer shows the whole solution:

@@ -21,7 +21,7 @@ export interface Subject {
   email: string;
 }
 
-export type AuthorizationOutcome = { status: "pending" } | { status: "done"; allow: boolean; reason: string; subject?: Subject };
+export type AuthorizationOutcome = { status: "pending" } | { status: "done"; decision: "Permit" | "Deny" | "NotApplicable" | "Indeterminate"; reason: string; subject?: Subject };
 
 export interface PutPolicyRequest {
   id: string;

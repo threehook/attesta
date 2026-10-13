@@ -85,7 +85,7 @@ describe("ApiClient.getAuthorizationOutcome", () => {
 
 describe("ApiClient.waitForOutcome", () => {
   it("polls until the decision is done", async () => {
-    const allowed = { status: "done", allow: true, reason: "ok", subject: { issuer: "did:key:i", email: "ada@example.com" } };
+    const allowed = { status: "done", decision: "Permit", reason: "ok", subject: { issuer: "did:key:i", email: "ada@example.com" } };
     const fetchImpl = sequenceFetch({ status: "pending" }, { status: "pending" }, allowed);
     const client = new ApiClient("http://localhost:8080", fetchImpl);
 

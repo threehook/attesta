@@ -193,9 +193,9 @@ func traceParent(r *http.Request) string {
 }
 
 type presentationOutcomeResponse struct {
-	Status string `json:"status"`
-	Allow  *bool  `json:"allow,omitempty"`
-	Reason string `json:"reason,omitempty"`
+	Status   string `json:"status"`
+	Decision string `json:"decision,omitempty"`
+	Reason   string `json:"reason,omitempty"`
 	// Subject identifies who was allowed; it is absent for a denial.
 	Subject *subjectResponse `json:"subject,omitempty"`
 }
@@ -220,11 +220,19 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, presentationOutcomeResponse{Status: "pending"})
 		return
 	}
-	resp := presentationOutcomeResponse{Status: "done", Allow: &outcome.Allow, Reason: outcome.Reason}
+	resp := presentationOutcomeResponse{Status: "done", Decision: decisionOf(outcome.Allow), Reason: outcome.Reason}
 	if outcome.Subject != nil {
 		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, Email: outcome.Subject.Email}
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// decisionOf names the XACML decision for an allow/deny result.
+func decisionOf(allow bool) string {
+	if allow {
+		return "Permit"
+	}
+	return "Deny"
 }
 
 // userRolesHeader carries the roles the calling application asserts for the user, comma-separated.
