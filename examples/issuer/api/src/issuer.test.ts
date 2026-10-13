@@ -1,10 +1,10 @@
-import { createServer } from 'node:net'
-import { acceptCredentialOffer, createWalletAgent, listCredentials, previewCredentialOffer, type WalletAgent } from '@attesta/wallet'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { DEFAULT_DESCRIPTIONS, endOfDay, startIssuer, type EmployeeClaims } from './issuer.js'
+import { createWalletAgent, listCredentials, type WalletAgent } from '@attesta/wallet'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_DESCRIPTIONS, endOfDay, type EmployeeClaims } from './issuer.js'
+import { fetchCredential, startTestIssuer, type TestIssuer } from './testing.js'
 
 async function until<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
   for (let i = 0; i < 50; i++) {
@@ -13,14 +13,6 @@ async function until<T>(read: () => Promise<T>, done: (value: T) => boolean): Pr
     await new Promise((resolve) => setTimeout(resolve, 100))
   }
   throw new Error('gave up waiting')
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, resolve))
-  const { port } = server.address() as { port: number }
-  await new Promise((resolve) => server.close(resolve))
-  return port
 }
 
 const LEASE_MS = 300
@@ -33,90 +25,63 @@ const employee: EmployeeClaims = {
   diploma: 'laadpalen-management',
   diplomaValidUntil: '2031-06-30',
 }
+const diploma = { name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' }
 
-describe('diploma issuer and wallet', () => {
-  let issuer: Awaited<ReturnType<typeof startIssuer>>
+const post = (url: string, body: unknown) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+
+describe('issuer and wallet', () => {
+  let test: TestIssuer
   let wallet: WalletAgent
-  let baseUrl: string
 
   beforeEach(async () => {
-    const port = await freePort()
-    baseUrl = `http://localhost:${port}`
-    issuer = await startIssuer({ port, publicUrl: baseUrl, storeKey: 'issuer-test-key', allowInsecureHttp: true, issuerName: 'Gemeente Utrecht', entitlementLeaseMs: LEASE_MS })
+    test = await startTestIssuer({ issuerName: 'Gemeente Utrecht', entitlementLeaseMs: LEASE_MS })
     wallet = await createWalletAgent({ storeId: 'wallet', storeKey: 'wallet-test-key', allowInsecureHttp: true })
   })
 
   afterEach(async () => {
     await wallet.shutdown()
-    await issuer.close()
+    await test.close()
   })
 
-  it('issues a diploma that the wallet accepts and keeps', async () => {
-    const offerUri = await issuer.createOffer({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
+  it('issues a diploma that the wallet keeps', async () => {
+    await test.issuer.createDiplomaEntitlement(diploma)
 
-    const accepted = await acceptCredentialOffer(wallet, offerUri)
+    const accepted = await fetchCredential(wallet, test, 'Diploma', diploma.email)
 
     expect(accepted).toHaveLength(1)
     expect(accepted[0].type).toBe('Diploma')
     expect(accepted[0].issuer).toMatch(/^did:key:/)
     expect(accepted[0].claims).toMatchObject({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
-
     expect(await listCredentials(wallet)).toEqual(accepted)
   })
 
-  it('shows what an offer contains before it is accepted', async () => {
-    const offerUri = await issuer.createOffer({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
-
-    const offer = await previewCredentialOffer(wallet, offerUri)
-
-    expect(offer.issuer).toContain(baseUrl)
-    expect(offer.types).toEqual(['Diploma'])
-    expect(await listCredentials(wallet)).toEqual([])
-  })
-
-  it('creates offers over HTTP', async () => {
-    const res = await fetch(`${baseUrl}/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ name: 'Grace Hopper', email: 'grace@example.com', degree: 'Computer Science', university: 'Trusted University' }),
-    })
+  it('records an entitlement over HTTP, and the holder can then fetch it', async () => {
+    const res = await post(`${test.url}/entitlements/diploma`, { name: 'Grace Hopper', email: 'grace@example.com', degree: 'Computer Science', university: 'Trusted University' })
     expect(res.status).toBe(200)
-    const { offerUri } = (await res.json()) as { offerUri: string }
+    const { entitlementId } = (await res.json()) as { entitlementId: string }
 
-    const accepted = await acceptCredentialOffer(wallet, offerUri)
+    expect(await test.issuer.entitlements.find(entitlementId)).toMatchObject({ email: 'grace@example.com', type: 'Diploma', status: 'open' })
+    const accepted = await fetchCredential(wallet, test, 'Diploma', 'grace@example.com')
     expect(accepted[0].claims).toMatchObject({ name: 'Grace Hopper' })
   })
 
-  it('rejects an offer request with missing fields', async () => {
-    const res = await fetch(`${baseUrl}/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ name: 'Ada', email: 'ada@example.com' }),
-    })
-    expect(res.status).toBe(400)
+  it('rejects an entitlement request with missing fields', async () => {
+    expect((await post(`${test.url}/entitlements/diploma`, { name: 'Ada', email: 'ada@example.com' })).status).toBe(400)
   })
 
   it('rejects an email that is not an address', async () => {
-    const res = await fetch(`${baseUrl}/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ name: 'Ada', email: 'not-an-address', degree: 'Mathematics', university: 'Trusted University' }),
-    })
-    expect(res.status).toBe(400)
+    expect((await post(`${test.url}/entitlements/diploma`, { ...diploma, email: 'not-an-address' })).status).toBe(400)
   })
 
-  it('does not honour an offer twice', async () => {
-    const offerUri = await issuer.createOffer({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
-    await acceptCredentialOffer(wallet, offerUri)
-
-    await expect(acceptCredentialOffer(wallet, offerUri)).rejects.toThrow()
+  it('has no way to make an offer', async () => {
+    expect((await post(`${test.url}/offers`, diploma)).status).toBe(404)
+    expect((await post(`${test.url}/employee/offers`, employee)).status).toBe(404)
   })
 
   it('derives the same DID from the same seed', async () => {
     const start = async (seed?: string) => {
-      const port = await freePort()
-      const started = await startIssuer({ port, publicUrl: `http://localhost:${port}`, storeKey: 'k', allowInsecureHttp: true, seed })
-      const did = started.did
+      const started = await startTestIssuer({ seed })
+      const did = started.issuer.did
       await started.close()
       return did
     }
@@ -128,11 +93,13 @@ describe('diploma issuer and wallet', () => {
   })
 
   it('issues an employee credential that expires with the diploma', async () => {
-    const accepted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+    await test.issuer.createEmployeeEntitlement(employee)
+
+    const accepted = await fetchCredential(wallet, test, 'Employee', employee.email)
 
     expect(accepted).toHaveLength(1)
     expect(accepted[0].type).toBe('Employee')
-    expect(accepted[0].issuer).toBe(issuer.did)
+    expect(accepted[0].issuer).toBe(test.issuer.did)
     expect(accepted[0].claims).toMatchObject({
       name: 'Jerry Smith',
       email: 'jerry@example.com',
@@ -144,104 +111,88 @@ describe('diploma issuer and wallet', () => {
   })
 
   it('puts the logical issuer and a description in the credential', async () => {
-    const accepted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer({ ...employee, description: 'Own text' }))
-    const defaulted = await acceptCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+    await test.issuer.createEmployeeEntitlement({ ...employee, description: 'Own text' })
+    await test.issuer.createEmployeeEntitlement({ ...employee, email: 'plain@example.com' })
+
+    const accepted = await fetchCredential(wallet, test, 'Employee', employee.email)
+    const defaulted = await fetchCredential(wallet, test, 'Employee', 'plain@example.com')
 
     expect(accepted[0].claims).toMatchObject({ issuer_name: 'Gemeente Utrecht', description: 'Own text' })
     expect(defaulted[0].claims).toMatchObject({ description: DEFAULT_DESCRIPTIONS.Employee })
   })
 
   it('names the logical issuer in the issuer metadata', async () => {
-    const meta = (await (await fetch(`${baseUrl}/oid4vci/diploma/.well-known/openid-credential-issuer`)).json()) as { display?: { name?: string }[] }
+    const meta = (await (await fetch(`${test.url}/oid4vci/diploma/.well-known/openid-credential-issuer`)).json()) as { display?: { name?: string }[] }
 
     expect(meta.display).toEqual([{ name: 'Gemeente Utrecht' }])
   })
 
   it('tells the pages which issuer it is and what the forms offer', async () => {
-    const info = await (await fetch(`${baseUrl}/info`)).json()
+    const info = await (await fetch(`${test.url}/info`)).json()
 
     expect(info).toEqual({
       issuerName: 'Gemeente Utrecht',
-      did: issuer.did,
+      did: test.issuer.did,
       departments: ['burgerzaken', 'secretariaat'],
       descriptions: DEFAULT_DESCRIPTIONS,
-      credentialIssuer: `${baseUrl}/oid4vci/diploma`,
-      credentialTypes: [],
+      credentialIssuer: `${test.url}/oid4vci/diploma`,
+      credentialTypes: ['Diploma', 'Employee'],
     })
   })
 
-  it('records an entitlement with the offer and marks it issued once the wallet has the credential', async () => {
-    const offerUri = await issuer.createEmployeeOffer(employee)
-
-    const [open] = await issuer.entitlements.findOpenByEmail('JERRY@example.com')
+  it('records an entitlement with the claims on file, and marks it issued once the wallet has the credential', async () => {
+    await test.issuer.createEmployeeEntitlement(employee)
+    const [open] = await test.issuer.entitlements.findOpenByEmail('JERRY@example.com')
     expect(open).toMatchObject({ type: 'Employee', status: 'open', claims: { name: 'Jerry Smith', department: 'burgerzaken', description: DEFAULT_DESCRIPTIONS.Employee } })
-    expect(offerUri).not.toContain('Jerry')
 
-    const accepted = await acceptCredentialOffer(wallet, offerUri)
+    const accepted = await fetchCredential(wallet, test, 'Employee', employee.email)
 
     expect(accepted[0].claims).toMatchObject({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' })
-    expect(await issuer.entitlements.findOpenByEmail('jerry@example.com')).toEqual([])
-    expect(await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
+    expect(await test.issuer.entitlements.findOpenByEmail('jerry@example.com')).toEqual([])
+    expect(await until(() => test.issuer.entitlements.find(open.id), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
   })
 
   it('issues nothing for an entitlement that was revoked', async () => {
-    const offerUri = await issuer.createEmployeeOffer(employee)
-    const [open] = await issuer.entitlements.findOpenByEmail(employee.email)
-    await issuer.entitlements.revoke(open.id)
+    const { id } = await test.issuer.createEmployeeEntitlement(employee)
+    await test.issuer.entitlements.revoke(id)
 
-    await expect(acceptCredentialOffer(wallet, offerUri)).rejects.toThrow()
+    await expect(fetchCredential(wallet, test, 'Employee', employee.email)).rejects.toMatchObject({
+      response: { credentialErrorResponseResult: { data: { error: 'credential_request_denied' } } },
+    })
 
     expect(await listCredentials(wallet)).toEqual([])
   })
 
-  it('gives a retry the entitlement of an attempt that did not end in a credential', async () => {
-    const first = await issuer.createEmployeeOffer(employee)
-    const [open] = await issuer.entitlements.findOpenByEmail(employee.email)
+  it('gives the holder their entitlement again after an attempt that did not end in a credential', async () => {
+    const { id } = await test.issuer.createEmployeeEntitlement(employee)
     // An attempt that took the entitlement and then broke off.
-    await issuer.entitlements.claim(open.id)
-    await expect(acceptCredentialOffer(wallet, first)).rejects.toThrow()
-    expect(await issuer.entitlements.findOpenByEmail(employee.email)).toEqual([])
+    await test.issuer.entitlements.claim(id)
+    await expect(fetchCredential(wallet, test, 'Employee', employee.email)).rejects.toThrow()
 
     await new Promise((resolve) => setTimeout(resolve, LEASE_MS + 100))
-    const retry = await issuer.createEmployeeOffer(employee)
 
-    expect((await issuer.entitlements.findOpenByEmail(employee.email)).map((e) => e.id)).toEqual([open.id])
-    expect((await acceptCredentialOffer(wallet, retry))[0].type).toBe('Employee')
-    await until(() => issuer.entitlements.find(open.id), (e) => e?.status === 'issued')
+    expect((await fetchCredential(wallet, test, 'Employee', employee.email))[0].type).toBe('Employee')
+    await until(() => test.issuer.entitlements.find(id), (e) => e?.status === 'issued')
   })
 
   it('makes one entitlement for the same person and credential, and another for a different one', async () => {
-    await issuer.createEmployeeOffer(employee)
-    await issuer.createEmployeeOffer(employee)
-    await issuer.createEmployeeOffer({ ...employee, diploma: 'other-course' })
+    await test.issuer.createEmployeeEntitlement(employee)
+    await test.issuer.createEmployeeEntitlement(employee)
+    await test.issuer.createEmployeeEntitlement({ ...employee, diploma: 'other-course' })
 
-    expect(await issuer.entitlements.findOpenByEmail(employee.email)).toHaveLength(2)
+    expect(await test.issuer.entitlements.findOpenByEmail(employee.email)).toHaveLength(2)
   })
 
-  it('answers an offer request with the entitlement it made', async () => {
-    const res = await fetch(`${baseUrl}/employee/offers`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(employee) })
-    const body = (await res.json()) as { offerUri: string; entitlementId: string }
+  it('answers an entitlement request with the entitlement it made', async () => {
+    const body = (await (await post(`${test.url}/entitlements/employee`, employee)).json()) as { entitlementId: string }
 
-    expect(await issuer.entitlements.find(body.entitlementId)).toMatchObject({ email: 'jerry@example.com', status: 'open' })
+    expect(await test.issuer.entitlements.find(body.entitlementId)).toMatchObject({ email: 'jerry@example.com', status: 'open' })
   })
 
   it('offers each credential type under its own name', async () => {
-    const offer = await previewCredentialOffer(wallet, await issuer.createEmployeeOffer(employee))
+    const meta = (await (await fetch(`${test.url}/oid4vci/diploma/.well-known/openid-credential-issuer`)).json()) as { credential_configurations_supported: Record<string, unknown> }
 
-    expect(offer.types).toEqual(['Employee'])
-  })
-
-  it('creates employee offers over HTTP', async () => {
-    const res = await fetch(`${baseUrl}/employee/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(employee),
-    })
-    expect(res.status).toBe(200)
-    const { offerUri } = (await res.json()) as { offerUri: string }
-
-    const accepted = await acceptCredentialOffer(wallet, offerUri)
-    expect(accepted[0].claims).toMatchObject({ department: 'burgerzaken' })
+    expect(Object.keys(meta.credential_configurations_supported).sort()).toEqual(['Diploma', 'Employee'])
   })
 
   it.each([
@@ -252,39 +203,30 @@ describe('diploma issuer and wallet', () => {
     ['a month that does not exist, in dd-mm-yyyy', { ...employee, diplomaValidUntil: '30-13-2031' }],
     ['a day that does not exist', { ...employee, diplomaValidUntil: '2031-13-45' }],
     ['a date in the past', { ...employee, diplomaValidUntil: '2020-01-01' }],
-  ])('rejects an employee offer with %s', async (_name, body) => {
-    const res = await fetch(`${baseUrl}/employee/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify(body),
-    })
-    expect(res.status).toBe(400)
+  ])('rejects an employee entitlement with %s', async (_name, body) => {
+    expect((await post(`${test.url}/entitlements/employee`, body)).status).toBe(400)
   })
 
   it('accepts the valid-until date as dd-mm-yyyy', async () => {
-    const res = await fetch(`${baseUrl}/employee/offers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ ...employee, diplomaValidUntil: '30-06-2031' }),
-    })
-    const { offerUri } = (await res.json()) as { offerUri: string }
+    await post(`${test.url}/entitlements/employee`, { ...employee, diplomaValidUntil: '30-06-2031' })
 
-    expect((await acceptCredentialOffer(wallet, offerUri))[0].claims).toMatchObject({ exp: endOfDay('2031-06-30') })
+    expect((await fetchCredential(wallet, test, 'Employee', employee.email))[0].claims).toMatchObject({ exp: endOfDay('2031-06-30') })
   })
 
   it('still issues both credential types after a restart on the same store', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'issuer-'))
     try {
-      const options = { storeKey: 'k', allowInsecureHttp: true, path: dir, seed: 'restart seed' }
-      const first = await startIssuer({ ...options, port: await freePort(), publicUrl: baseUrl })
+      const first = await startTestIssuer({ path: dir, seed: 'restart seed' })
+      await first.issuer.createDiplomaEntitlement({ ...diploma, email: 'a@example.com' })
       await first.close()
 
-      const port = await freePort()
-      const second = await startIssuer({ ...options, port, publicUrl: `http://localhost:${port}` })
+      const second = await startTestIssuer({ path: dir, seed: 'restart seed' })
       try {
-        const diploma = await acceptCredentialOffer(wallet, await second.createOffer({ name: 'A', email: 'a@example.com', degree: 'D', university: 'U' }))
-        const staff = await acceptCredentialOffer(wallet, await second.createEmployeeOffer(employee))
-        expect([diploma[0].type, staff[0].type]).toEqual(['Diploma', 'Employee'])
+        await second.issuer.createDiplomaEntitlement({ ...diploma, email: 'a@example.com' })
+        await second.issuer.createEmployeeEntitlement(employee)
+        const diplomaCredential = await fetchCredential(wallet, second, 'Diploma', 'a@example.com')
+        const staff = await fetchCredential(wallet, second, 'Employee', employee.email)
+        expect([diplomaCredential[0].type, staff[0].type]).toEqual(['Diploma', 'Employee'])
       } finally {
         await second.close()
       }
@@ -302,29 +244,22 @@ describe.skipIf(!process.env.ATTESTA_TEST_POSTGRES)('issuer on postgres', () => 
       user: process.env.ATTESTA_TEST_POSTGRES_USER ?? 'postgres',
       password: process.env.ATTESTA_TEST_POSTGRES_PASSWORD ?? '',
     }
-    const options = { storeKey: 'k', allowInsecureHttp: true, database, seed: 'postgres seed' }
     const wallet = await createWalletAgent({ storeId: 'wallet-pg', storeKey: 'wallet-test-key', allowInsecureHttp: true })
-    const port = await freePort()
-    const settings = { ...options, port, publicUrl: `http://localhost:${port}` }
-    const first = await startIssuer(settings)
-    const { id } = await first.entitlements.create({ email: 'pg@example.com', type: 'Employee', claims: {} })
-    const waiting = await first.createEmployeeOffer({ ...employee, email: 'waiting@example.com' })
-    const [{ id: waitingId }] = await first.entitlements.findOpenByEmail('waiting@example.com')
+    const first = await startTestIssuer({ database, seed: 'postgres seed', storeKey: 'k' })
+    const { id } = await first.issuer.createEmployeeEntitlement({ ...employee, email: 'waiting@example.com' })
+    const did = first.issuer.did
     await first.close()
 
-    const second = await startIssuer(settings)
+    const second = await startTestIssuer({ database, seed: 'postgres seed', storeKey: 'k' })
     try {
-      expect(second.did).toBe(first.did)
-      expect((await second.entitlements.findOpenByEmail('pg@example.com')).map((e) => e.id)).toContain(id)
-      // An offer made before the restart still works, and issues from the entitlement it points to.
-      const staff = await acceptCredentialOffer(wallet, waiting)
+      expect(second.issuer.did).toBe(did)
+      expect((await second.issuer.entitlements.findOpenByEmail('waiting@example.com')).map((e) => e.id)).toContain(id)
+      const staff = await fetchCredential(wallet, second, 'Employee', 'waiting@example.com')
       expect(staff[0].claims).toMatchObject({ email: 'waiting@example.com' })
-      expect(await second.entitlements.findOpenByEmail('waiting@example.com')).toEqual([])
-      expect(await until(() => second.entitlements.find(waitingId), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
+      expect(await until(() => second.issuer.entitlements.find(id), (e) => e?.status === 'issued')).toMatchObject({ status: 'issued' })
     } finally {
       await second.close()
       await wallet.shutdown()
     }
   })
 })
-

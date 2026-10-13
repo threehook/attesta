@@ -3,19 +3,20 @@
 // ATTESTA_PUBLIC_URL is the same address. Run: pnpm tsx scripts/e2e.ts
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { acceptCredentialOffer, createWalletAgent, resolvePresentationRequest, submitPresentation } from '@attesta/wallet'
-import { startIssuer } from '../src/issuer.js'
+import { createWalletAgent, resolvePresentationRequest, submitPresentation } from '@attesta/wallet'
+import { fetchCredential, startTestIssuer } from '../src/testing.js'
 
 const backend = (process.env.ATTESTA_BACKEND_URL ?? 'http://localhost:8080').replace(/\/$/, '')
 const adminToken = process.env.ATTESTA_ADMIN_TOKEN ?? 'dev-only-insecure-admin-token'
 
-const port = await freePort()
-const issuer = await startIssuer({ port, publicUrl: `http://localhost:${port}`, storeKey: 'e2e', allowInsecureHttp: true })
+const test = await startTestIssuer()
+const issuer = test.issuer
 const wallet = await createWalletAgent({ storeId: 'e2e', storeKey: 'e2e', allowInsecureHttp: true })
 
 try {
   const [{ did }] = await issuer.agent.dids.getCreatedDids({ method: 'key' })
-  await acceptCredentialOffer(wallet, await issuer.createOffer({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' }))
+  await issuer.createDiplomaEntitlement({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
+  await fetchCredential(wallet, test, 'Diploma', 'ada@example.com')
 
   await deployPolicy('e2e_trusted', did)
   await deployPolicy('e2e_untrusting', 'did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK')
@@ -33,7 +34,7 @@ try {
   }
 } finally {
   await wallet.shutdown()
-  await issuer.close()
+  await test.close()
 }
 
 async function deployPolicy(id: string, trustedIssuer: string) {
@@ -58,12 +59,4 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
 
 function post(path: string, body: unknown, headers: Record<string, string> = {}) {
   return fetch(backend + path, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body) })
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, resolve))
-  const { port } = server.address() as AddressInfo
-  await new Promise((resolve) => server.close(resolve))
-  return port
 }

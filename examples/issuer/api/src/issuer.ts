@@ -63,8 +63,8 @@ export interface IssuerOptions {
   entitlements?: EntitlementStore
   /** How long a claim holds an entitlement while the credential is made, in milliseconds. */
   entitlementLeaseMs?: number
-  /** The login server holders log in at when their wallet asks for a credential; without it only offers can be used. */
-  login?: LoginServer
+  /** The login server holders log in at when their wallet asks for a credential: the only way a credential is issued. */
+  login: LoginServer
   allowInsecureHttp?: boolean
   /** Derives the issuer's signing key (and so its DID) from this text, instead of generating a random key on first start. */
   seed?: string
@@ -136,15 +136,6 @@ const sdJwtConfiguration = (type: CredentialType) => ({
 export async function startIssuer(options: IssuerOptions) {
   if (options.path && !options.database) mkdirSync(options.path, { recursive: true })
   const entitlements: EntitlementStore = options.entitlements ?? (options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE, options.entitlementLeaseMs) : new MemoryEntitlementStore(options.entitlementLeaseMs))
-  // The credential is made from the entitlement the offer points to. Claiming it keeps anyone else from taking it; it counts as issued once the library says so.
-  async function claimEntitlement(id: string | undefined): Promise<Entitlement> {
-    const entitlement = id ? await entitlements.find(id) : undefined
-    if (!entitlement || (entitlement.validUntil && entitlement.validUntil.getTime() <= Date.now()) || !(await entitlements.claim(entitlement.id))) {
-      throw noEntitlement()
-    }
-    return entitlement
-  }
-
   // The credential is made from the entitlement the holder logged in for: their oldest open one of the requested type.
   async function claimForHolder(email: string, type: string): Promise<Entitlement> {
     for (const entitlement of await entitlements.findOpenByEmail(email)) {
@@ -173,12 +164,10 @@ export async function startIssuer(options: IssuerOptions) {
         issuer: {
           baseUrl: `${options.publicUrl}/oid4vci`,
           getDynamicIssuanceSession: ({ requestedCredentialConfigurations, clientId }) => {
-            if (!options.login) return undefined
             return { authorizationFlow: 'chained', authorizationServerUrl: options.login.issuer, credentialConfigurationIds: Object.keys(requestedCredentialConfigurations), clientId }
           },
           credentialRequestToCredentialMapper: async ({ agentContext, holderBinding, issuanceSession, credentialConfigurationId }) => {
-            const offered = (issuanceSession.issuanceMetadata as { entitlementId?: string } | undefined)?.entitlementId
-            const entitlement = offered ? await claimEntitlement(offered) : await claimForHolder(loggedInEmail(issuanceSession), credentialConfigurationId)
+            const entitlement = await claimForHolder(loggedInEmail(issuanceSession), credentialConfigurationId)
             // The session remembers its entitlement, so that it is marked issued when the credential is made, also after a restart.
             issuanceSession.issuanceMetadata = { ...issuanceSession.issuanceMetadata, entitlementId: entitlement.id }
             await agentContext.dependencyManager.resolve(OpenId4VcIssuanceSessionRepository).update(agentContext, issuanceSession)
@@ -234,37 +223,27 @@ export async function startIssuer(options: IssuerOptions) {
   // An issuer kept in the store by an earlier version may lack a credential type, so the supported types are written on every start.
   const credentialConfigurationsSupported = { [DIPLOMA]: sdJwtConfiguration(DIPLOMA), [EMPLOYEE]: sdJwtConfiguration(EMPLOYEE) }
   const display = options.issuerName ? [{ name: options.issuerName }] : undefined
-  const authorizationServerConfigs = options.login
-    ? [
-        {
-          type: 'chained' as const,
-          issuer: options.login.issuer,
-          clientAuthentication: { type: 'clientSecret' as const, clientId: options.login.clientId, clientSecret: options.login.clientSecret },
-          scopesMapping: { [DIPLOMA]: ['openid', 'email'], [EMPLOYEE]: ['openid', 'email'] },
-          redirectUris: options.login.walletRedirectUris,
-        },
-      ]
-    : undefined
+  const authorizationServerConfigs = [
+    {
+      type: 'chained' as const,
+      issuer: options.login.issuer,
+      clientAuthentication: { type: 'clientSecret' as const, clientId: options.login.clientId, clientSecret: options.login.clientSecret },
+      scopesMapping: { [DIPLOMA]: ['openid', 'email'], [EMPLOYEE]: ['openid', 'email'] },
+      redirectUris: options.login.walletRedirectUris,
+    },
+  ]
   if ((await agent.openid4vc.issuer.getAllIssuers()).some((issuer) => issuer.issuerId === ISSUER_ID)) {
     await agent.openid4vc.issuer.updateIssuerMetadata({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display, authorizationServerConfigs })
   } else {
     await agent.openid4vc.issuer.createIssuer({ issuerId: ISSUER_ID, credentialConfigurationsSupported, display, authorizationServerConfigs })
   }
 
-  // Records the entitlement, then makes the offer that leads the wallet to it. The offer holds no claims.
-  async function createOffer(type: CredentialType, claims: DiplomaClaims | EmployeeClaims): Promise<{ offerUri: string; entitlementId: string }> {
+  // Records that this person may have this credential. The same person with the same data again gets the entitlement they already have, while it is open.
+  async function createEntitlement(type: CredentialType, claims: DiplomaClaims | EmployeeClaims): Promise<Entitlement> {
     const stored = { ...claims, description: claims.description?.trim() || DEFAULT_DESCRIPTIONS[type] } as Record<string, string>
     const validUntil = type === EMPLOYEE ? new Date(endOfDay((claims as EmployeeClaims).diplomaValidUntil) * 1000) : undefined
-    // The same person asking again for the same credential gets a new offer to the entitlement they already have.
     const same = (await entitlements.findOpenByEmail(claims.email)).find((e) => e.type === type && sameClaims(e.claims, stored))
-    const entitlement = same ?? (await entitlements.create({ email: claims.email, type, claims: stored, validUntil }))
-    const { credentialOffer } = await agent.openid4vc.issuer.createCredentialOffer({
-      issuerId: ISSUER_ID,
-      credentialConfigurationIds: [type],
-      preAuthorizedCodeFlowConfig: {},
-      issuanceMetadata: { entitlementId: entitlement.id },
-    })
-    return { offerUri: credentialOffer, entitlementId: entitlement.id }
+    return same ?? (await entitlements.create({ email: claims.email, type, claims: stored, validUntil }))
   }
 
   // Registered after the OpenID4VCI routes, as the module recommends.
@@ -279,10 +258,10 @@ export async function startIssuer(options: IssuerOptions) {
       descriptions: DEFAULT_DESCRIPTIONS,
       // What a wallet needs to ask for a credential itself: the issuer's identifier, and the types it can ask for.
       credentialIssuer: `${options.publicUrl}/oid4vci/${ISSUER_ID}`,
-      credentialTypes: options.login ? [DIPLOMA, EMPLOYEE] : [],
+      credentialTypes: [DIPLOMA, EMPLOYEE],
     })
   })
-  app.post('/offers', async (req, res) => {
+  app.post('/entitlements/diploma', async (req, res) => {
     const { name, email, degree, university, description } = req.body ?? {}
     if (![name, email, degree, university].every((v) => typeof v === 'string' && v.trim() !== '')) {
       res.status(400).json({ error: 'name, email, degree and university are required' })
@@ -292,9 +271,9 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'email is not an email address' })
       return
     }
-    res.json(await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
+    res.json({ entitlementId: (await createEntitlement(DIPLOMA, { name, email, degree, university, description: asText(description) })).id })
   })
-  app.post('/employee/offers', async (req, res) => {
+  app.post('/entitlements/employee', async (req, res) => {
     const { name, email, department, organisation, diploma, diplomaValidUntil: validUntil, description } = req.body ?? {}
     if (![name, email, department, organisation, diploma, validUntil].every((v) => typeof v === 'string' && v.trim() !== '')) {
       res.status(400).json({ error: 'name, email, department, organisation, diploma and diplomaValidUntil are required' })
@@ -317,7 +296,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    res.json(await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
+    res.json({ entitlementId: (await createEntitlement(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) })).id })
   })
 
   const server: Server = await new Promise((resolve) => {
@@ -329,8 +308,8 @@ export async function startIssuer(options: IssuerOptions) {
     /** The DID that signs every credential; verifiers trust the issuer by this identifier. */
     did: issuerDid.did,
     entitlements,
-    createOffer: async (claims: DiplomaClaims) => (await createOffer(DIPLOMA, claims)).offerUri,
-    createEmployeeOffer: async (claims: EmployeeClaims) => (await createOffer(EMPLOYEE, claims)).offerUri,
+    createDiplomaEntitlement: (claims: DiplomaClaims) => createEntitlement(DIPLOMA, claims),
+    createEmployeeEntitlement: (claims: EmployeeClaims) => createEntitlement(EMPLOYEE, claims),
     async close() {
       await new Promise((resolve) => server.close(resolve))
       await agent.shutdown()

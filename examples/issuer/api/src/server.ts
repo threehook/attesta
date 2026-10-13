@@ -16,15 +16,15 @@ const database = dbHost
   ? { host: dbHost, user: process.env.ATTESTA_ISSUER_DB_USER ?? 'issuer', password: process.env.ATTESTA_ISSUER_DB_PASSWORD ?? '' }
   : undefined
 
+// Holders log in at the login server for a credential; without one nothing can be issued.
 const loginUrl = process.env.ATTESTA_ISSUER_LOGIN_URL
-const login = loginUrl
-  ? {
-      issuer: loginUrl,
-      clientId: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_ID ?? 'attesta-issuer',
-      clientSecret: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_SECRET ?? 'dev-only-insecure-login-secret',
-      walletRedirectUris: (process.env.ATTESTA_ISSUER_WALLET_REDIRECT_URIS ?? 'attesta-wallet://callback').split(','),
-    }
-  : undefined
+if (!loginUrl) throw new Error('ATTESTA_ISSUER_LOGIN_URL is required: the address of the login server')
+const login = {
+  issuer: loginUrl,
+  clientId: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_ID ?? 'attesta-issuer',
+  clientSecret: process.env.ATTESTA_ISSUER_LOGIN_CLIENT_SECRET ?? 'dev-only-insecure-login-secret',
+  walletRedirectUris: (process.env.ATTESTA_ISSUER_WALLET_REDIRECT_URIS ?? 'attesta-wallet://callback').split(','),
+}
 
 const issuer = await startIssuer({
   port,
@@ -32,7 +32,7 @@ const issuer = await startIssuer({
   storeKey: process.env.ATTESTA_ISSUER_KEY ?? 'dev-only-insecure-issuer-key',
   path: process.env.ATTESTA_ISSUER_DIR ?? join(homedir(), '.attesta-issuer'),
   database,
-  allowInsecureHttp: publicUrl.startsWith('http://') || Boolean(loginUrl?.startsWith('http://')),
+  allowInsecureHttp: publicUrl.startsWith('http://') || loginUrl.startsWith('http://'),
   login,
   seed: process.env.ATTESTA_ISSUER_SEED ?? DEV_SEED,
   issuerName: process.env.ATTESTA_ISSUER_NAME ?? 'Gemeente Vlierdam',

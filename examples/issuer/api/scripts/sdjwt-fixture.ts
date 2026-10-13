@@ -4,8 +4,8 @@
 import { writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { acceptCredentialOffer, createWalletAgent, resolvePresentationRequest, submitPresentation } from '@attesta/wallet'
-import { startIssuer } from '../src/issuer.js'
+import { createWalletAgent, resolvePresentationRequest, submitPresentation } from '@attesta/wallet'
+import { fetchCredential, startTestIssuer } from '../src/testing.js'
 
 const output = process.argv[2]
 if (!output) throw new Error('usage: sdjwt-fixture.ts <output file>')
@@ -24,8 +24,8 @@ const capture = createServer((req, res) => {
 await new Promise<void>((resolve) => capture.listen(0, resolve))
 const responseUri = `http://localhost:${(capture.address() as AddressInfo).port}/response`
 
-const issuerPort = await freePort()
-const issuer = await startIssuer({ port: issuerPort, publicUrl: `http://localhost:${issuerPort}`, storeKey: 'fixture', allowInsecureHttp: true })
+const test = await startTestIssuer()
+const issuer = test.issuer
 const wallet = await createWalletAgent({ storeId: 'fixture', storeKey: 'fixture', allowInsecureHttp: true })
 
 async function present(claims: string[], nonce: string, state: string) {
@@ -54,10 +54,8 @@ async function present(claims: string[], nonce: string, state: string) {
 }
 
 try {
-  await acceptCredentialOffer(
-    wallet,
-    await issuer.createOffer({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' }),
-  )
+  await issuer.createDiplomaEntitlement({ name: 'Ada Lovelace', email: 'ada@example.com', degree: 'Mathematics', university: 'Trusted University' })
+  await fetchCredential(wallet, test, 'Diploma', 'ada@example.com')
   const issuedAt = Math.floor(Date.now() / 1000)
   const full = await present(['degree', 'email'], 'fixture-nonce', 'fixture-state')
   const withoutEmail = await present(['degree'], 'fixture-nonce-2', 'fixture-state-2')
@@ -69,14 +67,6 @@ try {
   console.log('wrote', output)
 } finally {
   await wallet.shutdown()
-  await issuer.close()
+  await test.close()
   capture.close()
-}
-
-async function freePort(): Promise<number> {
-  const server = createServer()
-  await new Promise<void>((resolve) => server.listen(0, resolve))
-  const { port } = server.address() as AddressInfo
-  await new Promise((resolve) => server.close(resolve))
-  return port
 }
