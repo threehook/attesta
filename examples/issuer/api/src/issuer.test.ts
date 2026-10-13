@@ -220,3 +220,32 @@ describe('diploma issuer and wallet', () => {
     }
   })
 })
+
+// Runs against ATTESTA_TEST_POSTGRES=host:port with ATTESTA_TEST_POSTGRES_USER and _PASSWORD; skipped without it.
+describe.skipIf(!process.env.ATTESTA_TEST_POSTGRES)('issuer on postgres', () => {
+  it('keeps its store and its entitlements in Postgres, and issues after a restart', async () => {
+    const database = {
+      host: process.env.ATTESTA_TEST_POSTGRES!,
+      user: process.env.ATTESTA_TEST_POSTGRES_USER ?? 'postgres',
+      password: process.env.ATTESTA_TEST_POSTGRES_PASSWORD ?? '',
+    }
+    const options = { storeKey: 'k', allowInsecureHttp: true, database, seed: 'postgres seed' }
+    const wallet = await createWalletAgent({ storeId: 'wallet-pg', storeKey: 'wallet-test-key', allowInsecureHttp: true })
+    const first = await startIssuer({ ...options, port: await freePort(), publicUrl: 'http://localhost:1' })
+    const { id } = await first.entitlements.create({ email: 'pg@example.com', type: 'Employee', claims: {} })
+    await first.close()
+
+    const port = await freePort()
+    const second = await startIssuer({ ...options, port, publicUrl: `http://localhost:${port}` })
+    try {
+      expect(second.did).toBe(first.did)
+      expect((await second.entitlements.findOpenByEmail('pg@example.com')).map((e) => e.id)).toContain(id)
+      const staff = await acceptCredentialOffer(wallet, await second.createEmployeeOffer(employee))
+      expect(staff[0].type).toBe('Employee')
+    } finally {
+      await second.close()
+      await wallet.shutdown()
+    }
+  })
+})
+

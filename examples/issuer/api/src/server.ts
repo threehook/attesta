@@ -11,11 +11,17 @@ if (!Number.isInteger(port) || port < 0 || port > 65535) {
 }
 const publicUrl = process.env.ATTESTA_ISSUER_PUBLIC_URL ?? `http://localhost:${port}`
 
+const dbHost = process.env.ATTESTA_ISSUER_DB_HOST
+const database = dbHost
+  ? { host: dbHost, user: process.env.ATTESTA_ISSUER_DB_USER ?? 'issuer', password: process.env.ATTESTA_ISSUER_DB_PASSWORD ?? '' }
+  : undefined
+
 const issuer = await startIssuer({
   port,
   publicUrl,
   storeKey: process.env.ATTESTA_ISSUER_KEY ?? 'dev-only-insecure-issuer-key',
   path: process.env.ATTESTA_ISSUER_DIR ?? join(homedir(), '.attesta-issuer'),
+  database,
   allowInsecureHttp: publicUrl.startsWith('http://'),
   seed: process.env.ATTESTA_ISSUER_SEED ?? DEV_SEED,
   issuerName: process.env.ATTESTA_ISSUER_NAME ?? 'Gemeente Vlierdam',

@@ -9,6 +9,7 @@ import { agentDependencies } from '@credo-ts/node'
 import { OpenId4VciCredentialFormatProfile, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
+import { MemoryEntitlementStore, PostgresEntitlementStore, type DatabaseOptions, type EntitlementStore } from './entitlements.js'
 
 export interface DiplomaClaims {
   name: string
@@ -43,8 +44,10 @@ export interface IssuerOptions {
   /** Where wallets reach this issuer; it appears in every offer and in the issuer's metadata. */
   publicUrl: string
   storeKey: string
-  /** Directory that holds the SQLite store file with the issuer's signing key; created if missing. Omit to keep it in memory only. */
+  /** Directory that holds the SQLite store file with the issuer's signing key; created if missing. Omit to keep it in memory only. Ignored with `database`. */
   path?: string
+  /** A Postgres server for everything the issuer keeps: its store and its entitlements. Without it they live in `path`, or in memory. */
+  database?: DatabaseOptions
   allowInsecureHttp?: boolean
   /** Derives the issuer's signing key (and so its DID) from this text, instead of generating a random key on first start. */
   seed?: string
@@ -52,6 +55,8 @@ export interface IssuerOptions {
   issuerName?: string
 }
 
+/** The database for entitlements; the library's own store gets another, named after its store id. */
+const ENTITLEMENTS_DATABASE = 'issuer_entitlements'
 const ISSUER_ID = 'diploma'
 const DIPLOMA = 'Diploma'
 const EMPLOYEE = 'Employee'
@@ -97,7 +102,8 @@ const sdJwtConfiguration = (type: CredentialType) => ({
 })
 
 export async function startIssuer(options: IssuerOptions) {
-  if (options.path) mkdirSync(options.path, { recursive: true })
+  if (options.path && !options.database) mkdirSync(options.path, { recursive: true })
+  const entitlements: EntitlementStore = options.database ? await PostgresEntitlementStore.connect(options.database, ENTITLEMENTS_DATABASE) : new MemoryEntitlementStore()
   const app = express()
   const agent = new Agent({
     config: { allowInsecureHttpUrls: options.allowInsecureHttp ?? false },
@@ -108,7 +114,9 @@ export async function startIssuer(options: IssuerOptions) {
         store: {
           id: 'issuer',
           key: options.storeKey,
-          database: { type: 'sqlite', config: options.path ? { path: join(options.path, 'issuer.sqlite') } : { inMemory: true } },
+          database: options.database
+            ? { type: 'postgres', config: { host: options.database.host }, credentials: { account: options.database.user, password: options.database.password } }
+            : { type: 'sqlite', config: options.path ? { path: join(options.path, 'issuer.sqlite') } : { inMemory: true } },
         },
       }),
       openid4vc: new OpenId4VcModule({
@@ -219,11 +227,13 @@ export async function startIssuer(options: IssuerOptions) {
     agent,
     /** The DID that signs every credential; verifiers trust the issuer by this identifier. */
     did: issuerDid.did,
+    entitlements,
     createOffer: (claims: DiplomaClaims) => createOffer(DIPLOMA, claims),
     createEmployeeOffer: (claims: EmployeeClaims) => createOffer(EMPLOYEE, claims),
     async close() {
       await new Promise((resolve) => server.close(resolve))
       await agent.shutdown()
+      await entitlements.close()
     },
   }
 }
