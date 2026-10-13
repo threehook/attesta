@@ -1,5 +1,5 @@
-# Takes the mails the login server sends and shows them in a web page at http://localhost:8025; nothing leaves the cluster. A real organisation points
-# the login server at its own mail server instead.
+# Takes the mails the issuer API sends (the QR codes) and shows them in a web page at http://localhost:8025; nothing leaves the cluster. A real
+# organisation points the issuer API at its own mail server instead.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
