@@ -2,11 +2,11 @@ import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import express from 'express'
 import { LOGO_SVG } from './logo.js'
-import { renderEmployeeForm, renderForm, renderOffer, renderRetrieve, renderWelcome, type Chrome } from './page.js'
+import { renderCreated, renderEmployeeForm, renderForm, renderRetrieve, renderWelcome, type Chrome } from './page.js'
 
 export interface GuiOptions {
   port: number
-  /** Where the issuer API is reached; the pages ask it for what they show and for every offer. */
+  /** Where the issuer API is reached; the pages ask it for what they show and to record every entitlement. */
   apiUrl: string
 }
 
@@ -52,18 +52,18 @@ export async function startGui(options: GuiOptions) {
     res.type('html').send(renderEmployeeForm(i.departments, i.descriptions.Employee, chromeOf(i)))
   })
 
-  // The form goes to the API as JSON; its answer is either the offer or the reason it was refused.
-  const offer = (path: string, employee: boolean): express.RequestHandler => async (req, res) => {
+  // The form goes to the API as JSON; its answer is either that the entitlement is recorded or the reason it was refused.
+  const create = (path: string, employee: boolean): express.RequestHandler => async (req, res) => {
     const answer = await fetch(`${api}${path}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(req.body ?? {}) })
-    const body = (await answer.json()) as { offerUri?: string; error?: string }
-    if (!answer.ok || !body.offerUri) {
+    const body = (await answer.json()) as { entitlementId?: string; error?: string }
+    if (!answer.ok || !body.entitlementId) {
       res.status(answer.ok ? 502 : answer.status).json({ error: body.error ?? 'the issuer API sent an unusable answer' })
       return
     }
-    res.type('html').send(renderOffer(body.offerUri, chromeOf(await info()), employee))
+    res.type('html').send(renderCreated(String(req.body?.email ?? ''), chromeOf(await info()), employee))
   }
-  app.post('/offers', offer('/offers', false))
-  app.post('/employee/offers', offer('/employee/offers', true))
+  app.post('/diploma', create('/entitlements/diploma', false))
+  app.post('/employee', create('/entitlements/employee', true))
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)

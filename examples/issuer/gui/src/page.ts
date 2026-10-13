@@ -34,7 +34,7 @@ export function renderForm(description: string, chrome: Chrome, university = '')
   return renderPage({
     title: 'Diploma',
     crumbs: home,
-    body: `<form class="card" method="post" action="/offers">
+    body: `<form class="card" method="post" action="/diploma">
   <label>Naam <input name="name" required></label>
   <label>E-mailadres <input name="email" type="email" required></label>
   <label>Graad <input name="degree" required></label>
@@ -56,7 +56,7 @@ export function renderEmployeeForm(departments: string[], description: string, c
     crumbs: home,
     active: LAADPALEN.id,
     body: `<p class="intro">Creëer een diploma of certificaat (verifiable credential) voor één van uw werknemers.</p>
-<form class="card" method="post" action="/employee/offers">
+<form class="card" method="post" action="/employee">
   <label>Naam <input name="name" required></label>
   <label>E-mailadres <input name="email" type="email" required></label>
   <label>Afdeling <select name="department">${options}</select></label>
@@ -71,14 +71,14 @@ export function renderEmployeeForm(departments: string[], description: string, c
   })
 }
 
-/** Shown after an offer is created; `employee` keeps the menu item highlighted. */
-export function renderOffer(offerUri: string, chrome: Chrome, employee: boolean): string {
+/** Shown after an entitlement is recorded; `employee` keeps the menu item highlighted. */
+export function renderCreated(email: string, chrome: Chrome, employee: boolean): string {
   return renderPage({
-    title: 'Aanbod',
+    title: 'Credential klaargezet',
     crumbs: employee ? [...home, { label: LAADPALEN.label, href: LAADPALEN.href }] : home,
     active: employee ? LAADPALEN.id : undefined,
-    body: `<p class="intro">Open deze link in de wallet:</p>
-<p><a href="${escape(offerUri)}"><code>${escape(offerUri)}</code></a></p>`,
+    body: `<p class="intro">Het credential staat klaar voor <strong>${escape(email)}</strong>. De medewerker haalt het op via <a href="${escape(OPHALEN.href)}">${escape(OPHALEN.label)}</a>
+      en meldt zich aan met een link die per e-mail wordt gestuurd.</p>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
   })

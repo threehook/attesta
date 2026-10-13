@@ -30,7 +30,7 @@ beforeEach(async () => {
         res.end(JSON.stringify({ error: refuse }))
         return
       }
-      res.end(JSON.stringify({ offerUri: 'openid-credential-offer://?x=1' }))
+      res.end(JSON.stringify({ entitlementId: 'e-1' }))
     })
   })
   await new Promise<void>((resolve) => api.listen(0, resolve))
@@ -112,19 +112,21 @@ describe('issuer pages', () => {
     expect(html).toContain('<li><a href="/">Home</a></li><li aria-current="page">Mijn credential ophalen</li>')
   })
 
-  it('posts a form to the API and shows the offer link', async () => {
-    const res = await fetch(`${baseUrl}/employee/offers`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
+  it('posts a form to the API and says the credential is ready, with no link to give out', async () => {
+    const res = await fetch(`${baseUrl}/employee`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
 
-    expect(posted).toEqual([{ path: '/employee/offers', body: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } }])
+    expect(posted).toEqual([{ path: '/entitlements/employee', body: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } }])
     const html = await res.text()
-    expect(html).toContain('<code>openid-credential-offer://?x=1</code>')
-    expect(html).toContain('<li><a href="/">Home</a></li><li><a href="/employee">Aanvragen laadpalen</a></li><li aria-current="page">Aanbod</li>')
+    expect(html).toContain('<strong>jerry@example.com</strong>')
+    expect(html).toContain('<a href="/ophalen">Mijn credential ophalen</a>')
+    expect(html).not.toContain('openid-credential-offer')
+    expect(html).toContain('<li><a href="/">Home</a></li><li><a href="/employee">Aanvragen laadpalen</a></li><li aria-current="page">Credential klaargezet</li>')
   })
 
   it('passes on why the API refused a form', async () => {
     refuse = 'email is not an email address'
 
-    const res = await fetch(`${baseUrl}/offers`, form({ name: 'A', email: 'nope', degree: 'D', university: 'U' }))
+    const res = await fetch(`${baseUrl}/diploma`, form({ name: 'A', email: 'nope', degree: 'D', university: 'U' }))
 
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: 'email is not an email address' })
