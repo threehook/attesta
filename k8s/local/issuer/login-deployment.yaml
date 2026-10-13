@@ -1,0 +1,72 @@
+# The issuer's login server: holders log in with a link sent to their email address. The issuer API reaches it by its Service name; the holder's browser
+# reaches it through the Ingress at /login.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-login
+  namespace: attesta
+  labels:
+    app: issuer-login
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: issuer-login
+  template:
+    metadata:
+      labels:
+        app: issuer-login
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: issuer-login
+          image: attesta-issuer-login:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4002
+          env:
+            # What the holder's browser opens, and what the issuer API calls: the pod cannot reach the public name, which resolves to the pod itself.
+            - name: ATTESTA_LOGIN_PUBLIC_URL
+              value: https://issuer.attesta.corbencreatives.nl/login
+            - name: ATTESTA_LOGIN_ISSUER
+              value: http://issuer-login:4002/login
+            - name: ATTESTA_LOGIN_REDIRECT_URIS
+              value: https://issuer.attesta.corbencreatives.nl/oid4vci/diploma/redirect
+            - name: ATTESTA_LOGIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-login
+                  key: client-secret
+            - name: ATTESTA_LOGIN_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-login
+                  key: seed
+            - name: ATTESTA_LOGIN_DB_HOST
+              value: issuer-postgres:5432
+            - name: ATTESTA_LOGIN_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: user
+            - name: ATTESTA_LOGIN_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: password
+            - name: ATTESTA_LOGIN_SMTP_HOST
+              value: issuer-mailpit
+            - name: ATTESTA_LOGIN_SMTP_PORT
+              value: "1025"
+          readinessProbe:
+            httpGet:
+              path: /login/jwks
+              port: 4002
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /login/jwks
+              port: 4002
+            initialDelaySeconds: 10
+            periodSeconds: 10

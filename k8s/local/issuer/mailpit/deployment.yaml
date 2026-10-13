@@ -1,0 +1,31 @@
+# Takes the mails the login server sends and shows them in a web page at http://localhost:8025; nothing leaves the cluster. A real organisation points
+# the login server at its own mail server instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-mailpit
+  namespace: attesta
+  labels:
+    app: issuer-mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: issuer-mailpit
+  template:
+    metadata:
+      labels:
+        app: issuer-mailpit
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.21
+          ports:
+            - containerPort: 1025
+            - containerPort: 8025
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: 8025
+            periodSeconds: 5

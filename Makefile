@@ -9,6 +9,7 @@ KUBE_CONTEXT := docker-desktop
 # Same unique-tag reasoning as IMAGE above.
 ISSUER_API_IMAGE := attesta-issuer-api:dev-$(shell date +%Y%m%d%H%M%S)
 ISSUER_GUI_IMAGE := attesta-issuer-gui:dev-$(shell date +%Y%m%d%H%M%S)
+ISSUER_LOGIN_IMAGE := attesta-issuer-login:dev-$(shell date +%Y%m%d%H%M%S)
 
 LAADPALEN_API_IMAGE := laadpalen-api:dev-$(shell date +%Y%m%d%H%M%S)
 LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
@@ -31,7 +32,7 @@ DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
+	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs k8s-issuer-login-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana
 
@@ -110,6 +111,7 @@ k8s-ensure-policies:
 docker-build-issuer:
 	docker build -f examples/issuer/api/Dockerfile -t $(ISSUER_API_IMAGE) .
 	docker build -f examples/issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
+	docker build -f examples/issuer/login/Dockerfile -t $(ISSUER_LOGIN_IMAGE) .
 
 # Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
 # policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.
@@ -118,30 +120,39 @@ k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) delete deployment/attesta-issuer service/attesta-issuer -n $(NAMESPACE) --ignore-not-found
 	$(MAKE) k8s-issuer-secret
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres
-	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres -n $(NAMESPACE)
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-mailpit -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/login-deployment.yaml -f k8s/local/issuer/login-service.yaml -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=$(ISSUER_API_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=$(ISSUER_GUI_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) set image deployment/issuer-login issuer-login=$(ISSUER_LOGIN_IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-login -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
-# The issuer database's account, random, created once. Changing it later does not change the database that already exists.
+# The issuer database's account, and the login server's client secret and signing seed: random, created once. Changing the account later does not
+# change the database that already exists.
 k8s-issuer-secret:
 	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-db -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-db -n $(NAMESPACE) \
 			--from-literal=user=issuer --from-literal=password=$$(openssl rand -hex 24)
+	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-login -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-login -n $(NAMESPACE) \
+			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=seed=$$(openssl rand -hex 24)
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it — and the issuer's data: its volume claim and its Secret.
 k8s-issuer-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres --ignore-not-found
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/login-deployment.yaml -f k8s/local/issuer/login-service.yaml -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml --ignore-not-found
 
 k8s-issuer-restart:
-	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/attesta-issuer-api deployment/attesta-issuer-gui -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/attesta-issuer-api deployment/attesta-issuer-gui deployment/issuer-login -n $(NAMESPACE)
 
 k8s-issuer-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer-api -f
+
+k8s-issuer-login-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/issuer-login -f
 
 k8s-issuer-gui-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer-gui -f

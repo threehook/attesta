@@ -28,6 +28,14 @@ spec:
             # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into every offer.
             - name: ATTESTA_ISSUER_PUBLIC_URL
               value: https://issuer.attesta.corbencreatives.nl
+            # The login server by the name the pod reaches it at; the holder's browser is sent to the public name the login server's metadata gives.
+            - name: ATTESTA_ISSUER_LOGIN_URL
+              value: http://issuer-login:4002/login
+            - name: ATTESTA_ISSUER_LOGIN_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-login
+                  key: client-secret
             - name: ATTESTA_ISSUER_DB_HOST
               value: issuer-postgres:5432
             - name: ATTESTA_ISSUER_DB_USER

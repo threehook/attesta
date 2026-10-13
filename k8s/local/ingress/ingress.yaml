@@ -34,6 +34,13 @@ spec:
     - host: issuer.attesta.corbencreatives.nl
       http:
         paths:
+          - path: /login
+            pathType: Prefix
+            backend:
+              service:
+                name: issuer-login
+                port:
+                  number: 4002
           - path: /oid4vci
             pathType: Prefix
             backend:
