@@ -10,6 +10,8 @@ presentation that discloses only what was asked; the backend verifies it and a G
   per request, 5 minute lifetime), `internal/authz` runs Gno policies in-process (gnovm), `internal/scripts` stores policy source (loaded from `ATTESTA_POLICIES_DIR`, which
   it watches, and hot-deployed through `POST /admin/policies`; hot deployment without a restart is a requirement), `internal/httpapi` is the HTTP layer.
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
+- `github.com/threehook/enforcer-go` (own public repo, MIT, checked out beside this one as `../enforcer-go`): Go library an application uses to enforce Attesta's decisions: start an
+  authorization, read the outcome, act only on allow. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `examples/issuer/`: demo issuer (Express + Credo, OpenID4VCI). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
@@ -51,6 +53,7 @@ The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secr
 - The Makefile does `kubectl apply` then `kubectl set image` with a unique tag; re-applying a manifest alone resets the image to the nonexistent `:dev`.
 - The issuer image is Debian-based because Askar's Linux library is built for glibc. The old and new LoadBalancers share host port 4000.
 - Desktop wallet dev switches (`ATTESTA_WALLET_KEY`, `ATTESTA_WALLET_DATA_DIR`, `ATTESTA_ALLOW_INSECURE_HTTP`) are honoured only when the app is not packaged.
+- A new `enforcer-go` tag is not visible to `go mod tidy` until sum.golang.org drops its cached 404 (about 30 minutes); `GOPROXY=direct GONOSUMDB=github.com/threehook/enforcer-go` skips the wait.
 - pnpm 12 blocks install scripts that are not listed in `allowBuilds`; `-s` is not a pnpm flag.
 
 ## How the owner works
