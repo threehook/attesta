@@ -5,7 +5,7 @@ export interface Mail {
   subject: string
   text: string
   html?: string
-  attachments?: Array<{ filename: string; content: Buffer; contentType: string; /** Lets the html show the file inline. */ cid?: string }>
+  attachments?: Array<{ filename: string; content: Buffer; contentType: string; /** Lets the html show the file inline instead of offering it as a file. */ cid?: string }>
 }
 
 /** Where the issuer's mail goes out. An organisation's own mail server is one implementation, a mail catcher another. */

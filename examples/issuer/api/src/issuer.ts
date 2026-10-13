@@ -270,7 +270,11 @@ export async function startIssuer(options: IssuerOptions) {
       subject: `Uw credential staat klaar${where}`,
       text: `Er staat een credential voor u klaar${where}.\n\nSla de bijlage (credential.png) op. Kies in uw wallet "QR-code uploaden" en kies dat bestand; de rest gaat vanzelf.\n\nDe QR-code is ${hours} uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.\nVerwachtte u dit niet? Dan kunt u dit bericht negeren.\n`,
       html: `<p>Er staat een credential voor u klaar${where}.</p><p>Sla de afbeelding hieronder op (of de bijlage <em>credential.png</em>). Kies in uw wallet <strong>QR-code uploaden</strong> en kies dat bestand; de rest gaat vanzelf.</p><p><img src="cid:credential-qr" alt="QR-code" width="240" height="240"></p><p>De QR-code is ${hours} uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.</p><p>Verwachtte u dit niet? Dan kunt u dit bericht negeren.</p>`,
-      attachments: [{ filename: 'credential.png', content: qr, contentType: 'image/png', cid: 'credential-qr' }],
+      // Once as a file to save, and once to show in the mail itself.
+      attachments: [
+        { filename: 'credential.png', content: qr, contentType: 'image/png' },
+        { filename: 'qr-code.png', content: qr, contentType: 'image/png', cid: 'credential-qr' },
+      ],
     })
     return { offerUri: credentialOffer, qr }
   }
