@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attesta-issuer-gui
+  namespace: attesta
+  labels:
+    app: attesta-issuer-gui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attesta-issuer-gui
+  template:
+    metadata:
+      labels:
+        app: attesta-issuer-gui
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: attesta-issuer-gui
+          image: attesta-issuer-gui:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 4000
+          env:
+            - name: ATTESTA_ISSUER_API_URL
+              value: http://attesta-issuer-api:4001
+          readinessProbe:
+            httpGet:
+              path: /logo.svg
+              port: 4000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /logo.svg
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10

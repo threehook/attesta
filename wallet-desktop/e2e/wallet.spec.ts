@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { startIssuer } from "../../examples/issuer/src/issuer.js";
+import { startIssuer } from "../../examples/issuer/api/src/issuer.js";
 
 const appDir = join(import.meta.dirname, "..");
 

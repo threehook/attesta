@@ -9,8 +9,6 @@ import { agentDependencies } from '@credo-ts/node'
 import { OpenId4VciCredentialFormatProfile, OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import express from 'express'
-import { LOGO_SVG } from './logo.js'
-import { renderEmployeeForm, renderForm, renderOffer, renderWelcome } from './page.js'
 
 export interface DiplomaClaims {
   name: string
@@ -170,17 +168,10 @@ export async function startIssuer(options: IssuerOptions) {
 
   // Registered after the OpenID4VCI routes, as the module recommends.
   app.use(express.json())
-  app.use(express.urlencoded({ extended: false }))
   const [issuerDid] = await agent.dids.getCreatedDids({ method: 'key' })
-  const chrome = { issuerName: options.issuerName, did: issuerDid.did }
-  app.get('/logo.svg', (_req, res) => {
-    res.type('image/svg+xml').send(LOGO_SVG)
-  })
-  app.get('/', (_req, res) => {
-    res.type('html').send(renderWelcome(chrome))
-  })
-  app.get('/diploma', (_req, res) => {
-    res.type('html').send(renderForm(DEFAULT_DESCRIPTIONS[DIPLOMA], chrome, options.issuerName))
+  // What the page needs to show the forms and the issuer it issues as.
+  app.get('/info', (_req, res) => {
+    res.json({ issuerName: options.issuerName, did: issuerDid.did, departments: DEPARTMENTS, descriptions: DEFAULT_DESCRIPTIONS })
   })
   app.post('/offers', async (req, res) => {
     const { name, email, degree, university, description } = req.body ?? {}
@@ -192,10 +183,7 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'email is not an email address' })
       return
     }
-    respondWithOffer(req, res, false, await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }))
-  })
-  app.get('/employee', (_req, res) => {
-    res.type('html').send(renderEmployeeForm(DEPARTMENTS, DEFAULT_DESCRIPTIONS[EMPLOYEE], chrome))
+    res.json({ offerUri: await createOffer(DIPLOMA, { name, email, degree, university, description: asText(description) }) })
   })
   app.post('/employee/offers', async (req, res) => {
     const { name, email, department, organisation, diploma, diplomaValidUntil: validUntil, description } = req.body ?? {}
@@ -220,16 +208,8 @@ export async function startIssuer(options: IssuerOptions) {
       res.status(400).json({ error: 'diplomaValidUntil is in the past; a wallet refuses an expired credential' })
       return
     }
-    respondWithOffer(req, res, true, await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }))
+    res.json({ offerUri: await createOffer(EMPLOYEE, { name, email, department, organisation, diploma, diplomaValidUntil, description: asText(description) }) })
   })
-
-  function respondWithOffer(req: express.Request, res: express.Response, employee: boolean, offerUri: string) {
-    if (req.accepts(['json', 'html']) === 'json') {
-      res.json({ offerUri })
-    } else {
-      res.type('html').send(renderOffer(offerUri, chrome, employee))
-    }
-  }
 
   const server: Server = await new Promise((resolve) => {
     const s = app.listen(options.port, () => resolve(s))

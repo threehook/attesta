@@ -5,7 +5,7 @@ import { startIssuer } from './issuer.js'
 // Fixes the issuer's DID so the example policy can name it; override ATTESTA_ISSUER_SEED for anything but local development.
 const DEV_SEED = 'dev-only-insecure-issuer-seed'
 
-const port = Number(process.env.ATTESTA_ISSUER_PORT ?? 4000)
+const port = Number(process.env.ATTESTA_ISSUER_PORT ?? 4001)
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
   throw new Error(`ATTESTA_ISSUER_PORT must be a port number, got "${process.env.ATTESTA_ISSUER_PORT}"`)
 }

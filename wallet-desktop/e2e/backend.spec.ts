@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
-import { startIssuer } from "../../examples/issuer/src/issuer.js";
+import { startIssuer } from "../../examples/issuer/api/src/issuer.js";
 
 const backend = process.env.ATTESTA_BACKEND_URL?.replace(/\/$/, "");
 const adminToken = process.env.ATTESTA_ADMIN_TOKEN ?? "dev-only-insecure-admin-token";

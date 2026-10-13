@@ -146,38 +146,10 @@ describe('diploma issuer and wallet', () => {
     expect(meta.display).toEqual([{ name: 'Gemeente Utrecht' }])
   })
 
-  it('pre-fills the university with the logical issuer', async () => {
-    expect(await (await fetch(`${baseUrl}/diploma`)).text()).toContain('name="university" value="Gemeente Utrecht"')
-  })
+  it('tells the pages which issuer it is and what the forms offer', async () => {
+    const info = await (await fetch(`${baseUrl}/info`)).json()
 
-  it('shows the welcome page with a block per menu item and the issuer in the footer', async () => {
-    const html = await (await fetch(baseUrl)).text()
-
-    expect(html).toContain('Verifiable Credentials')
-    expect(html).toContain('<h2>Aanvragen laadpalen</h2>')
-    expect(html).toContain('<li aria-current="page">Home</li>')
-    expect(html).toContain('<nav class="menu" aria-label="Menu"><ul><li><a href="/" aria-current="page">Home</a></li></ul><h2>')
-    expect(html).toContain(`Uitgever: Gemeente Utrecht · ${issuer.did}`)
-  })
-
-  it('serves the logo that the header shows', async () => {
-    const res = await fetch(`${baseUrl}/logo.svg`)
-
-    expect(res.headers.get('content-type')).toContain('image/svg+xml')
-    expect(await (await fetch(baseUrl)).text()).toContain('<img src="/logo.svg" alt="Gemeente Utrecht">')
-  })
-
-  it('marks the current menu item and shows the breadcrumb', async () => {
-    const html = await (await fetch(`${baseUrl}/employee`)).text()
-
-    expect(html).toContain('<a href="/employee" aria-current="page">Aanvragen laadpalen</a>')
-    expect(html).toContain('<li aria-current="page">Aanvragen laadpalen</li>')
-    expect(html).toContain('<li><a href="/">Home</a></li><li aria-current="page">Aanvragen laadpalen</li>')
-  })
-
-  it('pre-fills the description in both forms', async () => {
-    expect(await (await fetch(`${baseUrl}/diploma`)).text()).toContain(`name="description" value="${DEFAULT_DESCRIPTIONS.Diploma}"`)
-    expect(await (await fetch(`${baseUrl}/employee`)).text()).toContain(`name="description" value="${DEFAULT_DESCRIPTIONS.Employee}"`)
+    expect(info).toEqual({ issuerName: 'Gemeente Utrecht', did: issuer.did, departments: ['burgerzaken', 'secretariaat'], descriptions: DEFAULT_DESCRIPTIONS })
   })
 
   it('offers each credential type under its own name', async () => {
@@ -225,14 +197,6 @@ describe('diploma issuer and wallet', () => {
     const { offerUri } = (await res.json()) as { offerUri: string }
 
     expect((await acceptCredentialOffer(wallet, offerUri))[0].claims).toMatchObject({ exp: endOfDay('2031-06-30') })
-  })
-
-  it('serves the employee form', async () => {
-    const html = await (await fetch(`${baseUrl}/employee`)).text()
-
-    expect(html).toContain('name="diplomaValidUntil"')
-    expect(html).toContain('<option value="burgerzaken">Burgerzaken</option>')
-    expect(html).toContain('<option value="secretariaat">Secretariaat</option>')
   })
 
   it('still issues both credential types after a restart on the same store', async () => {

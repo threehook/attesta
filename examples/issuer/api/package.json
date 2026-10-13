@@ -1,8 +1,8 @@
 {
-  "name": "@attesta/issuer",
+  "name": "@attesta/issuer-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Demo credential issuer for Attesta: issues SD-JWT diploma credentials through OpenID4VCI.",
+  "description": "Demo credential issuer for Attesta, the part wallets and the issuer page talk to: OpenID4VCI endpoints and the JSON API that creates offers.",
   "type": "module",
   "scripts": {
     "start": "tsx src/server.ts",

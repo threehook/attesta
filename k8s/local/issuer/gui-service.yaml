@@ -1,0 +1,13 @@
+# LoadBalancer: Docker Desktop auto-forwards this to localhost:4000, no port-forward needed.
+apiVersion: v1
+kind: Service
+metadata:
+  name: attesta-issuer-gui
+  namespace: attesta
+spec:
+  selector:
+    app: attesta-issuer-gui
+  ports:
+    - port: 4000
+      targetPort: 4000
+  type: LoadBalancer
