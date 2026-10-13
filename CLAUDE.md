@@ -13,7 +13,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
 - `github.com/threehook/enforcer-go` (own public repo, MIT, checked out beside this one as `../enforcer-go`): Go library an application uses to enforce Attesta's decisions: start an
   authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
-- `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every offer; the credential reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
+- `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `examples/issuer/`: demo issuer, split in `api/` (Express + Credo, OpenID4VCI endpoints, entitlements in Postgres, and the mail with the QR code) and `gui/` (the pages, which only call the API). `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
@@ -56,6 +56,12 @@ The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secr
 - Desktop wallet dev switches (`ATTESTA_WALLET_KEY`, `ATTESTA_WALLET_DATA_DIR`, `ATTESTA_ALLOW_INSECURE_HTTP`) are honoured only when the app is not packaged.
 - A new `enforcer-go` tag is not visible to `go mod tidy` until sum.golang.org drops its cached 404 (about 30 minutes); `GOPROXY=direct GONOSUMDB=github.com/threehook/enforcer-go` skips the wait.
 - pnpm 12 blocks install scripts that are not listed in `allowBuilds`; `-s` is not a pnpm flag.
+
+## Words
+
+- **Entitlement:** the issuer's lasting right of one person (by email) to one credential. It is issued once. Not an "offer": an offer is a one-time message, which is what this replaced.
+- **QR code:** what the issuer mails to claim an entitlement; it has a lifetime (24 hours) and works once. The lifetime belongs to the QR code, not to the entitlement.
+- The standard and the library keep their own names, and so do we where they are fixed: `openid-credential-offer://`, `credential_offer_uri`, the `/offers/<id>` path, Credo's `createCredentialOffer`. Nothing we name ourselves says "offer".
 
 ## How the owner works
 

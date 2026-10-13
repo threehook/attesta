@@ -25,7 +25,7 @@ Key design decisions:
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string)`; `decision` is `Permit`, `Deny`, `NotApplicable` or `Indeterminate` (XACML), anything else is an error. `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. Every map in `obligations` and `advice` is one statement: its `id` key is the identifier and every other key is an attribute ID with a string value. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
-| Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every offer, and every disclosure unless they chose to always share with that application |
+| Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every credential it adds, and every disclosure unless they chose to always share with that application |
 | TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `examples/issuer/{api,gui}` and `examples/laadpalen/gui` |
 
 ## Repo layout
@@ -45,7 +45,7 @@ backend/
     httpapi/           HTTP handlers wiring the above together
   Dockerfile
 client-lib/                TypeScript package @attesta/client: typed client for the backend API (authorization requests, outcome polling, policy deploy)
-wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that accepts credential offers, answers presentation requests, and has a CLI
+wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that takes credentials from issuers' links, answers presentation requests, and has a CLI
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
   issuer/                  demo credential issuer: api/ (Express + Credo, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
@@ -67,7 +67,7 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 |---|---|---|
 | Issuer | `examples/issuer/gui` | The organisation's staff records a verifiable credential for an employee. The employee gets a mail with a QR code, uploads it in their wallet, and the wallet fetches the credential. The pages are in Dutch. |
 | Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
-| Wallet | `wallet-desktop` | The employee's wallet: reads the QR code from the mail, confirms every offer, and confirms every disclosure unless the employee chose to always share with that application. |
+| Wallet | `wallet-desktop` | The employee's wallet: reads the QR code from the mail, confirms every credential it adds, and confirms every disclosure unless the employee chose to always share with that application. |
 
 ### Issuer
 
