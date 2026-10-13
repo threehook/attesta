@@ -5,6 +5,7 @@ import type { WalletApi } from "../shared/api.js";
 const channels = {
   list: "wallet:list",
   prepare: "wallet:prepare",
+  prepareImage: "wallet:prepare-image",
   approve: "wallet:approve",
   decline: "wallet:decline",
   settings: "wallet:settings",
@@ -17,6 +18,7 @@ const channels = {
 const api: WalletApi = {
   list: () => ipcRenderer.invoke(channels.list),
   prepare: (link) => ipcRenderer.invoke(channels.prepare, link),
+  prepareImage: (image) => ipcRenderer.invoke(channels.prepareImage, image),
   approve: (id, remember) => ipcRenderer.invoke(channels.approve, id, remember),
   decline: (id) => ipcRenderer.invoke(channels.decline, id),
   settings: () => ipcRenderer.invoke(channels.settings),

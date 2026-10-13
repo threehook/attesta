@@ -4,7 +4,14 @@ import { join } from "node:path";
 import type { WalletAgent } from "@attesta/wallet";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const core = vi.hoisted(() => ({ resolvePresentationRequest: vi.fn(), submitPresentation: vi.fn(), listCredentials: vi.fn() }));
+const core = vi.hoisted(() => ({
+  resolvePresentationRequest: vi.fn(),
+  submitPresentation: vi.fn(),
+  listCredentials: vi.fn(),
+  previewCredentialOffer: vi.fn(),
+  acceptPreviewedOffer: vi.fn(),
+  readQrImage: vi.fn(),
+}));
 vi.mock("@attesta/wallet", async (importOriginal) => ({ ...(await importOriginal<object>()), ...core }));
 
 import { WalletError, WalletService } from "./service.js";
@@ -28,6 +35,9 @@ beforeEach(() => {
   core.resolvePresentationRequest.mockReset();
   core.listCredentials.mockReset().mockResolvedValue([]);
   core.submitPresentation.mockReset().mockResolvedValue({ status: 200 });
+  core.previewCredentialOffer.mockReset();
+  core.acceptPreviewedOffer.mockReset().mockResolvedValue([]);
+  core.readQrImage.mockReset();
 });
 
 // Reading real offers and requests is covered end to end (e2e/wallet.spec.ts); here the wallet core is replaced to cover what the service decides.
@@ -203,3 +213,77 @@ describe("signing in", () => {
     expect((await s.prepare(link)).kind).toBe("presentation");
   });
 });
+
+const issuer = "https://issuer.example/oid4vci/diploma";
+const offerLink = "openid-credential-offer://?credential_offer_uri=x";
+const offered = { issuer, types: ["Employee"], resolved: {} };
+const image = new Uint8Array([1, 2, 3]);
+
+describe("WalletService, a QR code in an image", () => {
+  it("reads the link in the QR code and prepares the offer in it", async () => {
+    core.readQrImage.mockReturnValue(offerLink);
+    core.previewCredentialOffer.mockResolvedValue(offered);
+
+    const prepared = await service().prepareImage(image);
+
+    expect(core.readQrImage).toHaveBeenCalledWith(image);
+    expect(core.previewCredentialOffer).toHaveBeenCalledWith({}, offerLink);
+    expect(prepared).toMatchObject({ kind: "offer", issuer, types: ["Employee"] });
+    expect(core.acceptPreviewedOffer).not.toHaveBeenCalled();
+  });
+
+  it("adds nothing until the user agrees", async () => {
+    core.readQrImage.mockReturnValue(offerLink);
+    core.previewCredentialOffer.mockResolvedValue(offered);
+    core.acceptPreviewedOffer.mockResolvedValue([{ id: "1" }]);
+    const s = service();
+    const prepared = (await s.prepareImage(image)) as { id: string };
+
+    expect(await s.approve(prepared.id)).toEqual({ kind: "offer", credentials: [{ id: "1" }] });
+  });
+
+  it.each([
+    ["something that is not bytes", "not bytes"],
+    ["an empty file", new Uint8Array()],
+    ["a file that is too big", new Uint8Array(10 * 1024 * 1024 + 1)],
+  ])("refuses %s without looking at it", async (_name, input) => {
+    await expect(service().prepareImage(input)).rejects.toThrow("geen afbeelding met een QR-code");
+    expect(core.readQrImage).not.toHaveBeenCalled();
+  });
+
+  it("says why an image cannot be read", async () => {
+    core.readQrImage.mockImplementation(() => {
+      throw new Error("Er staat geen QR-code in deze afbeelding.");
+    });
+
+    await expect(service().prepareImage(image)).rejects.toThrow("Er staat geen QR-code in deze afbeelding.");
+  });
+
+  it("passes on what the issuer says about a QR code that has expired", async () => {
+    core.readQrImage.mockReturnValue(offerLink);
+    core.previewCredentialOffer.mockRejectedValue(new Error("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd."));
+
+    await expect(service().prepareImage(image)).rejects.toThrow("Er is een nieuwe QR-code naar uw e-mail gestuurd.");
+  });
+
+  it("tells the user when the issuer has no credential for them", async () => {
+    core.readQrImage.mockReturnValue(offerLink);
+    core.previewCredentialOffer.mockResolvedValue(offered);
+    core.acceptPreviewedOffer.mockRejectedValue(Object.assign(new Error("request failed"), { response: { credentialErrorResponseResult: { data: { error: "credential_request_denied" } } } }));
+    const s = service();
+    const prepared = (await s.prepareImage(image)) as { id: string };
+
+    await expect(s.approve(prepared.id)).rejects.toThrow("Er staat geen credential voor u klaar");
+  });
+
+  it("passes on any other failure as it is", async () => {
+    core.readQrImage.mockReturnValue(offerLink);
+    core.previewCredentialOffer.mockResolvedValue(offered);
+    core.acceptPreviewedOffer.mockRejectedValue(new Error("the issuer did not answer"));
+    const s = service();
+    const prepared = (await s.prepareImage(image)) as { id: string };
+
+    await expect(s.approve(prepared.id)).rejects.toThrow("did not answer");
+  });
+});
+

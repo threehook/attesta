@@ -25,6 +25,12 @@ export const MENU: { label: string; items: MenuItem[] }[] = [
         description: "Bekijk de credentials in uw wallet en wat ze over u zeggen.",
       },
       {
+        id: "qr",
+        label: "QR-code uploaden",
+        href: "#/qr",
+        description: "Kies de afbeelding met de QR-code uit de e-mail van een uitgever. De wallet haalt het credential dan zelf op.",
+      },
+      {
         id: "link",
         label: "Link openen",
         href: "#/link",

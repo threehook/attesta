@@ -482,3 +482,5 @@ section[aria-label="Delen"] li {
   margin: 12px 0;
   font-weight: 400;
 }
+
+.drop p{margin:8px 0 0;color:var(--muted)}

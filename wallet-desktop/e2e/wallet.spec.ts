@@ -5,8 +5,8 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { browserLogin, requestLink, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
-import { addCredential, captureBrowser, handOver as handOverTo, openLink as openLinkIn, openedByApp } from "./issuing.js";
+import { offerLinkFor, qrImageFor, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { addCredential, uploadQr } from "./issuing.js";
 
 const appDir = join(import.meta.dirname, "..");
 
@@ -58,7 +58,6 @@ test.describe.serial("desktop wallet", () => {
       },
     });
     window = await app.firstWindow();
-    await captureBrowser(app);
   });
 
   test.afterAll(async () => {
@@ -103,24 +102,16 @@ test.describe.serial("desktop wallet", () => {
     await expect(window.getByRole("status")).toContainText("geen credential-aanbod");
   });
 
-  test("shows what is asked, and adds the credential only once the user agreed and logged in at the issuer", async () => {
-    await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  test("shows an offer from a QR code, and adds the credential only once the user agrees", async () => {
+    await test_.issuer.sendOffer(await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
 
-    await openLink(requestLink(test_.url, "Diploma"));
+    await uploadQr(window, qrImageFor(test_, "ada@example.com"));
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Credential toevoegen?");
     await expect(dialog).toContainText("Diploma");
-    await expect(dialog).toContainText("U meldt zich eerst aan bij de uitgever");
     await expect(window.locator("footer")).not.toContainText("credential");
-    expect(await openedByApp(app)).toEqual([]);
 
-    await dialog.getByRole("button", { name: "Aanmelden" }).click();
-    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
-    const [address] = await openedByApp(app);
-    expect(new URL(address).origin).toBe(test_.url);
-    await handOverTo(app, await browserLogin(address, "ada@example.com", test_.mails));
-    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
-
+    await dialog.getByRole("button", { name: "Toevoegen" }).click();
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
     await expect(card).toContainText("Diploma");
@@ -130,13 +121,12 @@ test.describe.serial("desktop wallet", () => {
     await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
 
-  test("opens nothing in the browser and adds nothing when the user declines", async () => {
-    const before = (await openedByApp(app)).length;
+  test("adds nothing when the user declines an offer", async () => {
+    await test_.issuer.sendOffer(await test_.issuer.createDiplomaEntitlement({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" }));
 
-    await openLink(requestLink(test_.url, "Diploma"));
+    await uploadQr(window, qrImageFor(test_, "grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
 
-    expect(await openedByApp(app)).toHaveLength(before);
     await goTo("Credentials");
     await expect(window.getByRole("region", { name: "Credentials" }).locator("article")).toHaveCount(1);
   });
@@ -426,7 +416,8 @@ test("starts with its data in a folder whose path has spaces, as the system app 
 
 test("opens a link handed to the app when it starts", async () => {
   const issuer = await startTestIssuer();
-  const offer = requestLink(issuer.url, "Diploma");
+  await issuer.issuer.sendOffer(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+  const offer = offerLinkFor(issuer, "ada@example.com");
   const app = await electron.launch({
     args: [appDir, offer],
     env: {
@@ -448,7 +439,8 @@ test("opens a link handed to the app when it starts", async () => {
 test("opens a new window for a link that arrives after its window was closed", async () => {
   test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
   const issuer = await startTestIssuer();
-  const offer = requestLink(issuer.url, "Diploma");
+  await issuer.issuer.sendOffer(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+  const offer = offerLinkFor(issuer, "ada@example.com");
   const app = await electron.launch({
     args: [appDir],
     env: {
@@ -464,7 +456,7 @@ test("opens a new window for a link that arrives after its window was closed", a
     await expect(first.getByText("Nog geen credentials")).toBeVisible();
     await first.close();
     // What macOS sends when a link is opened while the app runs without a window.
-    await handOverTo(app, offer);
+    await app.evaluate(({ app: electronApp }, link) => electronApp.emit("open-url", { preventDefault() {} }, link), offer);
     const next = await app.waitForEvent("window");
     await expect(next.getByRole("dialog")).toContainText("Credential toevoegen?");
   } finally {
@@ -473,26 +465,32 @@ test("opens a new window for a link that arrives after its window was closed", a
   }
 });
 
-// More about the way a credential arrives: what the app does with an issuer that has nothing for the user, and with a return it did not ask for.
-test.describe.serial("desktop wallet, a login at an issuer that goes another way", () => {
-  const CALLBACK = "attesta-wallet://callback";
+// The QR code in the mail, uploaded in the wallet: what the app does when the code is good, expired, withdrawn or not a code at all.
+test.describe.serial("desktop wallet, a QR code from a mail", () => {
   let issuer: TestIssuer;
   let app: ElectronApplication;
   let window: Page;
+  const employee = {
+    name: "Jerry Smith",
+    email: "jerry@example.com",
+    department: "burgerzaken" as const,
+    organisation: "Gemeente Vlierdam",
+    diploma: "laadpalen-management",
+    diplomaValidUntil: "2031-06-30",
+  };
 
   test.beforeAll(async () => {
-    issuer = await startTestIssuer();
+    issuer = await startTestIssuer({ offerLifetimeSeconds: 2, renewalCooldownMs: 500 });
     app = await electron.launch({
       args: [appDir],
       env: {
         ...process.env,
         ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
-        ATTESTA_WALLET_KEY: "e2e-wallet-key-login",
+        ATTESTA_WALLET_KEY: "e2e-wallet-key-qr",
         ATTESTA_ALLOW_INSECURE_HTTP: "1",
       },
     });
     window = await app.firstWindow();
-    await captureBrowser(app);
   });
 
   test.afterAll(async () => {
@@ -500,20 +498,13 @@ test.describe.serial("desktop wallet, a login at an issuer that goes another way
     await issuer?.close();
   });
 
-  const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
   const credentials = () => window.getByRole("region", { name: "Credentials" }).locator("article");
+  const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
 
-  test("adds an employee credential after the login", async () => {
-    await issuer.issuer.createEmployeeEntitlement({
-      name: "Jerry Smith",
-      email: "jerry@example.com",
-      department: "burgerzaken",
-      organisation: "Gemeente Vlierdam",
-      diploma: "laadpalen-management",
-      diplomaValidUntil: "2031-06-30",
-    });
+  test("adds an employee credential from the uploaded QR code", async () => {
+    await issuer.issuer.createEmployeeEntitlement(employee);
 
-    await addCredential(app, window, issuer, "Employee", "jerry@example.com");
+    await addCredential(window, issuer, "Employee", employee.email);
 
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
@@ -522,27 +513,47 @@ test.describe.serial("desktop wallet, a login at an issuer that goes another way
     await expect(card).toContainText("burgerzaken");
   });
 
-  test("says so when the issuer has no credential for the user", async () => {
-    await openLinkIn(window, requestLink(issuer.url, "Employee"));
-    await window.getByRole("dialog").getByRole("button", { name: "Aanmelden" }).click();
-    await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
-    const address = (await openedByApp(app)).at(-1)!;
+  test("says so when the image has no QR code", async () => {
+    await uploadQr(window, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"), "blank.png");
 
-    await handOverTo(app, await browserLogin(address, "nobody@example.com", issuer.mails));
+    await expect(window.getByRole("status")).toContainText("geen QR-code");
+    await expect(window.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("says so when the file is not an image", async () => {
+    await uploadQr(window, Buffer.from("not an image"), "notes.txt");
+
+    await expect(window.getByRole("status")).toContainText("geen PNG- of JPEG");
+  });
+
+  test("tells the user that an expired QR code was replaced, and the new one works", async () => {
+    await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "grace@example.com", name: "Grace Hopper" });
+    const mails = issuer.sent.length;
+    await issuer.issuer.sendOffer((await issuer.issuer.entitlements.findOpenByEmail("grace@example.com"))[0]);
+    const old = qrImageFor(issuer, "grace@example.com");
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+
+    await uploadQr(window, old);
+
+    await expect(window.getByRole("status")).toContainText("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.");
+    expect(issuer.sent.length).toBe(mails + 2);
+    await uploadQr(window, qrImageFor(issuer, "grace@example.com"));
+    await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
+    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
+    await goTo("Credentials");
+    await expect(credentials()).toHaveCount(2);
+  });
+
+  test("says so when the credential was withdrawn after the mail", async () => {
+    const entitlement = await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "henk@example.com", name: "Henk" });
+    await issuer.issuer.sendOffer(entitlement);
+    await issuer.issuer.entitlements.revoke(entitlement.id);
+
+    await uploadQr(window, qrImageFor(issuer, "henk@example.com"));
+    await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
 
     await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
     await goTo("Credentials");
-    await expect(credentials()).toHaveCount(1);
-  });
-
-  test("does nothing with a return from a login it did not start", async () => {
-    const before = (await openedByApp(app)).length;
-
-    await handOverTo(app, `${CALLBACK}?code=made-up&state=x`);
-
-    await expect(window.getByRole("status")).toContainText("Er is geen aanmelding bezig");
-    expect(await openedByApp(app)).toHaveLength(before);
-    await goTo("Credentials");
-    await expect(credentials()).toHaveCount(1);
+    await expect(credentials()).toHaveCount(2);
   });
 });

@@ -3,6 +3,7 @@ import {
   acceptPreviewedOffer,
   listCredentials,
   previewCredentialOffer,
+  readQrImage,
   resolvePresentationRequest,
   submitPresentation,
   type CredentialOffer,
@@ -15,6 +16,8 @@ import { applicationOf, type WalletSettings } from "./settings.js";
 const OFFER_SCHEME = "openid-credential-offer://";
 const PRESENTATION_SCHEME = "openid4vp://";
 const PENDING_LIFETIME_MS = 10 * 60 * 1000;
+/** An image bigger than this is not a QR code someone mailed. */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 
 export class WalletError extends Error {}
 
@@ -39,6 +42,20 @@ export class WalletService {
 
   list(): Promise<HeldCredential[]> {
     return listCredentials(this.agent);
+  }
+
+  /** Reads the QR code in an image the user chose; it holds a link, which is then read like any other. */
+  async prepareImage(image: unknown): Promise<Prepared> {
+    if (!(image instanceof Uint8Array) || image.byteLength === 0 || image.byteLength > MAX_IMAGE_BYTES) {
+      throw new WalletError("Dit is geen afbeelding met een QR-code.");
+    }
+    let link: string;
+    try {
+      link = readQrImage(image);
+    } catch (error) {
+      throw new WalletError(error instanceof Error ? error.message : String(error));
+    }
+    return this.prepare(link);
   }
 
   async prepare(link: string): Promise<Prepared> {
@@ -70,7 +87,12 @@ export class WalletService {
   async approve(id: string, remember = false): Promise<Approved> {
     const item = this.take(id);
     if (item.kind === "offer") {
-      return { kind: "offer", credentials: await acceptPreviewedOffer(this.agent, item.offer) };
+      try {
+        return { kind: "offer", credentials: await acceptPreviewedOffer(this.agent, item.offer) };
+      } catch (error) {
+        if (refusalOf(error) === "credential_request_denied") throw new WalletError("Er staat geen credential voor u klaar bij deze uitgever.");
+        throw error;
+      }
     }
     const { status } = await submitPresentation(this.agent, item.request);
     const application = applicationOf(item.request.verifier);
@@ -140,4 +162,10 @@ export class WalletService {
       if (item.expires < this.now()) this.waiting.delete(id);
     }
   }
+}
+
+// The error the issuer answered a credential request with, when it was one.
+function refusalOf(error: unknown): string | undefined {
+  const data = (error as { response?: { credentialErrorResponseResult?: { data?: { error?: unknown } } } })?.response?.credentialErrorResponseResult?.data;
+  return typeof data?.error === "string" ? data.error : undefined;
 }

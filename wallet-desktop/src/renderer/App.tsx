@@ -50,6 +50,20 @@ export function App() {
     }
   }, []);
 
+  // The QR code from the mail, as an image: the wallet reads it and shows what is offered.
+  const openImage = useCallback(async (file: File) => {
+    setNotice(null);
+    setBusy(true);
+    try {
+      const result = await window.wallet.prepareImage(new Uint8Array(await file.arrayBuffer()));
+      if (!result.ok) setNotice({ kind: "error", text: result.error });
+      else if (result.value.kind === "shared") setNotice({ kind: "info", text: `Gedeeld: ${result.value.claims.map(claimLabel).join(", ")} met ${result.value.verifier}.` });
+      else setPending(result.value);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
   useEffect(() => {
     void refresh();
     window.wallet.onSettingsChanged(() => setSettingsVersion((v) => v + 1));
@@ -108,6 +122,34 @@ export function App() {
       {route === HOME && <Blocks />}
 
       {route.id === "credentials" && <CredentialList credentials={credentials} />}
+
+      {route.id === "qr" && (
+        <div
+          className="card drop"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => {
+            e.preventDefault();
+            const file = e.dataTransfer.files[0];
+            if (file) void openImage(file);
+          }}
+        >
+          <label>
+            QR-code uit de e-mail
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              aria-label="QR-code"
+              disabled={busy}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void openImage(file);
+              }}
+            />
+          </label>
+          <p>Kies de afbeelding of sleep hem hierheen.</p>
+        </div>
+      )}
 
       {route.id === "link" && (
         <form className="card" onSubmit={submit}>

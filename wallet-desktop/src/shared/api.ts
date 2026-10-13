@@ -65,6 +65,8 @@ export interface WalletApi {
   list(): Promise<Result<HeldCredential[]>>;
   // Reads a credential offer or a presentation request without acting on it.
   prepare(link: string): Promise<Result<Prepared>>;
+  // Reads the QR code in an image (PNG or JPEG) the user chose, which holds the same link, and prepares what it holds.
+  prepareImage(image: Uint8Array): Promise<Result<Prepared>>;
   // Carries out what the user agreed to. With remember, a presentation also makes its application one that is answered without asking: for a
   // sign-in that identity signs in to it automatically, for other requests the application gets what it asks for.
   approve(id: string, remember?: boolean): Promise<Result<Approved>>;
@@ -81,6 +83,7 @@ export interface WalletApi {
 export const channels = {
   list: "wallet:list",
   prepare: "wallet:prepare",
+  prepareImage: "wallet:prepare-image",
   approve: "wallet:approve",
   decline: "wallet:decline",
   settings: "wallet:settings",

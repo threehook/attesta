@@ -167,6 +167,7 @@ async function start() {
 
   ipcMain.handle(channels.list, () => handled(() => wallet.list()));
   ipcMain.handle(channels.prepare, (_event, link: string) => handled(() => wallet.prepare(link)));
+  ipcMain.handle(channels.prepareImage, (_event, image: unknown) => handled(() => wallet.prepareImage(image)));
   ipcMain.handle(channels.approve, (_event, id: string, remember?: boolean) => handled(() => wallet.approve(id, remember === true)));
   ipcMain.handle(channels.decline, (_event, id: string) => handled(() => wallet.decline(id) ?? null));
   ipcMain.handle(channels.settings, () => handled(() => wallet.settingsView()));

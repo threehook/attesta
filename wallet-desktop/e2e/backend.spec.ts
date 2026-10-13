@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
 import { startTestIssuer } from "../../examples/issuer/api/src/testing.js";
-import { addCredential, captureBrowser } from "./issuing.js";
+import { addCredential } from "./issuing.js";
 
 const backend = process.env.ATTESTA_BACKEND_URL?.replace(/\/$/, "");
 const adminToken = process.env.ATTESTA_ADMIN_TOKEN ?? "dev-only-insecure-admin-token";
@@ -52,7 +52,6 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
     });
     try {
       const window = await app.firstWindow();
-      await captureBrowser(app);
       const open = async (link: string, button: string) => {
         await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Link openen", exact: true }).click();
         await window.getByLabel("Link").fill(link);
@@ -61,7 +60,7 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
       };
 
       await issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" });
-      await addCredential(app, window, test_, "Diploma", "ada@example.com");
+      await addCredential(window, test_, "Diploma", "ada@example.com");
       await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Credentials", exact: true }).click();
       await expect(window.getByRole("region", { name: "Credentials" })).toContainText("ada@example.com");
 

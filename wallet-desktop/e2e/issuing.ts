@@ -1,38 +1,21 @@
-// How the end-to-end tests get a credential into the real app: the way a holder does, with a login at the issuer. The browser is played in code.
-import { expect, type ElectronApplication, type Page } from "@playwright/test";
-import { browserLogin, requestLink, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
-
-type WithOpened = { opened?: string[] };
-
-/** The app does not open its browser; the addresses it would open are kept, so a test can follow them. */
-export async function captureBrowser(app: ElectronApplication): Promise<void> {
-  await app.evaluate(({ shell }) => {
-    const opened: string[] = [];
-    (globalThis as WithOpened).opened = opened;
-    shell.openExternal = async (url: string) => void opened.push(url);
-  });
-}
-
-export const openedByApp = (app: ElectronApplication): Promise<string[]> => app.evaluate(() => (globalThis as WithOpened).opened ?? []);
-
-/** What the system does when a link is opened: it hands the link to the app. */
-export const handOver = (app: ElectronApplication, link: string): Promise<void> =>
-  app.evaluate(({ app: electronApp }, l) => void electronApp.emit("open-url", { preventDefault() {} }, l), link);
+// How the end-to-end tests get a credential into the real app: the way a holder does, with the QR code from the mail uploaded in the wallet.
+import { expect, type Page } from "@playwright/test";
+import { qrImageFor, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
 
 const goTo = (window: Page, page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
 
-export async function openLink(window: Page, link: string): Promise<void> {
-  await goTo(window, "Link openen");
-  await window.getByLabel("Link").fill(link);
-  await window.getByRole("button", { name: "Openen" }).click();
+/** The holder chooses an image on the wallet's upload page. */
+export async function uploadQr(window: Page, image: Buffer, name = "credential.png"): Promise<void> {
+  await goTo(window, "QR-code uploaden");
+  await window.getByLabel("QR-code").setInputFiles({ name, mimeType: name.endsWith(".png") ? "image/png" : "application/octet-stream", buffer: image });
 }
 
-/** The holder asks for the credential in the app and logs in at the issuer as `email`; resolves once the app says the credential is added. */
-export async function addCredential(app: ElectronApplication, window: Page, issuer: TestIssuer, type: string, email: string): Promise<void> {
-  await openLink(window, requestLink(issuer.url, type));
-  await window.getByRole("dialog").getByRole("button", { name: "Aanmelden" }).click();
-  await expect(window.getByRole("status")).toContainText("Meld u aan in uw browser");
-  const address = (await openedByApp(app)).at(-1)!;
-  await handOver(app, await browserLogin(address, email, issuer.mails));
+/** The issuer mails the person's open entitlement of this type, as it does when it is recorded; the holder uploads the QR code and agrees. */
+export async function addCredential(window: Page, issuer: TestIssuer, type: string, email: string): Promise<void> {
+  const entitlement = (await issuer.issuer.entitlements.findOpenByEmail(email)).find((e) => e.type === type);
+  if (!entitlement) throw new Error(`there is no open ${type} entitlement for ${email}`);
+  await issuer.issuer.sendOffer(entitlement);
+  await uploadQr(window, qrImageFor(issuer, email));
+  await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
   await expect(window.getByRole("status")).toContainText("toegevoegd");
 }
