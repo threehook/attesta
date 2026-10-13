@@ -14,8 +14,6 @@ COPY examples/issuer/api/ examples/issuer/api/
 
 USER node
 WORKDIR /src/examples/issuer/api
-# The signing key comes from the seed, so the issuer's DID survives a restart even though this store does not.
 ENV ATTESTA_ISSUER_PORT=4001
-ENV ATTESTA_ISSUER_DIR=/tmp/issuer
 EXPOSE 4001
 CMD ["./node_modules/.bin/tsx", "src/server.ts"]

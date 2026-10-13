@@ -1,0 +1,12 @@
+# Kept apart from postgres/ so that k8s-issuer-delete leaves the issuer's data in place.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-postgres
+  namespace: attesta
+spec:
+  storageClassName: attesta-retain
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
