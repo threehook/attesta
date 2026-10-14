@@ -17,7 +17,7 @@ import (
 	"attesta/backend/internal/httpapi"
 	"attesta/backend/internal/presentation"
 	"attesta/backend/internal/scripts"
-	"attesta/backend/internal/sdjwt"
+	"github.com/threehook/sdjwt-go"
 )
 
 // policyReloadInterval is how often the policy directory is read again; a ConfigMap mounted there changes in place within about a minute.

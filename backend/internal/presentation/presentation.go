@@ -1,5 +1,5 @@
 // Package presentation is the verifier side of OpenID4VP for SD-JWT VC credentials. The backend hands an application an authorization request (an
-// `openid4vp://` link) to pass to the holder's wallet; the wallet posts its answer back, and Respond checks it with internal/sdjwt.
+// `openid4vp://` link) to pass to the holder's wallet; the wallet posts its answer back, and Respond checks it with sdjwt-go.
 //
 // Requests are unsigned and identify the verifier by its response URI (the `redirect_uri` client identifier prefix), so there is no verifier key to
 // manage. Whether the issuer is trusted is not decided here: Respond reports who issued the credential and the caller applies the policy.
@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"attesta/backend/internal/sdjwt"
+	"github.com/threehook/sdjwt-go"
 )
 
 // queryID names the one credential query in every request.

@@ -1,5 +1,5 @@
 // Issues a diploma to an in-process wallet, has the wallet answer two OpenID4VP requests (one asking for the degree and the email, one for the degree
-// only), and records the presentations the verifier receives. The Go verifier tests replay them (backend/internal/sdjwt/testdata/credo-presentation.json).
+// only), and records the presentations the verifier receives. The Go verifier tests replay them (backend/internal/presentation/testdata/credo-presentation.json).
 // Run: pnpm tsx scripts/sdjwt-fixture.ts <output file>
 import { writeFileSync } from 'node:fs'
 import { createServer } from 'node:http'

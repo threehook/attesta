@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"attesta/backend/internal/authz"
-	"attesta/backend/internal/sdjwt"
+	"github.com/threehook/sdjwt-go"
 )
 
-// recorded is a presentation captured from a Credo wallet (see internal/sdjwt/testdata): the session below is built to match its audience, nonce
+// recorded is a presentation captured from a Credo wallet (see testdata): the session below is built to match its audience, nonce
 // and state, and the clock is set to when it was made.
 type recording struct{ Nonce, State, VPToken string }
 
@@ -27,7 +27,7 @@ type recorded struct {
 
 func loadRecorded(t *testing.T) recorded {
 	t.Helper()
-	raw, err := os.ReadFile("../sdjwt/testdata/credo-presentation.json")
+	raw, err := os.ReadFile("testdata/credo-presentation.json")
 	if err != nil {
 		t.Fatal(err)
 	}
