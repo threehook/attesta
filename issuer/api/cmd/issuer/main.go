@@ -23,11 +23,6 @@ import (
 	"attesta/issuer/internal/service"
 )
 
-// The database for entitlements and sessions.
-const database = "issuer_entitlements"
-
-const renewalCooldown = 10 * time.Minute
-
 func main() {
 	if err := run(); err != nil {
 		slog.Error("issuer stopped", "error", err)
@@ -43,7 +38,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := postgres.Open(ctx, postgres.Options{Host: cfg.Database.Host, User: cfg.Database.User, Password: cfg.Database.Password}, database)
+	pool, err := postgres.Open(ctx, postgres.Options{Host: cfg.Database.Host, User: cfg.Database.User, Password: cfg.Database.Password}, cfg.Database.Name)
 	if err != nil {
 		return err
 	}
@@ -55,7 +50,7 @@ func run() error {
 
 	var svc *service.Service
 	protocol := oid4vci.New(oid4vci.Config{
-		PublicURL: cfg.PublicURL, IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: renewalCooldown,
+		PublicURL: cfg.PublicURL, IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
 	}, oid4vci.NewSessions(pool, secret[:]), store, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
 	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, protocol, mail.NewSMTP(cfg.SMTP))
 

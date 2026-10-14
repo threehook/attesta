@@ -19,8 +19,10 @@ type Config struct {
 	// Name is the logical issuer, e.g. "Gemeente Utrecht", written into every credential and the metadata for display only.
 	Name       string
 	QRLifetime time.Duration
-	Database   Database
-	SMTP       SMTP
+	// RenewalCooldown is the least time between two new QR codes that an expired one asks for.
+	RenewalCooldown time.Duration
+	Database        Database
+	SMTP            SMTP
 }
 
 type Database struct {
@@ -28,6 +30,8 @@ type Database struct {
 	Host     string
 	User     string
 	Password string
+	// Name is the database for entitlements and sessions; it is created when missing.
+	Name string
 }
 
 type SMTP struct {
@@ -82,6 +86,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if tls != "" && tls != "none" && tls != "starttls" && tls != "tls" {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_SMTP_TLS must be none, starttls or tls, got %q", tls)
 	}
+	cooldown, err := time.ParseDuration(str("RENEWAL_COOLDOWN", "10m"))
+	if err != nil || cooldown <= 0 {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_RENEWAL_COOLDOWN must be a duration such as 10m or 500ms, got %q", str("RENEWAL_COOLDOWN", ""))
+	}
 	dbHost := str("DB_HOST", "")
 	if dbHost == "" {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_DB_HOST is required")
@@ -92,8 +100,8 @@ func Load(getenv func(string) string) (Config, error) {
 		PublicURL:  str("PUBLIC_URL", fmt.Sprintf("http://localhost:%d", port)),
 		Seed:       str("SEED", DevSeed),
 		Name:       str("NAME", "Gemeente Vlierdam"),
-		QRLifetime: time.Duration(qrSeconds) * time.Second,
-		Database:   Database{Host: dbHost, User: str("DB_USER", "issuer"), Password: str("DB_PASSWORD", "")},
+		QRLifetime: time.Duration(qrSeconds) * time.Second, RenewalCooldown: cooldown,
+		Database: Database{Host: dbHost, User: str("DB_USER", "issuer"), Password: str("DB_PASSWORD", ""), Name: str("DB_NAME", "issuer_entitlements")},
 		SMTP: SMTP{
 			Host: str("SMTP_HOST", "localhost"), Port: smtpPort, User: str("SMTP_USER", ""), Password: str("SMTP_PASSWORD", ""),
 			TLS: tls, From: str("MAIL_FROM", "credentials@attesta.local"),
