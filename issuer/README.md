@@ -1,10 +1,10 @@
 # issuer
 
-A demo credential issuer. It stands for an organization such as a university or a municipality: it signs credentials (SD-JWT VC, types `Diploma` and
+A credential issuer. It stands for an organization such as a university or a municipality: it signs credentials (SD-JWT VC, types `Diploma` and
 `Employee`) with its own key and hands them to a wallet through OpenID4VCI. It is independent of the Attesta backend; the backend only learns of it by being
 configured to trust the issuer's DID. It has two parts:
 
-- `api/` (`@attesta/issuer-api`) holds the signing key, the entitlements and the OpenID4VCI endpoints (issuer metadata, token, credential, and the link behind each QR code) under `/oid4vci`.
+- `api/` (Go, module `attesta/issuer`) holds the signing key, the entitlements and the OpenID4VCI endpoints (issuer metadata, token, credential, and the link behind each QR code) under `/oid4vci`.
   - An **entitlement** is the right of the person with an email address to receive one credential. `POST /entitlements/diploma` records one for a `Diploma`,
     `POST /entitlements/employee` for an `Employee` (name, email, `department` of `burgerzaken` or `secretariaat`, organisation, diploma course and the date the
     diploma is valid until; the credential expires at the end of that day, and a date in the past is refused). Both answer `{ "entitlementId": ..., "mailedTo": ... }`.
@@ -12,26 +12,27 @@ configured to trust the issuer's DID. It has two parts:
     entitlement. The person saves the image and uploads it in their wallet, which then fetches the credential by itself. The code works once and
     for 24 hours (`ATTESTA_ISSUER_QR_LIFETIME_SECONDS`).
   - **An expired code is replaced.** When a wallet comes with an expired code and the entitlement is still open, the issuer mails a new code and tells the wallet so
-    (`410`, `qr_expired`); at most one per ten minutes per entitlement. When the credential was already fetched or withdrawn it mails nothing (`qr_gone`).
+    (`410`, `qr_expired`); at most one per ten minutes per entitlement (`ATTESTA_ISSUER_RENEWAL_COOLDOWN`). When the credential was already fetched or withdrawn it mails nothing (`qr_gone`).
   - An entitlement is issued once. Posting the same data again returns the same entitlement while it is open and mails a new code; for a holder who lost their
     credential, the organisation posts the form again after the first was issued, which makes a new entitlement. The credential is signed from the entitlement when the
-    wallet asks for it: the issuer claims it first, so no one else can take it, and marks it issued when the library reports the credential made. A claim that is not
-    followed by that runs out after two minutes (`entitlementLeaseMs`), and the entitlement can be claimed again until it passes its end or is revoked.
-  - It keeps its store and its entitlements (`src/entitlements.ts`, the SQL in `migrations/`) in Postgres when `ATTESTA_ISSUER_DB_HOST` is set (`_USER`, `_PASSWORD`); without it
-    they live in `ATTESTA_ISSUER_DIR` (SQLite) and in memory, which loses them when the API stops. The mail goes to the SMTP server in `ATTESTA_ISSUER_SMTP_HOST`/`_PORT`
+    wallet asks for it: the issuer claims it first, so no one else can take it, and marks it issued once the credential is made. A claim that is not
+    followed by that runs out after two minutes, and the entitlement can be claimed again until it passes its end or is revoked.
+  - It keeps its entitlements and the sessions of its QR codes in Postgres (`ATTESTA_ISSUER_DB_HOST`, `_USER`, `_PASSWORD`, and `_NAME`, default `issuer_entitlements`, which it
+    creates when missing; the SQL is in `internal/postgres/migrations/`). The mail goes to the SMTP server in `ATTESTA_ISSUER_SMTP_HOST`/`_PORT`
     from `ATTESTA_ISSUER_MAIL_FROM`, logging in with `ATTESTA_ISSUER_SMTP_USER`/`_PASSWORD` when a user is set. A user means a secured connection: STARTTLS (port 587, the default) or TLS from the start
     (port 465), and the issuer refuses to send its password over an unsecured one (`ATTESTA_ISSUER_SMTP_TLS` = `none`, `starttls` or `tls` overrides). In the cluster these settings are one Secret,
     `attesta-issuer-smtp`. It starts as Mailpit, a mail catcher whose page is at http://localhost:8025 and which keeps every mail and delivers none. For real delivery run
     `make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender>`; it asks for the password and restarts the API. The sender must be an address or domain that the mail server allows.
-  - The issuer's identity is a `did:key` created on first start and kept in its store, so the DID is stable across restarts. The email is what identifies the person to verifiers.
+  - The issuer's identity is the `did:key` of an Ed25519 key derived from `ATTESTA_ISSUER_SEED`, so the DID is stable across restarts and replicas; use another seed than the default outside local development.
+    The email is what identifies the person to verifiers.
 - `gui/` (`@attesta/issuer-gui`) serves the pages: `/` and the forms at `/diploma` and `/employee`. A form posts to the page, which passes it to the API and says that a mail
   with a QR code is on its way. The page has no key and no store; it only calls the API.
 
 ```sh
-pnpm --filter @attesta/issuer-api start   # ATTESTA_ISSUER_PORT (4001), ATTESTA_ISSUER_PUBLIC_URL, ATTESTA_ISSUER_DIR, ATTESTA_ISSUER_KEY, ATTESTA_ISSUER_NAME,
-                                          # ATTESTA_ISSUER_DB_HOST/_USER/_PASSWORD, ATTESTA_ISSUER_SMTP_HOST/_PORT, ATTESTA_ISSUER_MAIL_FROM
+cd issuer/api && go run ./cmd/issuer      # ATTESTA_ISSUER_PORT (4001), ATTESTA_ISSUER_PUBLIC_URL, ATTESTA_ISSUER_SEED, ATTESTA_ISSUER_NAME,
+                                          # ATTESTA_ISSUER_DB_HOST/_USER/_PASSWORD/_NAME, ATTESTA_ISSUER_SMTP_HOST/_PORT, ATTESTA_ISSUER_MAIL_FROM
 pnpm --filter @attesta/issuer-gui start   # ATTESTA_ISSUER_GUI_LISTEN_PORT (4000), ATTESTA_ISSUER_API_URL (http://localhost:4001)
-pnpm --filter @attesta/issuer-api test    # gets credentials into an in-process wallet through the QR codes; with ATTESTA_TEST_POSTGRES=host:port (and _USER, _PASSWORD) it also runs against Postgres
+cd issuer/api && go test ./...            # needs Docker: Postgres and Mailpit run in containers
 pnpm --filter @attesta/issuer-gui test    # the pages against a stand-in API
 ```
 

@@ -15,7 +15,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
   authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
-- `issuer/`: the issuer, split in `api/` (Express + Credo, OpenID4VCI endpoints, entitlements in Postgres, and the mail with the QR code) and `gui/` (the pages, which only call the API).
+- `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code) and `gui/` (the pages, which only call the API).
 - `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
@@ -50,11 +50,10 @@ The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secr
 - Askar's SQLite store cannot open a path containing `@`; Electron's default data folder came from the scoped package name, so the app has
   `productName` "attesta wallet" and `createWalletAgent` refuses such a path.
 - Electron 39's installer hangs on Node 24.16+/26.1+ (nodejs/node#62557); Electron 44 fixes it and downloads its binary on first run, not during install.
-- The Postgres image creates a database named after `POSTGRES_USER`; the issuer's Askar store then finds it empty and fails instead of provisioning, so the Deployment sets `POSTGRES_DB`.
 - Kubernetes injects `<SERVICE>_PORT`-style variables; with Service `attesta-issuer-api` that is `ATTESTA_ISSUER_API_PORT`, close to our own `ATTESTA_ISSUER_PORT`. Deployments set
   `enableServiceLinks: false`. Avoid config variable names equal to a Service name plus `_PORT`/`_HOST`.
 - The Makefile does `kubectl apply` then `kubectl set image` with a unique tag; re-applying a manifest alone resets the image to the nonexistent `:dev`.
-- The issuer image is Debian-based because Askar's Linux library is built for glibc. The old and new LoadBalancers share host port 4000.
+- The old and new LoadBalancers share host port 4000.
 - Desktop wallet dev switches (`ATTESTA_WALLET_KEY`, `ATTESTA_WALLET_DATA_DIR`, `ATTESTA_ALLOW_INSECURE_HTTP`) are honoured only when the app is not packaged.
 - A new `enforcer-go` tag is not visible to `go mod tidy` until sum.golang.org drops its cached 404 (about 30 minutes); `GOPROXY=direct GONOSUMDB=github.com/threehook/enforcer-go` skips the wait.
 - pnpm 12 blocks install scripts that are not listed in `allowBuilds`; `-s` is not a pnpm flag.

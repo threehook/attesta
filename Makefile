@@ -106,14 +106,9 @@ k8s-ensure-policies:
 	else kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE); fi
 
-# Built with the repo root as context (see the Dockerfiles in issuer/api and issuer/gui) — the pnpm workspace install needs the other workspace packages' manifests.
-# GO_ISSUER=1 builds the Go issuer API (context issuer/api) instead of the TypeScript one.
+# The API is built with issuer/api as the context; the page with the repo root as context (see issuer/gui/Dockerfile) — the pnpm workspace install needs the other workspace packages' manifests.
 docker-build-issuer:
-ifeq ($(GO_ISSUER),1)
-	docker build -f issuer/api/go.Dockerfile -t $(ISSUER_API_IMAGE) issuer/api
-else
-	docker build -f issuer/api/Dockerfile -t $(ISSUER_API_IMAGE) .
-endif
+	docker build -t $(ISSUER_API_IMAGE) issuer/api
 	docker build -f issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
 
 # Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen

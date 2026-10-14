@@ -1,19 +1,19 @@
-# Built with the repo root as context (see Makefile's docker-build-issuer) — the pnpm workspace install needs the other workspace packages' manifests.
-# A glibc base, not alpine: the native Askar library the install script downloads is built for glibc.
-FROM node:22-bookworm-slim
+# Built with issuer/api as the context (make docker-build-issuer).
+FROM golang:1.27-alpine AS builder
 WORKDIR /src
-RUN corepack enable
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY wallet/package.json wallet/package.json
-COPY issuer/api/package.json issuer/api/package.json
-RUN pnpm install --frozen-lockfile --filter @attesta/issuer-api...
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY wallet/ wallet/
-COPY issuer/api/ issuer/api/
+COPY cmd/ cmd/
+COPY internal/ internal/
+RUN CGO_ENABLED=0 go build -o /out/issuer ./cmd/issuer
 
-USER node
-WORKDIR /src/issuer/api
-ENV ATTESTA_ISSUER_PORT=4001
+FROM alpine:3.20
+# The CA certificates let the issuer trust a mail server that secures its connection (STARTTLS or TLS).
+RUN apk add --no-cache ca-certificates && adduser -D -u 10001 issuer
+COPY --from=builder /out/issuer /app/issuer
+
+USER issuer
 EXPOSE 4001
-CMD ["./node_modules/.bin/tsx", "src/server.ts"]
+ENTRYPOINT ["/app/issuer"]

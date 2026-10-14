@@ -1,7 +1,6 @@
 packages:
   - client-lib
   - examples/laadpalen/gui
-  - issuer/api
   - issuer/gui
   - wallet
   - wallet-desktop

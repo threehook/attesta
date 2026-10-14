@@ -48,7 +48,7 @@ client-lib/                TypeScript package @attesta/client: typed client for 
 wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that takes credentials from issuers' links, answers presentation requests, and has a CLI
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
-  issuer/                  demo credential issuer: api/ (Express + Credo, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
+  issuer/                  demo credential issuer: api/ (Go, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
   laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
@@ -150,8 +150,6 @@ pnpm --filter @attesta/wallet-desktop package                  # the wallet: rec
 ```
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.
-
-`issuer/api/scripts/e2e.ts` runs the same flow unattended against a running backend.
 
 ## Known risks and limits
 
