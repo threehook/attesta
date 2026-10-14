@@ -112,22 +112,22 @@ docker-build-issuer:
 	docker build -f issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
 
 # Same pattern as k8s-apply. The issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
-# policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.
+# policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress); staff sign in there at Keycloak, which the LoadBalancer on localhost:4000 cannot do.
 # attesta-issuer is the single deployment this one replaces, its LoadBalancer would hold host port 4000, and issuer-login is the login server that is gone.
 k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) delete deployment/attesta-issuer service/attesta-issuer deployment/issuer-login service/issuer-login -n $(NAMESPACE) --ignore-not-found
 	$(MAKE) k8s-issuer-secret
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit
-	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-mailpit -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit -f k8s/local/issuer/keycloak
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-mailpit deployment/issuer-keycloak -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=$(ISSUER_API_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=$(ISSUER_GUI_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
-# The issuer database's account, random, created once. Changing it later does not change the database that already exists. The mail settings start as the mail
-# catcher in the cluster; k8s-issuer-mail replaces them.
+# The issuer database's account and the staff login's secrets, random, created once. Changing the database account later does not change the database that already
+# exists. The mail settings start as the mail catcher in the cluster; k8s-issuer-mail replaces them.
 k8s-issuer-secret:
 	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-smtp -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-smtp -n $(NAMESPACE) \
@@ -136,6 +136,9 @@ k8s-issuer-secret:
 	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-db -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-db -n $(NAMESPACE) \
 			--from-literal=user=issuer --from-literal=password=$$(openssl rand -hex 24)
+	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-auth -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-auth -n $(NAMESPACE) \
+			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=staff-password=$$(openssl rand -hex 12) --from-literal=admin-password=$$(openssl rand -hex 12)
 
 # Points the issuer at a real mail server: make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender> [SMTP_PORT=587]. The password is asked for and
 # goes straight into the Secret, never on a command line. Port 587 secures the connection with STARTTLS and port 465 with TLS.
@@ -152,7 +155,7 @@ k8s-issuer-mail:
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it — and the issuer's data: its volume claim and its Secret.
 k8s-issuer-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres -f k8s/local/issuer/mailpit -f k8s/local/issuer/keycloak --ignore-not-found
 	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml --ignore-not-found
 
 k8s-issuer-restart:

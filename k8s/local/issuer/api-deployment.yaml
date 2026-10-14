@@ -44,15 +44,20 @@ spec:
                 secretKeyRef:
                   name: attesta-issuer-db
                   key: password
+            # Staff sign in at Keycloak (k8s/local/issuer/keycloak); the API checks their tokens. The issuer is the address in the tokens, the metadata is read inside the cluster.
+            - name: ATTESTA_ISSUER_OIDC_ISSUER
+              value: https://issuer.attesta.corbencreatives.nl/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
+              value: http://issuer-keycloak:8080/auth/realms/attesta
           readinessProbe:
             httpGet:
-              path: /info
+              path: /healthz
               port: 4001
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
             httpGet:
-              path: /info
+              path: /healthz
               port: 4001
             initialDelaySeconds: 10
             periodSeconds: 10

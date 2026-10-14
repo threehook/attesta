@@ -1,0 +1,67 @@
+# The OpenID Connect server the issuer's staff sign in at. Local only: the data is in the container, so users made by hand are gone after a restart;
+# the realm (and its one staff user) comes from the ConfigMap. A customer points the issuer at its own server instead.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-keycloak
+  namespace: attesta
+  labels:
+    app: issuer-keycloak
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: issuer-keycloak
+  template:
+    metadata:
+      labels:
+        app: issuer-keycloak
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.4
+          args: ["start", "--import-realm"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: admin-password } }
+            - name: ISSUER_GUI_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: client-secret } }
+            - name: ISSUER_STAFF_PASSWORD
+              valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: staff-password } }
+            # Tokens name the server as staff reach it, through the Ingress; pods reach it by its Service name, and the back channel answers with that address.
+            - name: KC_HOSTNAME
+              value: https://issuer.attesta.corbencreatives.nl/auth
+            - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
+              value: "true"
+            - name: KC_HTTP_RELATIVE_PATH
+              value: /auth
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_PROXY_HEADERS
+              value: xforwarded
+            - name: KC_HEALTH_ENABLED
+              value: "true"
+          volumeMounts:
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+          readinessProbe:
+            httpGet:
+              path: /auth/realms/attesta
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 5
+            failureThreshold: 30
+          resources:
+            requests:
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: realm
+          configMap:
+            name: issuer-keycloak-realm

@@ -1,0 +1,38 @@
+# The realm Keycloak imports at start. ${...} is filled from the Secret attesta-issuer-auth; the realm is the same after every restart.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: issuer-keycloak-realm
+  namespace: attesta
+data:
+  attesta.json: |
+    {
+      "realm": "attesta",
+      "enabled": true,
+      "roles": { "realm": [{ "name": "issuer-staff", "description": "May record entitlements in the issuer" }] },
+      "clients": [{
+        "clientId": "issuer-gui",
+        "enabled": true,
+        "protocol": "openid-connect",
+        "publicClient": false,
+        "secret": "${ISSUER_GUI_CLIENT_SECRET}",
+        "standardFlowEnabled": true,
+        "directAccessGrantsEnabled": false,
+        "redirectUris": ["https://issuer.attesta.corbencreatives.nl/callback"],
+        "webOrigins": [],
+        "attributes": {
+          "pkce.code.challenge.method": "S256",
+          "post.logout.redirect.uris": "https://issuer.attesta.corbencreatives.nl/"
+        }
+      }],
+      "users": [{
+        "username": "staff",
+        "enabled": true,
+        "email": "staff@attesta.local",
+        "emailVerified": true,
+        "firstName": "Staff",
+        "lastName": "Issuer",
+        "credentials": [{ "type": "password", "value": "${ISSUER_STAFF_PASSWORD}", "temporary": false }],
+        "realmRoles": ["issuer-staff"]
+      }]
+    }

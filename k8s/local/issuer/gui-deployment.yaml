@@ -25,6 +25,15 @@ spec:
           env:
             - name: ATTESTA_ISSUER_API_URL
               value: http://attesta-issuer-api:4001
+            # Staff sign in at Keycloak and come back to the https address; the server's metadata is read inside the cluster.
+            - name: ATTESTA_ISSUER_GUI_PUBLIC_URL
+              value: https://issuer.attesta.corbencreatives.nl
+            - name: ATTESTA_ISSUER_OIDC_ISSUER
+              value: https://issuer.attesta.corbencreatives.nl/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
+              value: http://issuer-keycloak:8080/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: client-secret } }
           readinessProbe:
             httpGet:
               path: /logo.svg

@@ -41,6 +41,13 @@ spec:
                 name: attesta-issuer-api
                 port:
                   number: 4001
+          - path: /auth
+            pathType: Prefix
+            backend:
+              service:
+                name: issuer-keycloak
+                port:
+                  number: 8080
           - path: /.well-known
             pathType: Prefix
             backend:
