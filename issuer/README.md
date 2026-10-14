@@ -1,20 +1,29 @@
 # issuer
 
-A credential issuer. It stands for an organization such as a university or a municipality: it signs credentials (SD-JWT VC, types `Diploma` and
-`Employee`) with its own key and hands them to a wallet through OpenID4VCI. It is independent of the Attesta backend; the backend only learns of it by being
+A credential issuer. It stands for an organization such as a university or a municipality: it signs credentials (SD-JWT VC, types `Employee` and
+`Diploma Laadpalen Management`) with its own key and hands them to a wallet through OpenID4VCI. It is independent of the Attesta backend; the backend only learns of it by being
 configured to trust the issuer's DID. It has two parts:
 
 - `api/` (Go, module `attesta/issuer`) holds the signing key, the entitlements and the OpenID4VCI endpoints (issuer metadata, token, credential, and the link behind each QR code) under `/oid4vci`.
-  - An **entitlement** is the right of the person with an email address to receive one credential. `POST /entitlements/diploma` records one for a `Diploma`,
-    `POST /entitlements/employee` for an `Employee` (name, email, `department` of `burgerzaken` or `secretariaat`, organisation, diploma course and the date the
-    diploma is valid until; the credential expires at the end of that day, and a date in the past is refused). Both answer `{ "entitlementId": ..., "mailedTo": ... }`.
+  - An **entitlement** is the right of the person with an email address to receive one credential. `POST /entitlements/employee` records one for an `Employee`
+    (name, email, `department` of `burgerzaken` or `secretariaat`, organisation, and `roles` as a list of names from the table `roles`, which the credential holds as a list;
+    an Employee has no end date and is withdrawn by revoking it, which is not built yet). Each diploma is a credential type of its own with its own form and address: `POST /entitlements/diploma/laadpalen-management` records one for
+    `Diploma Laadpalen Management` (name, email and the required `validUntil`; it holds no course claim, the type is the course). A credential with a `validUntil` expires at
+    the end of that day, and a date in the past is refused. Both answer `{ "entitlementId": ..., "mailedTo": ... }`. A verifier that needs an Employee and a diploma asks for
+    both in one request.
+  - **Title and description are fixed by the credential type** and are not asked in the forms: an Employee is titled "Medewerker afdeling & rollen", a diploma has the title in
+    `credential.Diplomas` ("Diploma Laadpalen Management"), and each holder reads a description of what the credential is for. The title is a plain, always visible claim.
+    Another diploma is one more entry in `credential.Diplomas` (type, path, title, description); its form and menu item appear by themselves, and the policy that needs it
+    names its type.
+  - **The roles an employee can be given are rows of the table `roles`** (`name`, no comma, not blank), not code. A deployment starts with `laadpalen-aanvrager` and `reader`; add
+    one with `INSERT INTO roles (name) VALUES ('...')` and the form offers it at once. The form is a list to choose from, and the API refuses a role that is not in the table.
   - **Recording an entitlement mails the person a QR code**, as the image `credential.png` in the mail. The code holds a link with a one-time code for that
     entitlement. The person saves the image and uploads it in their wallet, which then fetches the credential by itself. The code works once and
     for 24 hours (`ATTESTA_ISSUER_QR_LIFETIME_SECONDS`).
   - **An expired code is replaced.** When a wallet comes with an expired code and the entitlement is still open, the issuer mails a new code and tells the wallet so
     (`410`, `qr_expired`); at most one per ten minutes per entitlement (`ATTESTA_ISSUER_RENEWAL_COOLDOWN`). When the credential was already fetched or withdrawn it mails nothing (`qr_gone`).
-  - An entitlement is issued once. Posting the same data again, also at the same moment, returns the same entitlement while it is unissued (the database allows one per person, type and data) and mails a new code; for a holder who lost their
-    credential, the organisation posts the form again after the first was issued, which makes a new entitlement. The credential is signed from the entitlement when the
+  - An entitlement is issued once. Posting the same data again, also at the same moment, returns the same entitlement while it is unissued (the database allows one per person, type and data) and mails a new code. A person has one of each credential at a time (one of each credential type): while one is waiting with other data, or issued and not ended, a new one of it is
+    refused (`409`) and nothing is mailed. It has to be revoked first (revoking is not built yet) or run out. The credential is signed from the entitlement when the
     wallet asks for it: the issuer claims it first, so no one else can take it, and marks it issued once the credential is made. A claim that is not
     followed by that runs out after two minutes, and the entitlement can be claimed again until it passes its end or is revoked.
   - It keeps its entitlements and the sessions of its QR codes in Postgres (`ATTESTA_ISSUER_DB_HOST`, `_USER`, `_PASSWORD`, and `_NAME`, default `issuer_entitlements`, which it
@@ -29,7 +38,7 @@ configured to trust the issuer's DID. It has two parts:
     (`ATTESTA_ISSUER_OIDC_ISSUER`, the name in its tokens; `_OIDC_DISCOVERY_URL` when its metadata is reached at another address; `_OIDC_CLIENT_ID`, default `issuer-gui`).
     The token must be issued to that client and carry the role `issuer-staff` (`_OIDC_ROLE`; in `realm_access.roles` or `roles`). The wallet endpoints under `/oid4vci`
     and `/healthz` need no token. Without `_OIDC_ISSUER` the issuer refuses to start; `ATTESTA_ISSUER_AUTH_DISABLED=true` leaves the endpoints open, for tests and local development only.
-- `gui/` (`@attesta/issuer-gui`) serves the pages: `/` and the forms at `/diploma` and `/employee`. A form posts to the page, which passes it to the API and says that a mail
+- `gui/` (`@attesta/issuer-gui`) serves the pages: `/` and the forms at `/employee` and `/diploma/<path>`. A form posts to the page, which passes it to the API and says that a mail
   with a QR code is on its way. The page has no key and no store; it only calls the API. Staff sign in at the OpenID Connect server (authorization code with PKCE,
   confidential client): `ATTESTA_ISSUER_OIDC_ISSUER`, `_OIDC_DISCOVERY_URL`, `_OIDC_CLIENT_ID`, `_OIDC_CLIENT_SECRET` and `ATTESTA_ISSUER_GUI_PUBLIC_URL` (where staff reach the pages, which
     the server sends them back to). The session lives in the page's memory, so a restart signs everyone out; the access token is renewed with the refresh token, and "Afmelden" ends the session at the server too.
