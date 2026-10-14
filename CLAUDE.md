@@ -31,7 +31,7 @@ cd backend && go test ./...                      # backend; ATTESTA_* variables 
 pnpm install                                     # repo root; pnpm-workspace.yaml allows Askar's and koffi's install scripts
 pnpm --filter @attesta/client build              # client-lib/dist is not in git; build it before the page's build or typecheck
 pnpm -r typecheck && pnpm -r test                # all TS packages
-pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against a real issuer and a stand-in verifier
+pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
 ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts
 make k8s-apply k8s-issuer-apply                  # build and deploy
 make k8s-policies POLICIES="<a.gno> <b.gno>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES

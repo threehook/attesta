@@ -57,7 +57,7 @@ system's secure storage is not available the wallet refuses to start.
 
 ```sh
 pnpm --filter @attesta/wallet-desktop test        # key storage and link handling
-pnpm --filter @attesta/wallet-desktop test:e2e    # the real app, driven like a user, against a real issuer and a stand-in verifier
+pnpm --filter @attesta/wallet-desktop test:e2e    # the real app, driven like a user, against the Go issuer (needs Docker and Go) and a stand-in verifier
 ```
 
 Setting `ATTESTA_BACKEND_URL` (a backend whose `ATTESTA_PUBLIC_URL` is that address, and `ATTESTA_ADMIN_TOKEN` if not the dev default) also runs the whole

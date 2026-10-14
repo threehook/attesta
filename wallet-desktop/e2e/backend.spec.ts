@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
-import { startTestIssuer } from "../../issuer/api/src/testing.js";
+import { startTestIssuer } from "./issuer.js";
 import { addCredential } from "./issuing.js";
 
 const backend = process.env.ATTESTA_BACKEND_URL?.replace(/\/$/, "");
@@ -20,9 +20,8 @@ test.skip(!backend, "set ATTESTA_BACKEND_URL to run against a backend");
 for (const trusted of [true, false]) {
   test(`${trusted ? "allows" : "denies"} a diploma from an issuer the policy ${trusted ? "trusts" : "does not trust"}`, async () => {
     const test_ = await startTestIssuer();
-    const issuer = test_.issuer;
     const policyId = `desktop_e2e_${trusted ? "trusted" : "untrusting"}`;
-    const trustedDid = trusted ? issuer.did : "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
+    const trustedDid = trusted ? test_.did : "did:key:z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK";
     const deployed = await post(
       "/admin/policies",
       {
@@ -59,8 +58,8 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
         await window.getByRole("dialog").getByRole("button", { name: button }).click();
       };
 
-      await issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" });
-      await addCredential(window, test_, "Diploma", "ada@example.com");
+      await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" });
+      await addCredential(window, test_, "ada@example.com");
       await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Credentials", exact: true }).click();
       await expect(window.getByRole("region", { name: "Credentials" })).toContainText("ada@example.com");
 
@@ -78,7 +77,7 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
       expect(outcome.status).toBe("done");
       expect(outcome.decision).toBe(trusted ? "Permit" : "Deny");
       if (trusted) {
-        expect(outcome.subject).toEqual({ issuer: issuer.did, email: "ada@example.com" });
+        expect(outcome.subject).toEqual({ issuer: test_.did, email: "ada@example.com" });
       } else {
         expect(outcome.reason).toContain("issuer not trusted");
         expect(outcome.subject).toBeUndefined();

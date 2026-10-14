@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { qrImageFor, qrLinkFor, startTestIssuer, type TestIssuer } from "../../issuer/api/src/testing.js";
+import { startTestIssuer, type TestIssuer } from "./issuer.js";
 import { addCredential, uploadQr } from "./issuing.js";
 
 const appDir = join(import.meta.dirname, "..");
@@ -103,9 +103,9 @@ test.describe.serial("desktop wallet", () => {
   });
 
   test("shows what a QR code gives, and adds the credential only once the user agrees", async () => {
-    await test_.issuer.mailQrCode(await test_.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
+    await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
 
-    await uploadQr(window, qrImageFor(test_, "ada@example.com"));
+    await uploadQr(window, await test_.qrImageFor("ada@example.com"));
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Credential toevoegen?");
     await expect(dialog).toContainText("Diploma");
@@ -122,9 +122,9 @@ test.describe.serial("desktop wallet", () => {
   });
 
   test("adds nothing when the user declines", async () => {
-    await test_.issuer.mailQrCode(await test_.issuer.createDiplomaEntitlement({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" }));
+    await test_.recordDiploma({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" });
 
-    await uploadQr(window, qrImageFor(test_, "grace@example.com"));
+    await uploadQr(window, await test_.qrImageFor("grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
 
     await goTo("Credentials");
@@ -416,8 +416,8 @@ test("starts with its data in a folder whose path has spaces, as the system app 
 
 test("opens a link handed to the app when it starts", async () => {
   const issuer = await startTestIssuer();
-  await issuer.issuer.mailQrCode(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
-  const link = qrLinkFor(issuer, "ada@example.com");
+  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  const link = await issuer.qrLinkFor("ada@example.com");
   const app = await electron.launch({
     args: [appDir, link],
     env: {
@@ -439,8 +439,8 @@ test("opens a link handed to the app when it starts", async () => {
 test("opens a new window for a link that arrives after its window was closed", async () => {
   test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
   const issuer = await startTestIssuer();
-  await issuer.issuer.mailQrCode(await issuer.issuer.createDiplomaEntitlement({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" }));
-  const link = qrLinkFor(issuer, "ada@example.com");
+  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  const link = await issuer.qrLinkFor("ada@example.com");
   const app = await electron.launch({
     args: [appDir],
     env: {
@@ -480,7 +480,7 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   };
 
   test.beforeAll(async () => {
-    issuer = await startTestIssuer({ qrLifetimeSeconds: 2, renewalCooldownMs: 500 });
+    issuer = await startTestIssuer({ qrLifetimeSeconds: 2, renewalCooldown: "500ms" });
     app = await electron.launch({
       args: [appDir],
       env: {
@@ -502,9 +502,9 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
 
   test("adds an employee credential from the uploaded QR code", async () => {
-    await issuer.issuer.createEmployeeEntitlement(employee);
+    await issuer.recordEmployee(employee);
 
-    await addCredential(window, issuer, "Employee", employee.email);
+    await addCredential(window, issuer, employee.email);
 
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
@@ -527,17 +527,16 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   });
 
   test("tells the user that an expired QR code was replaced, and the new one works", async () => {
-    await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "grace@example.com", name: "Grace Hopper" });
-    const mails = issuer.sent.length;
-    await issuer.issuer.mailQrCode((await issuer.issuer.entitlements.findOpenByEmail("grace@example.com"))[0]);
-    const old = qrImageFor(issuer, "grace@example.com");
+    await issuer.recordEmployee({ ...employee, email: "grace@example.com", name: "Grace Hopper" });
+    const mails = await issuer.mailCount();
+    const old = await issuer.qrImageFor("grace@example.com");
     await new Promise((resolve) => setTimeout(resolve, 2500));
 
     await uploadQr(window, old);
 
     await expect(window.getByRole("status")).toContainText("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.");
-    expect(issuer.sent.length).toBe(mails + 2);
-    await uploadQr(window, qrImageFor(issuer, "grace@example.com"));
+    expect(await issuer.mailCount()).toBe(mails + 1);
+    await uploadQr(window, await issuer.qrImageFor("grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
     await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
     await goTo("Credentials");
@@ -545,11 +544,10 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   });
 
   test("says so when the credential was withdrawn after the mail", async () => {
-    const entitlement = await issuer.issuer.createEmployeeEntitlement({ ...employee, email: "henk@example.com", name: "Henk" });
-    await issuer.issuer.mailQrCode(entitlement);
-    await issuer.issuer.entitlements.revoke(entitlement.id);
+    const id = await issuer.recordEmployee({ ...employee, email: "henk@example.com", name: "Henk" });
+    await issuer.revoke(id);
 
-    await uploadQr(window, qrImageFor(issuer, "henk@example.com"));
+    await uploadQr(window, await issuer.qrImageFor("henk@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
 
     await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
