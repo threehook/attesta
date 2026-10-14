@@ -41,6 +41,13 @@ spec:
                 name: attesta-issuer-api
                 port:
                   number: 4001
+          - path: /.well-known
+            pathType: Prefix
+            backend:
+              service:
+                name: attesta-issuer-api
+                port:
+                  number: 4001
           - path: /
             pathType: Prefix
             backend:
