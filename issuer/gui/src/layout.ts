@@ -24,21 +24,6 @@ const APP_MARK = `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" st
 /** The first menu item, without a label above it. */
 export const HOME: MenuItem = { id: 'home', label: 'Home', href: '/', description: '' }
 
-export const MENU: MenuGroup[] = [
-  {
-    label: 'Verifiable Credentials',
-    items: [
-      {
-        id: 'laadpalen',
-        label: 'Aanvragen laadpalen',
-        href: '/employee',
-        description:
-          'Geef een medewerker een verifiable credential met afdeling, organisatie en diploma. Met deze verifiable credential mag de medewerker laadpalen aanvragen.',
-      },
-    ],
-  },
-]
-
 const theme = `
 :root{
   --menu-w:260px;--logo-bg:#efe8f6;
@@ -87,6 +72,19 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid 
 button{padding:9px 16px;font:inherit;font-weight:600;color:var(--accent-text);background:var(--accent);border:0;border-radius:6px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
 code{word-break:break-all}
+.field{margin:0 0 14px}
+.field>span{display:block;font-weight:600;font-size:13px}
+details.multi{margin-top:4px;position:relative}
+details.multi summary{list-style:none;cursor:pointer;padding:8px 32px 8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
+details.multi summary::-webkit-details-marker{display:none}
+details.multi summary::after{content:"";position:absolute;right:12px;top:50%;width:6px;height:6px;margin-top:-5px;border:solid var(--muted);border-width:0 2px 2px 0;transform:rotate(45deg)}
+details.multi[open] summary::after{margin-top:-1px;transform:rotate(-135deg)}
+details.multi .options{position:absolute;z-index:2;left:0;right:0;margin-top:2px;padding:4px;background:var(--surface);border:1px solid var(--border);border-radius:6px;
+  box-shadow:0 4px 12px rgba(0,0,0,.15);max-height:14rem;overflow:auto}
+details.multi .options label{display:flex;align-items:center;gap:8px;margin:0;padding:6px 8px;border-radius:4px;font-weight:400;cursor:pointer}
+details.multi .options label:hover{background:var(--accent-soft)}
+details.multi .options input{width:auto;margin:0}
 @media (max-width:720px){
   body{grid-template-columns:1fr;grid-template-areas:"header" "menu" "main" "footer"}
   nav.menu{border-right:0;border-bottom:1px solid var(--border)}
@@ -96,6 +94,8 @@ code{word-break:break-all}
 }`
 
 export interface Page {
+  /** The menu below the home item. */
+  menu: MenuGroup[]
   /** The current action: the header title and the last breadcrumb. */
   title: string
   /** The path to the current action, without the last crumb. */
@@ -121,7 +121,7 @@ export function renderPage(page: Page): string {
     .join('')
   const list = (items: MenuItem[]) =>
     `<ul>${items.map((i) => `<li><a href="${escape(i.href)}"${i.id === page.active ? ' aria-current="page"' : ''}>${escape(i.label)}</a></li>`).join('')}</ul>`
-  const menu = list([HOME]) + MENU.map((group) => `<h2>${escape(group.label)}</h2>${list(group.items)}`).join('')
+  const menu = list([HOME]) + page.menu.map((group) => `<h2>${escape(group.label)}</h2>${list(group.items)}`).join('')
   const signOut = page.signOut ? `<ul><li><a href="/logout">Afmelden</a></li></ul>` : ''
   const footer = page.footer ? `<footer title="${escape(page.footer)}">${escape(page.footer)}</footer>` : '<footer>&nbsp;</footer>'
   return `<!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">

@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import express from 'express'
 import type { Auth } from './auth.js'
 import { LOGO_SVG } from './logo.js'
-import { renderCreated, renderEmployeeForm, renderForm, renderWelcome, type Chrome } from './page.js'
+import { renderCreated, renderDiplomaForm, renderEmployeeForm, renderRefused, renderWelcome, type Chrome, type DiplomaInfo, type Kind } from './page.js'
 
 export interface GuiOptions {
   port: number
@@ -18,7 +18,14 @@ interface Info {
   issuerName?: string
   did: string
   departments: string[]
-  descriptions: { Diploma: string; Employee: string }
+  roles: string[]
+  diplomas: DiplomaInfo[]
+}
+
+// A form sends one chosen role as text and several as a list; the API takes a list, and none when nothing was chosen.
+function withRolesAsList(form: Record<string, unknown>): Record<string, unknown> {
+  if (!('roles' in form)) return form
+  return { ...form, roles: Array.isArray(form.roles) ? form.roles : [form.roles] }
 }
 
 export async function startGui(options: GuiOptions) {
@@ -35,7 +42,7 @@ export async function startGui(options: GuiOptions) {
     if (!res.ok) throw new Error(`the issuer API answered ${res.status}`)
     return (await res.json()) as Info
   }
-  const chromeOf = ({ issuerName, did }: Info): Chrome => ({ issuerName, did, signOut: !!options.auth })
+  const chromeOf = ({ issuerName, did, diplomas }: Info): Chrome => ({ issuerName, did, diplomas, signOut: !!options.auth })
 
   // Express 5 passes a rejected handler to the error handler below. The logo stays open: the login page and the probes use it.
   app.get('/logo.svg', (_req, res) => {
@@ -48,27 +55,39 @@ export async function startGui(options: GuiOptions) {
   app.get('/', async (req, res) => {
     res.type('html').send(renderWelcome(chromeOf(await info(req))))
   })
-  app.get('/diploma', async (req, res) => {
-    const i = await info(req)
-    res.type('html').send(renderForm(i.descriptions.Diploma, chromeOf(i), i.issuerName))
-  })
   app.get('/employee', async (req, res) => {
     const i = await info(req)
-    res.type('html').send(renderEmployeeForm(i.departments, i.descriptions.Employee, chromeOf(i)))
+    res.type('html').send(renderEmployeeForm(i.departments, i.roles, chromeOf(i)))
+  })
+  app.get('/diploma/:path', async (req, res) => {
+    const i = await info(req)
+    const diploma = i.diplomas.find((d) => d.path === req.params.path)
+    if (!diploma) {
+      res.status(404).type('text').send('Dit diploma bestaat niet.')
+      return
+    }
+    res.type('html').send(renderDiplomaForm(diploma, chromeOf(i)))
   })
 
   // The form goes to the API as JSON; its answer is either that the entitlement is recorded or the reason it was refused.
-  const create = (path: string, employee: boolean): express.RequestHandler => async (req, res) => {
-    const answer = await fetch(`${api}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await asStaff(req)) }, body: JSON.stringify(req.body ?? {}) })
+  const create = (path: string, kind: Kind): express.RequestHandler => async (req, res) => {
+    const answer = await fetch(`${api}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...(await asStaff(req)) }, body: JSON.stringify(withRolesAsList(req.body ?? {})) })
     const body = (await answer.json()) as { entitlementId?: string; error?: string }
     if (!answer.ok || !body.entitlementId) {
-      res.status(answer.ok ? 502 : answer.status).json({ error: body.error ?? 'the issuer API sent an unusable answer' })
+      res.status(answer.ok ? 502 : answer.status).type('html').send(renderRefused(body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.', chromeOf(await info(req)), kind))
       return
     }
-    res.type('html').send(renderCreated(String(req.body?.email ?? ''), chromeOf(await info(req)), employee))
+    res.type('html').send(renderCreated(String(req.body?.email ?? ''), chromeOf(await info(req)), kind))
   }
-  app.post('/diploma', create('/entitlements/diploma', false))
-  app.post('/employee', create('/entitlements/employee', true))
+  app.post('/employee', create('/entitlements/employee', { employee: true }))
+  app.post('/diploma/:path', async (req, res, next) => {
+    const diploma = (await info(req)).diplomas.find((d) => d.path === req.params.path)
+    if (!diploma) {
+      res.status(404).type('text').send('Dit diploma bestaat niet.')
+      return
+    }
+    await create(`/entitlements/diploma/${diploma.path}`, { diploma })(req, res, next)
+  })
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)

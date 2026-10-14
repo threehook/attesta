@@ -74,7 +74,7 @@ beforeEach(async () => {
   api = createServer((req, res) => {
     bearers.push(req.headers.authorization)
     res.setHeader('content-type', 'application/json')
-    res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: 'did:key:z6MkTest', departments: ['burgerzaken'], descriptions: { Diploma: 'd', Employee: 'e' } }))
+    res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: 'did:key:z6MkTest', departments: ['burgerzaken'], roles: [], diplomas: [] }))
   })
   await new Promise<void>((resolve) => api.listen(0, resolve))
   apiUrl = `http://localhost:${(api.address() as AddressInfo).port}`
