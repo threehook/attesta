@@ -111,7 +111,7 @@ docker-build-issuer:
 	docker build -t $(ISSUER_API_IMAGE) issuer/api
 	docker build -f issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
 
-# Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
+# Same pattern as k8s-apply. The issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
 # policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.
 # attesta-issuer is the single deployment this one replaces, its LoadBalancer would hold host port 4000, and issuer-login is the login server that is gone.
 k8s-issuer-apply: docker-build-issuer
@@ -165,7 +165,7 @@ k8s-issuer-gui-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/attesta-issuer-gui -f
 
 # The laadpalen example: an app backend with attesta as its sidecar, and its page (examples/laadpalen). The page is at https://laadpalen.attesta.corbencreatives.nl and wallets
-# post to https://api.attesta.corbencreatives.nl (k8s-ingress); the backend image is built here too, since the sidecar is that same image. The example needs the demo issuer (k8s-issuer-apply).
+# post to https://api.attesta.corbencreatives.nl (k8s-ingress); the backend image is built here too, since the sidecar is that same image. The example needs the issuer (k8s-issuer-apply).
 docker-build-laadpalen-api:
 	docker build -t $(LAADPALEN_API_IMAGE) examples/laadpalen/api
 

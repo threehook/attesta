@@ -8,7 +8,7 @@ embedded directly in the backend.
 Presentations use selective disclosure (SD-JWT): the holder reveals only the requested claims, but the issuer's signature
 and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
 
-This is a monorepo: the backend, a TypeScript client library, a wallet core, and two examples (a demo issuer and the laadpalen app, a relying application).
+This is a monorepo: the backend, a TypeScript client library, a wallet core, the issuer, and an example (the laadpalen app, a relying application).
 
 ## Architecture
 
@@ -48,7 +48,7 @@ client-lib/                TypeScript package @attesta/client: typed client for 
 wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that takes credentials from issuers' links, answers presentation requests, and has a CLI
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
 examples/
-  issuer/                  demo credential issuer: api/ (Go, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
+  issuer/                  credential issuer: api/ (Go, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
   laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
@@ -117,7 +117,7 @@ make k8s-port-forward     # expose the service on localhost:8080 for curl/Postma
 make k8s-delete           # tear down the namespace
 make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
 make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
-make k8s-issuer-apply    # deploys the demo issuer; open http://localhost:4000 for its form
+make k8s-issuer-apply    # deploys the issuer; open http://localhost:4000 for its form
 make laadpalen           # deploys examples/laadpalen (needs the issuer): page at https://laadpalen.attesta.corbencreatives.nl (needs make k8s-traefik k8s-ingress once)
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```

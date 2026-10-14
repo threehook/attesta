@@ -156,7 +156,7 @@ pod per employee. What stops each threat:
 - **Attesta:** answer a presentation with a redirect target and a one-time code, so the browser can return to the application; build the request link from the
   organisation wallet's address when one is configured. The policy and the verifying stay as they are.
 - **Issuer:** the authorization-code flow with the organisation's identity provider, short-lived employee credentials, HR attribute mapping and renewal.
-  The demo issuer keeps the pre-authorized flow for the desktop wallet.
+  The issuer keeps the pre-authorized flow for the desktop wallet.
 - **Wallet:** a new multi-tenant wallet service and web UI. The existing wallet core (`wallet/`) is reused for credentials and presentations.
 - **Applications (laadpalen):** send the browser to the wallet link and handle the return; the page no longer shows a link to paste.
 - **Platform:** a KMS or HSM, an identity provider with passkey support, network policies, an audit sink.
