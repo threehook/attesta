@@ -77,13 +77,15 @@ func scan(row pgx.Row) (Entitlement, error) {
 	return e, json.Unmarshal(claims, &e.Claims)
 }
 
+// Create records the entitlement. A person has one unissued entitlement per type and data: asking again, also at the same moment, gives the one there is.
 func (s *Store) Create(ctx context.Context, n New) (Entitlement, error) {
 	claims, err := json.Marshal(n.Claims)
 	if err != nil {
 		return Entitlement{}, err
 	}
 	return scan(s.pool.QueryRow(ctx,
-		"INSERT INTO entitlements (id, email, type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4) RETURNING "+columns,
+		`INSERT INTO entitlements (id, email, type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4)
+		 ON CONFLICT (email, type, claims) WHERE status IN ('open', 'claimed') DO UPDATE SET email = EXCLUDED.email RETURNING `+columns,
 		strings.ToLower(n.Email), n.Type, claims, n.ValidUntil))
 }
 

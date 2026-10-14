@@ -76,7 +76,7 @@ func expectIDs(t *testing.T, f fixture, want ...string) {
 func TestKeepsWhatItWasGivenAndFindsItByEmailInAnyCase(t *testing.T) {
 	f := start(t)
 	created := f.create(t, nil)
-	upper := f.create(t, func(n *entitlement.New) { n.Email = strings.ToUpper(f.email) })
+	upper := f.create(t, func(n *entitlement.New) { n.Email = strings.ToUpper(f.email); n.Type = "Diploma" })
 
 	if created.Email != f.email || upper.Email != f.email {
 		t.Fatalf("emails %q %q, want %q", created.Email, upper.Email, f.email)
@@ -123,7 +123,7 @@ func TestHidesAnEntitlementPastItsEnd(t *testing.T) {
 	f := start(t)
 	past, future := time.Now().Add(-time.Hour), time.Now().Add(time.Hour)
 	f.create(t, func(n *entitlement.New) { n.ValidUntil = &past })
-	current := f.create(t, func(n *entitlement.New) { n.ValidUntil = &future })
+	current := f.create(t, func(n *entitlement.New) { n.ValidUntil = &future; n.Type = "Diploma" })
 	expectIDs(t, f, current.ID)
 }
 
@@ -217,7 +217,9 @@ func TestDoesNotGiveBackAClaimedEntitlementPastItsEnd(t *testing.T) {
 func TestRevokesOpenOrClaimedButNotIssued(t *testing.T) {
 	f := start(t)
 	ctx := context.Background()
-	open, claimed, issued := f.create(t, nil), f.create(t, nil), f.create(t, nil)
+	open := f.create(t, nil)
+	claimed := f.create(t, func(n *entitlement.New) { n.Type = "Diploma" })
+	issued := f.create(t, func(n *entitlement.New) { n.Type = "Certificate" })
 	must(f.store.Claim(ctx, claimed.ID))
 	must(f.store.Claim(ctx, issued.ID))
 	must(f.store.MarkIssued(ctx, issued.ID))
@@ -236,5 +238,61 @@ func TestKnowsNothingOfAnIDItWasNeverGiven(t *testing.T) {
 	ctx := context.Background()
 	if must(f.store.MarkIssued(ctx, uuid.NewString())) || must(f.store.Revoke(ctx, uuid.NewString())) {
 		t.Fatal("an unknown id was accepted")
+	}
+}
+
+func TestTheSamePersonAndDataAtTheSameMomentGivesOneEntitlement(t *testing.T) {
+	f := start(t)
+	var wg sync.WaitGroup
+	got := make([]string, 8)
+	for i := range got {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			e, err := f.store.Create(context.Background(), entitlement.New{Email: f.email, Type: employee.Type, Claims: employee.Claims})
+			if err != nil {
+				t.Error(err)
+			}
+			got[i] = e.ID
+		}()
+	}
+	wg.Wait()
+
+	for _, id := range got {
+		if id != got[0] || id == "" {
+			t.Fatalf("ids %v", got)
+		}
+	}
+}
+
+func TestDifferentDataOrAnIssuedOrWithdrawnEntitlementMakesANewOne(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	first := f.create(t, nil)
+	other := f.create(t, func(n *entitlement.New) {
+		n.Claims = map[string]string{"name": "Jerry Smith", "department": "secretariaat"}
+	})
+	if other.ID == first.ID {
+		t.Fatal("other data gave the same entitlement")
+	}
+
+	if ok, err := f.store.Claim(ctx, first.ID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if again := f.create(t, nil); again.ID != first.ID || again.Status != entitlement.Claimed {
+		t.Fatalf("while claimed: %+v", again)
+	}
+	if ok, err := f.store.MarkIssued(ctx, first.ID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	second := f.create(t, nil)
+	if second.ID == first.ID {
+		t.Fatal("an issued entitlement was handed out again")
+	}
+	if ok, err := f.store.Revoke(ctx, second.ID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if third := f.create(t, nil); third.ID == second.ID {
+		t.Fatal("a withdrawn entitlement was handed out again")
 	}
 }

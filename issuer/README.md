@@ -13,7 +13,7 @@ configured to trust the issuer's DID. It has two parts:
     for 24 hours (`ATTESTA_ISSUER_QR_LIFETIME_SECONDS`).
   - **An expired code is replaced.** When a wallet comes with an expired code and the entitlement is still open, the issuer mails a new code and tells the wallet so
     (`410`, `qr_expired`); at most one per ten minutes per entitlement (`ATTESTA_ISSUER_RENEWAL_COOLDOWN`). When the credential was already fetched or withdrawn it mails nothing (`qr_gone`).
-  - An entitlement is issued once. Posting the same data again returns the same entitlement while it is open and mails a new code; for a holder who lost their
+  - An entitlement is issued once. Posting the same data again, also at the same moment, returns the same entitlement while it is unissued (the database allows one per person, type and data) and mails a new code; for a holder who lost their
     credential, the organisation posts the form again after the first was issued, which makes a new entitlement. The credential is signed from the entitlement when the
     wallet asks for it: the issuer claims it first, so no one else can take it, and marks it issued once the credential is made. A claim that is not
     followed by that runs out after two minutes, and the entitlement can be claimed again until it passes its end or is revoked.
