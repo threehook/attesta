@@ -136,3 +136,26 @@ func TestHasNoEndpointThatMakesALink(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyStaffUseTheFormsEndpointsButWalletsAndProbesNeedNoSignIn(t *testing.T) {
+	protocol := http.NewServeMux()
+	protocol.HandleFunc("GET /oid4vci/ping", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("pong")) })
+	f := &fake{}
+	h := httpapi.Handler(httpapi.Config{
+		Protocol: protocol,
+		Protect: func(http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusUnauthorized) })
+		},
+	}, f)
+
+	for _, c := range []struct{ method, path string }{{"GET", "/info"}, {"POST", "/entitlements/employee"}, {"POST", "/entitlements/diploma"}} {
+		if code, _ := call(h, c.method, c.path, "{}"); code != http.StatusUnauthorized {
+			t.Errorf("%s %s: %d", c.method, c.path, code)
+		}
+	}
+	for _, path := range []string{"/oid4vci/ping", "/healthz"} {
+		if code, _ := call(h, "GET", path, ""); code >= 400 {
+			t.Errorf("%s: %d", path, code)
+		}
+	}
+}

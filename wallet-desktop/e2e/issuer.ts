@@ -75,6 +75,7 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
       ...process.env,
       ATTESTA_ISSUER_PORT: String(port),
       ATTESTA_ISSUER_PUBLIC_URL: url,
+      ATTESTA_ISSUER_AUTH_DISABLED: "true",
       ATTESTA_ISSUER_DB_HOST: `127.0.0.1:${env("ATTESTA_E2E_POSTGRES_PORT")}`,
       ATTESTA_ISSUER_DB_USER: "postgres",
       ATTESTA_ISSUER_DB_PASSWORD: "e2e",

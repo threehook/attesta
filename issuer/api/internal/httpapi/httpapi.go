@@ -25,18 +25,28 @@ type Config struct {
 	DID string
 	// Protocol serves the OpenID4VCI endpoints for wallets.
 	Protocol http.Handler
+	// Protect wraps what only staff may use; nil leaves it open.
+	Protect func(http.Handler) http.Handler
 }
 
 // Handler serves the API and, next to it, the endpoints wallets use.
 func Handler(cfg Config, svc Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", cfg.Protocol)
-	mux.HandleFunc("GET /info", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	staff := http.NewServeMux()
+	protect := cfg.Protect
+	if protect == nil {
+		protect = func(h http.Handler) http.Handler { return h }
+	}
+	mux.Handle("/info", protect(staff))
+	mux.Handle("/entitlements/", protect(staff))
+	staff.HandleFunc("GET /info", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "descriptions": credential.DefaultDescriptions,
 		})
 	})
-	mux.HandleFunc("POST /entitlements/diploma", func(w http.ResponseWriter, r *http.Request) {
+	staff.HandleFunc("POST /entitlements/diploma", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Name, Email, Degree, University, Description string
 		}
@@ -46,7 +56,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 		e, err := svc.RecordDiploma(r.Context(), service.DiplomaInput{Name: in.Name, Email: in.Email, Degree: in.Degree, University: in.University, Description: in.Description})
 		grant(w, r, svc, e, err)
 	})
-	mux.HandleFunc("POST /entitlements/employee", func(w http.ResponseWriter, r *http.Request) {
+	staff.HandleFunc("POST /entitlements/employee", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
 			Name, Email, Department, Organisation, Diploma, DiplomaValidUntil, Description string
 		}

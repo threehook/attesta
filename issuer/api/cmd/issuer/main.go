@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"attesta/issuer/internal/auth"
 	"attesta/issuer/internal/config"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/httpapi"
@@ -59,9 +60,16 @@ func run() error {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 
+	httpCfg := httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler()}
+	if cfg.Auth.Disabled {
+		slog.Warn("sign-in is switched off: anyone who reaches the forms can record entitlements")
+	} else {
+		httpCfg.Protect = auth.New(auth.Options{Issuer: cfg.Auth.Issuer, DiscoveryURL: cfg.Auth.DiscoveryURL, ClientID: cfg.Auth.ClientID, Role: cfg.Auth.Role}).Protect
+	}
+
 	server := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           httpapi.Handler(httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler()}, svc),
+		Handler:           httpapi.Handler(httpCfg, svc),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	failed := make(chan error, 1)

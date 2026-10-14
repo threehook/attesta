@@ -23,6 +23,16 @@ type Config struct {
 	RenewalCooldown time.Duration
 	Database        Database
 	SMTP            SMTP
+	Auth            Auth
+}
+
+// Auth is the OpenID Connect server the staff sign in at. Disabled leaves the forms open and is for tests and local development only.
+type Auth struct {
+	Issuer       string
+	DiscoveryURL string
+	ClientID     string
+	Role         string
+	Disabled     bool
 }
 
 type Database struct {
@@ -95,6 +105,14 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_DB_HOST is required")
 	}
 
+	auth := Auth{
+		Issuer: str("OIDC_ISSUER", ""), DiscoveryURL: str("OIDC_DISCOVERY_URL", ""), ClientID: str("OIDC_CLIENT_ID", "issuer-gui"),
+		Role: str("OIDC_ROLE", "issuer-staff"), Disabled: str("AUTH_DISABLED", "") == "true",
+	}
+	if auth.Issuer == "" && !auth.Disabled {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_OIDC_ISSUER is required (ATTESTA_ISSUER_AUTH_DISABLED=true leaves the forms open)")
+	}
+
 	return Config{
 		Port:       port,
 		PublicURL:  str("PUBLIC_URL", fmt.Sprintf("http://localhost:%d", port)),
@@ -106,5 +124,6 @@ func Load(getenv func(string) string) (Config, error) {
 			Host: str("SMTP_HOST", "localhost"), Port: smtpPort, User: str("SMTP_USER", ""), Password: str("SMTP_PASSWORD", ""),
 			TLS: tls, From: str("MAIL_FROM", "credentials@attesta.local"),
 		},
+		Auth: auth,
 	}, nil
 }
