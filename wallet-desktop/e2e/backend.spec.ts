@@ -5,7 +5,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test } from "@playwright/test";
-import { startTestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { startTestIssuer } from "../../issuer/api/src/testing.js";
 import { addCredential } from "./issuing.js";
 
 const backend = process.env.ATTESTA_BACKEND_URL?.replace(/\/$/, "");

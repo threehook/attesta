@@ -4,13 +4,13 @@ WORKDIR /src
 RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY examples/issuer/gui/package.json examples/issuer/gui/package.json
+COPY issuer/gui/package.json issuer/gui/package.json
 RUN pnpm install --frozen-lockfile --filter @attesta/issuer-gui...
 
-COPY examples/issuer/gui/ examples/issuer/gui/
+COPY issuer/gui/ issuer/gui/
 
 USER node
-WORKDIR /src/examples/issuer/gui
+WORKDIR /src/issuer/gui
 ENV ATTESTA_ISSUER_GUI_LISTEN_PORT=4000
 EXPOSE 4000
 CMD ["./node_modules/.bin/tsx", "src/server.ts"]

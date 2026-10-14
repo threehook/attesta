@@ -272,7 +272,7 @@ func TestDIDKeyRoundTrip(t *testing.T) {
 	}
 }
 
-// testdata/credo-presentation.json was recorded from a Credo wallet answering an OpenID4VP request (examples/issuer/api/scripts/sdjwt-fixture.ts); it
+// testdata/credo-presentation.json was recorded from a Credo wallet answering an OpenID4VP request (issuer/api/scripts/sdjwt-fixture.ts); it
 // checks that this verifier accepts what a real wallet produces.
 func TestVerifyCredoPresentation(t *testing.T) {
 	raw, err := os.ReadFile("testdata/credo-presentation.json")

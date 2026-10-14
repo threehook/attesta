@@ -1,6 +1,6 @@
 package policy
 
-// Authorize lets a municipality employee submit a laadpaal request: an Employee credential from a trusted issuer (the demo issuer, examples/issuer,
+// Authorize lets a municipality employee submit a laadpaal request: an Employee credential from a trusted issuer (the issuer,
 // with its default seed; add other municipalities' DIDs to trustedIssuers), for the Burgerzaken department and a laadpalen-management diploma,
 // and the application must have given the employee the laadpalen-aanvrager role.
 // claims holds the disclosed claims by name; the request must ask for department and diploma. The credential's own expiry is checked before this runs,

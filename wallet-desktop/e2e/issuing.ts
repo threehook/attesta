@@ -1,6 +1,6 @@
 // How the end-to-end tests get a credential into the real app: the way a holder does, with the QR code from the mail uploaded in the wallet.
 import { expect, type Page } from "@playwright/test";
-import { qrImageFor, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { qrImageFor, type TestIssuer } from "../../issuer/api/src/testing.js";
 
 const goTo = (window: Page, page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
 

@@ -13,7 +13,7 @@ document and the PDF ([`architecture.pdf`](architecture.pdf)) are rendered from 
 
 ```mermaid
 sequenceDiagram
-    participant I as Issuer (examples/issuer)
+    participant I as Issuer (`issuer/`)
     participant W as Wallet (wallet-desktop, Credo agent in wallet/)
     participant A as Relying application
     participant B as Backend (Go)

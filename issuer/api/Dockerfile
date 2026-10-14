@@ -6,14 +6,14 @@ RUN corepack enable
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY wallet/package.json wallet/package.json
-COPY examples/issuer/api/package.json examples/issuer/api/package.json
+COPY issuer/api/package.json issuer/api/package.json
 RUN pnpm install --frozen-lockfile --filter @attesta/issuer-api...
 
 COPY wallet/ wallet/
-COPY examples/issuer/api/ examples/issuer/api/
+COPY issuer/api/ issuer/api/
 
 USER node
-WORKDIR /src/examples/issuer/api
+WORKDIR /src/issuer/api
 ENV ATTESTA_ISSUER_PORT=4001
 EXPOSE 4001
 CMD ["./node_modules/.bin/tsx", "src/server.ts"]

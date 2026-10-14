@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { _electron as electron, expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import { qrImageFor, qrLinkFor, startTestIssuer, type TestIssuer } from "../../examples/issuer/api/src/testing.js";
+import { qrImageFor, qrLinkFor, startTestIssuer, type TestIssuer } from "../../issuer/api/src/testing.js";
 import { addCredential, uploadQr } from "./issuing.js";
 
 const appDir = join(import.meta.dirname, "..");

@@ -106,10 +106,10 @@ k8s-ensure-policies:
 	else kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE); fi
 
-# Built with the repo root as context (see the Dockerfiles in examples/issuer/api and examples/issuer/gui) — the pnpm workspace install needs the other workspace packages' manifests.
+# Built with the repo root as context (see the Dockerfiles in issuer/api and issuer/gui) — the pnpm workspace install needs the other workspace packages' manifests.
 docker-build-issuer:
-	docker build -f examples/issuer/api/Dockerfile -t $(ISSUER_API_IMAGE) .
-	docker build -f examples/issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
+	docker build -f issuer/api/Dockerfile -t $(ISSUER_API_IMAGE) .
+	docker build -f issuer/gui/Dockerfile -t $(ISSUER_GUI_IMAGE) .
 
 # Same pattern as k8s-apply. The demo issuer is independent of the backend; its DID (from the default seed) is the one the laadpalen
 # policies trust. Reachable at https://issuer.attesta.corbencreatives.nl (k8s-ingress) and from the host at http://localhost:4000 through the LoadBalancer.

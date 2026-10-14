@@ -1,6 +1,6 @@
 package policy
 
-// Authorize signs in a municipality employee: an Employee credential from a trusted issuer (the demo issuer, examples/issuer, with its default seed;
+// Authorize signs in a municipality employee: an Employee credential from a trusted issuer (the issuer, with its default seed;
 // add other municipalities' DIDs to trustedIssuers). Nothing but the identity is read; what the employee may do is decided per request.
 func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
 	trustedIssuers := map[string]bool{
