@@ -53,7 +53,7 @@ examples/
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    issuer/           deployments/services for the issuer: api, gui, Postgres and Mailpit (https://issuer.attesta.corbencreatives.nl, and LoadBalancer on localhost:4000)
+    issuer/           deployments/services for the issuer: api, gui, Postgres, Mailpit and Keycloak (https://issuer.attesta.corbencreatives.nl)
     laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach Attesta at https://api.attesta.corbencreatives.nl)
     ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
   cloud/              (empty for now)
@@ -117,7 +117,7 @@ make k8s-port-forward     # expose the service on localhost:8080 for curl/Postma
 make k8s-delete           # tear down the namespace
 make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
 make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
-make k8s-issuer-apply    # deploys the issuer; open http://localhost:4000 for its form
+make k8s-issuer-apply    # deploys the issuer; open https://issuer.attesta.corbencreatives.nl and sign in for its form
 make laadpalen           # deploys examples/laadpalen (needs the issuer): page at https://laadpalen.attesta.corbencreatives.nl (needs make k8s-traefik k8s-ingress once)
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
@@ -145,7 +145,7 @@ Askar, the wallet's storage, ships a native library that its install script down
 The laadpalen app and its policies are in [examples/laadpalen](examples/laadpalen/README.md):
 
 ```sh
-make k8s-issuer-apply laadpalen                                # the issuer (form at http://localhost:4000) and the laadpalen app
+make k8s-issuer-apply laadpalen                                # the issuer (form at https://issuer.attesta.corbencreatives.nl) and the laadpalen app
 pnpm --filter @attesta/wallet-desktop package                  # the wallet: record a credential on the issuer's form, then choose "Mijn credential ophalen" on the issuer page and log in with the mailed link (needs https)
 ```
 

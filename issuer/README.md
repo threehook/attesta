@@ -25,20 +25,31 @@ configured to trust the issuer's DID. It has two parts:
     `make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender>`; it asks for the password and restarts the API. The sender must be an address or domain that the mail server allows.
   - The issuer's identity is the `did:key` of an Ed25519 key derived from `ATTESTA_ISSUER_SEED`, so the DID is stable across restarts and replicas; use another seed than the default outside local development.
     The email is what identifies the person to verifiers.
+  - **Only signed-in staff record entitlements.** `/info` and `/entitlements/*` need an access token (`Authorization: Bearer`) from an OpenID Connect server
+    (`ATTESTA_ISSUER_OIDC_ISSUER`, the name in its tokens; `_OIDC_DISCOVERY_URL` when its metadata is reached at another address; `_OIDC_CLIENT_ID`, default `issuer-gui`).
+    The token must be issued to that client and carry the role `issuer-staff` (`_OIDC_ROLE`; in `realm_access.roles` or `roles`). The wallet endpoints under `/oid4vci`
+    and `/healthz` need no token. Without `_OIDC_ISSUER` the issuer refuses to start; `ATTESTA_ISSUER_AUTH_DISABLED=true` leaves the endpoints open, for tests and local development only.
 - `gui/` (`@attesta/issuer-gui`) serves the pages: `/` and the forms at `/diploma` and `/employee`. A form posts to the page, which passes it to the API and says that a mail
-  with a QR code is on its way. The page has no key and no store; it only calls the API.
+  with a QR code is on its way. The page has no key and no store; it only calls the API. Staff sign in at the OpenID Connect server (authorization code with PKCE,
+  confidential client): `ATTESTA_ISSUER_OIDC_ISSUER`, `_OIDC_DISCOVERY_URL`, `_OIDC_CLIENT_ID`, `_OIDC_CLIENT_SECRET` and `ATTESTA_ISSUER_GUI_PUBLIC_URL` (where staff reach the pages, which
+    the server sends them back to). The session lives in the page's memory, so a restart signs everyone out; the access token is renewed with the refresh token, and "Afmelden" ends the session at the server too.
+    `ATTESTA_ISSUER_AUTH_DISABLED=true` opens the pages.
 
 ```sh
 cd issuer/api && go run ./cmd/issuer      # ATTESTA_ISSUER_PORT (4001), ATTESTA_ISSUER_PUBLIC_URL, ATTESTA_ISSUER_SEED, ATTESTA_ISSUER_NAME,
-                                          # ATTESTA_ISSUER_DB_HOST/_USER/_PASSWORD/_NAME, ATTESTA_ISSUER_SMTP_HOST/_PORT, ATTESTA_ISSUER_MAIL_FROM
-pnpm --filter @attesta/issuer-gui start   # ATTESTA_ISSUER_GUI_LISTEN_PORT (4000), ATTESTA_ISSUER_API_URL (http://localhost:4001)
+                                          # ATTESTA_ISSUER_DB_HOST/_USER/_PASSWORD/_NAME, ATTESTA_ISSUER_SMTP_HOST/_PORT, ATTESTA_ISSUER_MAIL_FROM,
+                                          # ATTESTA_ISSUER_OIDC_ISSUER (or ATTESTA_ISSUER_AUTH_DISABLED=true)
+pnpm --filter @attesta/issuer-gui start   # ATTESTA_ISSUER_GUI_LISTEN_PORT (4000), ATTESTA_ISSUER_API_URL (http://localhost:4001), ATTESTA_ISSUER_OIDC_* (or AUTH_DISABLED=true)
 cd issuer/api && go test ./...            # needs Docker: Postgres and Mailpit run in containers
-pnpm --filter @attesta/issuer-gui test    # the pages against a stand-in API
+pnpm --filter @attesta/issuer-gui test    # the pages against a stand-in API and a stand-in login server
 ```
 
 `ATTESTA_ISSUER_PUBLIC_URL` must be the address wallets reach the API at: it appears in the QR codes and in the issuer metadata.
 
-In Docker Desktop's Kubernetes, `make k8s-issuer-apply` builds both images and deploys them with Postgres and Mailpit (`k8s/local/issuer/`); the pages are then at http://localhost:4000.
-The Ingress sends `/oid4vci` on the issuer's address to the API and everything else to the pages, so recording entitlements is not reachable from outside the cluster except through the page's forms.
+In Docker Desktop's Kubernetes, `make k8s-issuer-apply` builds both images and deploys them with Postgres, Mailpit and Keycloak (`k8s/local/issuer/`). Staff sign in at https://issuer.attesta.corbencreatives.nl
+as user `staff`; the password is in the Secret `attesta-issuer-auth` (`kubectl -n attesta get secret attesta-issuer-auth -o jsonpath='{.data.staff-password}' | base64 -d`, and `admin-password` for Keycloak's console at `/auth`).
+Keycloak's realm `attesta` comes from the ConfigMap `issuer-keycloak-realm`; users made by hand are gone after a restart. A customer points the issuer at its own server instead and needs a client `issuer-gui`
+(redirect URI `<pages address>/callback`) and the role `issuer-staff`. The sign-in works only at the https address, not at http://localhost:4000, because the server sends staff back to the address in `ATTESTA_ISSUER_GUI_PUBLIC_URL`.
+The Ingress sends `/oid4vci`, `/.well-known` and `/auth` on the issuer's address to the API and Keycloak and everything else to the pages, so recording entitlements needs a sign-in.
 The Postgres deployment keeps its data on a volume claim that `make k8s-issuer-delete` leaves in place, with the account in the Secret `attesta-issuer-db` (`make k8s-issuer-secret`).
 The signing key comes from the seed, so the DID stays the same across restarts.

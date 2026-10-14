@@ -15,7 +15,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
   authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
-- `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code) and `gui/` (the pages, which only call the API).
+- `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code) and `gui/` (the pages, which only call the API). Staff sign in at an OpenID Connect server (Keycloak in the cluster, a customer's own elsewhere); the API checks their token and the role `issuer-staff`.
 - `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
@@ -43,7 +43,7 @@ Manual test, with the packaged wallet (it refuses plain http, and is the only wa
 the `openid4vp://` handler, then use https://laadpalen.attesta.corbencreatives.nl and https://issuer.attesta.corbencreatives.nl. Setup: `make k8s-traefik k8s-ingress` (Traefik in
 namespace `ingress`, Ingress in `k8s/local/ingress`); the names are in the deSEC zone `attesta.corbencreatives.nl` and resolve to 127.0.0.1, so a router with DNS rebind protection needs
 that domain as an exception. The wildcard certificate is from `lego` (DNS-01 at deSEC, files in `~/.config/attesta/lego`; renew by hand every 90 days); `make k8s-tls` loads it.
-The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secret attesta-backend -o jsonpath='{.data.admin-token}' | base64 -d`).
+The issuer's staff user is `staff`, its password is in the Secret `attesta-issuer-auth` (key `staff-password`). The admin token is in the Secret `attesta-backend` (`kubectl -n attesta get secret attesta-backend -o jsonpath='{.data.admin-token}' | base64 -d`).
 
 ## Things learned the hard way
 
