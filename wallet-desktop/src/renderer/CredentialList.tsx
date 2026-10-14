@@ -2,7 +2,10 @@ import type { HeldCredential } from "../shared/api.js";
 import { claimLabel } from "../shared/labels.js";
 
 // Fields that belong to the credential's mechanics, not to what it says about the holder.
-const technical = new Set(["iss", "iat", "exp", "nbf", "vct", "cnf", "_sd_alg", "status"]);
+const technical = new Set(["iss", "iat", "exp", "nbf", "vct", "cnf", "_sd_alg", "status", "title", "validUntil"]);
+
+// What the issuer calls the credential; the type where it gave no title.
+const title = (credential: HeldCredential): string => (typeof credential.claims.title === "string" && credential.claims.title !== "" ? credential.claims.title : credential.type);
 
 export function CredentialList({ credentials }: { credentials: HeldCredential[] }) {
   if (credentials.length === 0) {
@@ -12,7 +15,7 @@ export function CredentialList({ credentials }: { credentials: HeldCredential[] 
     <section aria-label="Credentials">
       {credentials.map((credential) => (
         <article key={credential.id} className="credential">
-          <h2>{credential.type}</h2>
+          <h2>{title(credential)}</h2>
           <p className="issuer">Uitgegeven door {credential.issuer}</p>
           <dl>
             {Object.entries(credential.claims)
@@ -20,9 +23,15 @@ export function CredentialList({ credentials }: { credentials: HeldCredential[] 
               .map(([name, value]) => (
                 <div key={name}>
                   <dt>{claimLabel(name)}</dt>
-                  <dd>{String(value)}</dd>
+                  <dd>{Array.isArray(value) ? value.join(", ") : String(value)}</dd>
                 </div>
               ))}
+            {typeof credential.claims.exp === "number" && (
+              <div>
+                <dt>Geldig tot</dt>
+                <dd>{new Date(credential.claims.exp * 1000).toLocaleDateString("nl-NL", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "UTC" })}</dd>
+              </div>
+            )}
           </dl>
         </article>
       ))}

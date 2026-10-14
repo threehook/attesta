@@ -412,6 +412,7 @@ dl div {
 }
 
 dt {
+  flex: none;
   width: 8rem;
   color: var(--muted);
 }

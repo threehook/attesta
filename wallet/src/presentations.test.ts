@@ -45,6 +45,22 @@ describe('applyIdentityHint', () => {
     ])
   })
 
+  it('holds every credential of a request to the hinted email but only the first to the hinted issuer', () => {
+    const query = {
+      credentials: [
+        { id: 'credential', claims: [{ path: ['department'] }, { path: ['email'] }] },
+        { id: 'credential_2', claims: [{ path: ['course'] }, { path: ['email'] }] },
+      ],
+    }
+    const { uri } = applyIdentityHint(link({ login_hint: 'a@b.c', issuer_hint: 'did:key:z6Mk1', dcql_query: JSON.stringify(query) }))
+    expect(queryOf(uri).credentials[0].claims).toEqual([
+      { path: ['department'] },
+      { path: ['email'], values: ['a@b.c'] },
+      { path: ['iss'], values: ['did:key:z6Mk1'] },
+    ])
+    expect(queryOf(uri).credentials[1].claims).toEqual([{ path: ['course'] }, { path: ['email'], values: ['a@b.c'] }])
+  })
+
   it('leaves something that is not a link alone', () => {
     expect(applyIdentityHint('not a link')).toEqual({ uri: 'not a link' })
   })

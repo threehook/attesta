@@ -20,8 +20,9 @@ const HINT_EMAIL = 'login_hint'
 const HINT_ISSUER = 'issuer_hint'
 
 /**
- * Takes the identity hint off a link and narrows the request's DCQL query to that identity: the claim `email` and the credential's issuer (`iss`)
- * must have the hinted values, so the wallet answers with the credential that was chosen. A link with no hint, or no inline query, is left as it is.
+ * Takes the identity hint off a link and narrows the request's DCQL query to that identity: the claim `email` of every credential and the issuer (`iss`)
+ * of the first one must have the hinted values, so the wallet answers with the credentials of the person that was chosen. The further credentials of a
+ * request may come from other issuers. A link with no hint, or no inline query, is left as it is.
  */
 export function applyIdentityHint(requestUri: string): { uri: string; hint?: { email: string; issuer: string } } {
   let url: URL
@@ -39,10 +40,10 @@ export function applyIdentityHint(requestUri: string): { uri: string; hint?: { e
   const query = url.searchParams.get('dcql_query')
   if (query) {
     const parsed = JSON.parse(query) as { credentials?: Array<{ claims?: Array<Record<string, unknown>> }> }
-    for (const credential of parsed.credentials ?? []) {
+    for (const [i, credential] of (parsed.credentials ?? []).entries()) {
       const claims = (credential.claims ?? []).filter((claim) => !isPath(claim, 'iss'))
       credential.claims = claims.map((claim) => (isPath(claim, 'email') ? { ...claim, values: [email] } : claim))
-      credential.claims.push({ path: ['iss'], values: [issuer] })
+      if (i === 0) credential.claims.push({ path: ['iss'], values: [issuer] })
     }
     url.searchParams.set('dcql_query', JSON.stringify(parsed))
   }

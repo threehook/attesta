@@ -6,16 +6,16 @@ const request = (application?: string) => ({
   kind: "presentation" as const,
   verifier: "redirect_uri:https://api.example/v1/r/response",
   application,
-  requested: [{ type: ["Employee"], claims: ["department", "diploma"] }],
+  requested: [{ type: ["Employee"], claims: ["department", "roles"] }],
   signIn: false,
   satisfiable: true,
 });
 
 describe("sharePrompt", () => {
   it("names the application and lists what would be shared, once each", () => {
-    const p = sharePrompt({ ...request("https://api.example"), requested: [{ type: ["A"], claims: ["email"] }, { type: ["B"], claims: ["email", "diploma"] }] });
+    const p = sharePrompt({ ...request("https://api.example"), requested: [{ type: ["A"], claims: ["email"] }, { type: ["B"], claims: ["email", "roles"] }] });
     expect(p.message).toContain("https://api.example");
-    expect(p.detail).toBe("• wie het heeft uitgegeven\n• E-mailadres\n• Diploma");
+    expect(p.detail).toBe("• wie het heeft uitgegeven\n• E-mailadres\n• Rollen");
   });
 
   it("offers Altijd delen only for an application the user can trust", () => {

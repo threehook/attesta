@@ -2,12 +2,11 @@
 const LABELS: Record<string, string> = {
   name: "Naam",
   email: "E-mailadres",
-  degree: "Graad",
-  university: "Opleidingsinstituut",
   department: "Afdeling",
   organisation: "Organisatie",
-  diploma: "Diploma",
+  roles: "Rollen",
   description: "Omschrijving",
+  issuer_name: "Uitgever",
 };
 
 export const claimLabel = (claim: string): string => LABELS[claim] ?? claim;
