@@ -23,6 +23,15 @@ type Input struct {
 	Claims map[string]string
 	// UserRoles are asserted by the calling application, not verified by Attesta; empty when it sent none.
 	UserRoles []string
+	// Others are the further credentials of the same person that the request asked for, by credential type. A request without any is evaluated with
+	// Authorize, one with some with AuthorizeWithOthers.
+	Others map[string]Other
+}
+
+// Other is a further credential a presentation held: who issued it and its disclosed claims, as strings.
+type Other struct {
+	Issuer string
+	Claims map[string]string
 }
 
 // Decision is one of the decisions standardized by XACML.
@@ -66,6 +75,8 @@ type Evaluator interface {
 	Validate(source string) error
 	// Evaluate loads source as a Gno package and calls its exported function
 	// Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string).
+	// A request that asked for several credentials calls AuthorizeWithOthers(resource, credType, issuer string, claims map[string]string, roles []string,
+	// others map[string]map[string]string, otherIssuers map[string]string), where the maps are keyed by the further credentials' types, with the same results.
 	// decision is Permit, Deny, NotApplicable or Indeterminate. In obligations and advice every map is one statement: its "id" key is the identifier
 	// and every other key is an attribute ID with a string value.
 	Evaluate(source string, in Input) (Result, error)
@@ -96,15 +107,31 @@ const policyPkgPath = "attesta/policy"
 // validationInput is the sample call Validate makes to prove the policy's Authorize has the expected signature; its values are never interpreted.
 var validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate", Claims: map[string]string{"validate": "validate"}}
 
+// validationInputWithOthers is the same for AuthorizeWithOthers.
+var validationInputWithOthers = Input{
+	Resource: "validate", Type: "validate", Issuer: "validate", Claims: map[string]string{"validate": "validate"},
+	Others: map[string]Other{"validate": {Issuer: "validate", Claims: map[string]string{"validate": "validate"}}},
+}
+
+const withOthers = "AuthorizeWithOthers"
+
 // Validate checks that source compiles and that its Authorize function exists with the signature Evaluate calls, by running it once against
 // validationInput. A policy that panics on that call is rejected too.
 func (e *GnoVM) Validate(source string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	_, err := e.evaluate(source, validationInput)
-	return err
+	if _, err := e.evaluate(source, validationInput); err != nil {
+		return err
+	}
+	if definesWithOthers(source) {
+		_, err := e.evaluate(source, validationInputWithOthers)
+		return err
+	}
+	return nil
 }
+
+func definesWithOthers(source string) bool { return strings.Contains(source, "func "+withOthers+"(") }
 
 func (e *GnoVM) Evaluate(source string, in Input) (Result, error) {
 	e.mu.Lock()
@@ -123,6 +150,13 @@ func (e *GnoVM) evaluate(source string, in Input) (result Result, err error) {
 		m.RunFiles(file)
 
 		expr := fmt.Sprintf("Authorize(%q, %q, %q, %s, %s)", in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims), userRolesLiteral(in.UserRoles))
+		if len(in.Others) > 0 {
+			if !definesWithOthers(source) {
+				return fmt.Errorf("the policy cannot decide on several credentials: it has no %s function", withOthers)
+			}
+			expr = fmt.Sprintf("%s(%q, %q, %q, %s, %s, %s, %s)", withOthers, in.Resource, in.Type, in.Issuer, claimsLiteral(in.Claims), userRolesLiteral(in.UserRoles),
+				othersLiteral(in.Others), otherIssuersLiteral(in.Others))
+		}
 		ex, err := m.ParseExpr(expr)
 		if err != nil {
 			return fmt.Errorf("parse call expression: %w", err)
@@ -197,6 +231,35 @@ func userRolesLiteral(roles []string) string {
 		parts[i] = fmt.Sprintf("%q", r)
 	}
 	return "[]string{" + strings.Join(parts, ", ") + "}"
+}
+
+// othersLiteral renders the further credentials' claims by type, with sorted keys.
+func othersLiteral(others map[string]Other) string {
+	types := sortedTypes(others)
+	parts := make([]string, len(types))
+	for i, t := range types {
+		parts[i] = fmt.Sprintf("%q: %s", t, claimsLiteral(others[t].Claims))
+	}
+	return "map[string]map[string]string{" + strings.Join(parts, ", ") + "}"
+}
+
+// otherIssuersLiteral renders the further credentials' issuers by type.
+func otherIssuersLiteral(others map[string]Other) string {
+	types := sortedTypes(others)
+	parts := make([]string, len(types))
+	for i, t := range types {
+		parts[i] = fmt.Sprintf("%q: %q", t, others[t].Issuer)
+	}
+	return "map[string]string{" + strings.Join(parts, ", ") + "}"
+}
+
+func sortedTypes(others map[string]Other) []string {
+	types := make([]string, 0, len(others))
+	for t := range others {
+		types = append(types, t)
+	}
+	sort.Strings(types)
+	return types
 }
 
 // claimsLiteral renders claims as a Gno map literal, with sorted keys so the call is the same every time. %q yields valid Gno string literals.

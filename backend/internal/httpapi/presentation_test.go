@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -73,9 +74,8 @@ func TestHandlePresentationRequest(t *testing.T) {
 	if resp.RequestID != "req-1" || resp.AuthorizationRequest != "openid4vp://?x=1" {
 		t.Errorf("response = %+v", resp)
 	}
-	want := presentation.Request{Resource: "vault", PolicyID: "p1", CredentialType: "Diploma", Claims: []string{"degree"}}
-	if p.gotRequest.Resource != want.Resource || p.gotRequest.PolicyID != want.PolicyID || p.gotRequest.CredentialType != want.CredentialType ||
-		len(p.gotRequest.Claims) != 1 || p.gotRequest.Claims[0] != "degree" {
+	want := presentation.Request{Resource: "vault", PolicyID: "p1", Credentials: []presentation.CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree"}}}}
+	if !reflect.DeepEqual(p.gotRequest.Credentials, want.Credentials) || p.gotRequest.Resource != want.Resource || p.gotRequest.PolicyID != want.PolicyID {
 		t.Errorf("request = %+v, want %+v", p.gotRequest, want)
 	}
 }
@@ -108,8 +108,9 @@ func TestHandlePresentationRequestErrors(t *testing.T) {
 
 func presented() *presentation.Presented {
 	return &presentation.Presented{
-		Request: presentation.Request{Resource: "vault", PolicyID: "p1", CredentialType: "Diploma"},
-		Issuer:  "did:key:issuer", Type: "Diploma", Subject: presentation.Subject{Issuer: "did:key:issuer", Email: "ada@example.com"},
+		Request:     presentation.Request{Resource: "vault", PolicyID: "p1", Credentials: []presentation.CredentialQuery{{CredentialType: "Diploma"}}},
+		Subject:     presentation.Subject{Issuer: "did:key:issuer", Email: "ada@example.com"},
+		Credentials: []presentation.PresentedCredential{{Issuer: "did:key:issuer", Type: "Diploma"}},
 	}
 }
 
@@ -139,7 +140,7 @@ func TestHandlePresentationResponse(t *testing.T) {
 			status: http.StatusInternalServerError, completed: &presentation.Outcome{Decision: authz.Indeterminate, Reason: "policy evaluation failed"},
 		},
 		"policy disappeared": {
-			p: &fakePresenter{presented: &presentation.Presented{Request: presentation.Request{PolicyID: "gone"}}}, e: &fakeEvaluator{},
+			p: &fakePresenter{presented: &presentation.Presented{Request: presentation.Request{PolicyID: "gone"}, Credentials: []presentation.PresentedCredential{{Type: "Diploma"}}}}, e: &fakeEvaluator{},
 			status: http.StatusNotFound, completed: &presentation.Outcome{Decision: authz.NotApplicable, Reason: "unknown policy"},
 		},
 	}
@@ -165,7 +166,7 @@ func TestHandlePresentationResponse(t *testing.T) {
 
 func TestHandlePresentationResponsePassesTheClaimsToThePolicy(t *testing.T) {
 	p := presented()
-	p.Claims = map[string]any{"department": "burgerzaken", "email": "ada@example.com", "level": float64(3), "courses": []any{"a", "b"}}
+	p.Credentials[0].Claims = map[string]any{"department": "burgerzaken", "email": "ada@example.com", "level": float64(3), "courses": []any{"a", "b"}}
 	e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit}}
 	s := newPresentationServer(t, &fakePresenter{presented: p}, e)
 
@@ -321,7 +322,7 @@ func TestEveryDecisionIsLoggedBeforeItsOutcomeIsRecorded(t *testing.T) {
 			}
 			d := log.decisions[0]
 			if d.Allow != (decision == authz.Permit) || d.Reason != "r" || d.DecidedBy != "policy" || d.TraceParent != callersTraceParent || d.RequestID != "req-1" ||
-				d.SubjectID != pr.Subject.Email || d.Issuer != pr.Issuer || len(d.UserRoles) != 1 || d.Err != nil {
+				d.SubjectID != pr.Subject.Email || d.Issuer != pr.Credentials[0].Issuer || len(d.UserRoles) != 1 || d.Err != nil {
 				t.Errorf("decision = %+v", d)
 			}
 			if p.completed == nil || p.completed.Decision != decision {
@@ -332,7 +333,7 @@ func TestEveryDecisionIsLoggedBeforeItsOutcomeIsRecorded(t *testing.T) {
 }
 
 func TestAnAnswerThatDoesNotVerifyIsLogged(t *testing.T) {
-	req := presentation.Request{Resource: "vault", PolicyID: "p1", CredentialType: "Diploma", TraceParent: callersTraceParent}
+	req := presentation.Request{Resource: "vault", PolicyID: "p1", Credentials: []presentation.CredentialQuery{{CredentialType: "Diploma"}}, TraceParent: callersTraceParent}
 	p := &fakePresenter{respondErr: &presentation.Rejected{Request: req, Err: errors.New("invalid presentation: state does not match the request")}}
 	log := &fakeDecisionLog{}
 	s := newPresentationServer(t, p, &fakeEvaluator{})
@@ -409,5 +410,48 @@ func TestOutcomeResponseCarriesObligationsAndAdvice(t *testing.T) {
 		`"advice":[{"id":"show-banner","attributeAssignments":[{"attributeId":"text","value":"welcome"}]}]}`
 	if got := strings.TrimSpace(rec.Body.String()); got != want {
 		t.Errorf("body = %s\nwant   %s", got, want)
+	}
+}
+
+func TestSeveralCredentialsTravelFromTheRequestToThePolicyAndTheLog(t *testing.T) {
+	p := &fakePresenter{}
+	s := newPresentationServer(t, p, &fakeEvaluator{})
+	body := `{"resource":"vault","policyId":"p1","credentials":[{"credentialType":"Employee","claims":["department"]},{"credentialType":"Certificate","claims":["course"]}]}`
+	if rec := doRequest(s, "POST", "/v1/authorize/requests", body, nil); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
+	}
+	want := []presentation.CredentialQuery{{CredentialType: "Employee", Claims: []string{"department"}}, {CredentialType: "Certificate", Claims: []string{"course"}}}
+	if !reflect.DeepEqual(p.gotRequest.Credentials, want) {
+		t.Fatalf("request = %+v", p.gotRequest)
+	}
+
+	answered := presented()
+	answered.Credentials = append(answered.Credentials, presentation.PresentedCredential{Type: "Certificate", Issuer: "did:key:z6Mkc", Claims: map[string]any{"course": "laadpalen-management"}})
+	e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit}}
+	log := &fakeDecisionLog{}
+	s = newPresentationServer(t, &fakePresenter{presented: answered}, e)
+	s.Decisions = log
+	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
+
+	got := e.evaluated.Others["Certificate"]
+	if got.Issuer != "did:key:z6Mkc" || got.Claims["course"] != "laadpalen-management" || e.evaluated.Type != "Diploma" {
+		t.Errorf("policy got %+v", e.evaluated)
+	}
+	if len(log.decisions) != 1 || len(log.decisions[0].Also) != 1 || log.decisions[0].Also[0].Type != "Certificate" {
+		t.Errorf("log got %+v", log.decisions)
+	}
+}
+
+func TestRefusesRequestsThatAskForCredentialsTheWrongWay(t *testing.T) {
+	s := newPresentationServer(t, &fakePresenter{}, &fakeEvaluator{})
+	for name, body := range map[string]string{
+		"two of one type":      `{"resource":"v","policyId":"p1","credentials":[{"credentialType":"Employee"},{"credentialType":"Employee"}]}`,
+		"a credential no type": `{"resource":"v","policyId":"p1","credentials":[{"credentialType":"Employee"},{"credentialType":""}]}`,
+		"both ways":            `{"resource":"v","policyId":"p1","credentialType":"Employee","credentials":[{"credentialType":"Certificate"}]}`,
+		"none":                 `{"resource":"v","policyId":"p1"}`,
+	} {
+		if rec := doRequest(s, "POST", "/v1/authorize/requests", body, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status = %d", name, rec.Code)
+		}
 	}
 }

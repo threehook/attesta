@@ -33,6 +33,26 @@ describe("ApiClient.createAuthorizationRequest", () => {
     );
   });
 
+  it("posts several credentials of one person as a list", async () => {
+    const fetchImpl = fakeFetch(200, { requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
+    const client = new ApiClient("http://localhost:8080", fetchImpl);
+    const req = {
+      resource: "vault",
+      policyId: "p1",
+      credentials: [
+        { credentialType: "Employee", claims: ["department", "roles"] },
+        { credentialType: "Certificate", claims: ["course"] },
+      ],
+    };
+
+    await client.createAuthorizationRequest(req);
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "http://localhost:8080/v1/authorize/requests",
+      expect.objectContaining({ method: "POST", body: JSON.stringify(req) }),
+    );
+  });
+
   it("sends the roles in the Att-User-Roles header", async () => {
     const fetchImpl = fakeFetch(200, { requestId: "r1", authorizationRequest: "openid4vp://?x=1" });
     const client = new ApiClient("http://localhost:8080", fetchImpl);

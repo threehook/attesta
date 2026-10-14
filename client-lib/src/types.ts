@@ -1,13 +1,18 @@
 // Shared types for talking to the Attesta backend (see backend/internal/httpapi).
 
-// What an application asks the user's wallet for. The credential type, the issuer and the holder's email are always established; claims lists what
-// the wallet is asked to disclose on top of that.
-export interface AuthorizationRequest {
-  resource: string;
-  policyId: string;
+// A credential the user's wallet is asked for. The type, the issuer and the holder's email are always established; claims lists what the wallet
+// is asked to disclose on top of that.
+export interface CredentialRequest {
   credentialType: string;
   claims?: string[];
 }
+
+// What an application asks the user's wallet for: one or more credentials of the same person, each of a type of its own, the first identifying
+// the person. `credentialType` with `claims` is shorthand for a single credential.
+export type AuthorizationRequest = { resource: string; policyId: string } & (
+  | { credentials: CredentialRequest[] }
+  | ({ credentials?: undefined } & CredentialRequest)
+);
 
 export interface AuthorizationRequestResponse {
   requestId: string;

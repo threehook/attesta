@@ -287,3 +287,39 @@ func TestGnoVMDecisionsOtherThanPermitAndDeny(t *testing.T) {
 		}
 	}
 }
+
+const withOthersPolicy = `package policy
+
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
+	return "Deny", "one credential is not enough", nil, nil
+}
+
+func AuthorizeWithOthers(resource string, credType string, issuer string, claims map[string]string, roles []string, others map[string]map[string]string, otherIssuers map[string]string) (string, string, []map[string]string, []map[string]string) {
+	if others["Certificate"]["course"] == "c1" && otherIssuers["Certificate"] == "i2" && issuer == "i1" {
+		return "Permit", "both", nil, nil
+	}
+	return "Deny", "not both", nil, nil
+}
+`
+
+func TestGnoVMDecidesOnSeveralCredentialsWhenThePolicySaysItCan(t *testing.T) {
+	vm, err := NewGnoVM(io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := vm.Validate(withOthersPolicy); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	other := map[string]Other{"Certificate": {Issuer: "i2", Claims: map[string]string{"course": "c1"}}}
+
+	got, err := vm.Evaluate(withOthersPolicy, Input{Resource: "r", Type: "Employee", Issuer: "i1", Others: other})
+	if err != nil || got.Decision != Permit {
+		t.Fatalf("with others: %+v %v", got, err)
+	}
+	if got, _ = vm.Evaluate(withOthersPolicy, Input{Resource: "r", Type: "Employee", Issuer: "i1"}); got.Decision != Deny || got.Reason != "one credential is not enough" {
+		t.Fatalf("without others: %+v", got)
+	}
+	if _, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "r", Type: "Employee", Issuer: "i1", Others: other}); err == nil {
+		t.Fatal("a policy without AuthorizeWithOthers was evaluated on several credentials")
+	}
+}

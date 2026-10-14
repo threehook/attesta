@@ -20,30 +20,45 @@ import (
 	"github.com/threehook/sdjwt-go"
 )
 
-// queryID names the one credential query in every request.
+// queryID names the first credential query of a request, the one that identifies the person; further credentials are queryID_2, queryID_3, ...
 const queryID = "credential"
+
+// queryIDOf names the n-th credential query (from 0) of a request.
+func queryIDOf(n int) string {
+	if n == 0 {
+		return queryID
+	}
+	return fmt.Sprintf("%s_%d", queryID, n+1)
+}
 
 // identityClaim is the credential claim that identifies the person. Every request asks for it and Respond requires it.
 const identityClaim = "email"
 
 // Request is what an application asks the holder for.
 type Request struct {
-	Resource       string
-	PolicyID       string
-	CredentialType string
-	// Claims are the top-level claim names the holder is asked to disclose, besides the email that identifies them. The type and issuer are always
-	// established. Respond requires every one of them to be disclosed.
-	Claims []string
+	Resource string
+	PolicyID string
+	// Credentials are what the holder must present, each of a type of its own. The first identifies the person; Respond requires every other one to be
+	// of the same person (the same email).
+	Credentials []CredentialQuery
 	// UserRoles are the roles the calling application asserted. They are not part of the presentation and Attesta cannot verify them.
 	UserRoles []string
 	// TraceParent is the W3C traceparent the application sent with the request; the decision log keeps its trace.
 	TraceParent string
 }
 
-// asked lists every claim name a request asks for: its Claims and the identifying email, each once.
-func (r Request) asked() []string {
+// CredentialQuery is one credential a request asks for.
+type CredentialQuery struct {
+	CredentialType string
+	// Claims are the top-level claim names the holder is asked to disclose, besides the email that identifies them. The type and issuer are always
+	// established. Respond requires every one of them to be disclosed.
+	Claims []string
+}
+
+// asked lists every claim name a credential query asks for: its Claims and the identifying email, each once.
+func (q CredentialQuery) asked() []string {
 	asked := []string{}
-	for _, name := range append(append([]string{}, r.Claims...), identityClaim) {
+	for _, name := range append(append([]string{}, q.Claims...), identityClaim) {
 		if !slices.Contains(asked, name) {
 			asked = append(asked, name)
 		}
@@ -60,11 +75,17 @@ type Subject struct {
 // Presented is a presentation that verified.
 type Presented struct {
 	Request Request
-	// Issuer identifies who signed the credential; the policy decides whether to trust it.
-	Issuer string
 	// Subject is only as trustworthy as the issuer, so it is meaningful once the policy has accepted the issuer.
 	Subject Subject
-	// Type is the credential's own type, which matches Request.CredentialType.
+	// Credentials are the presented credentials in the order the request asked for them; the first is the one that identifies the person.
+	Credentials []PresentedCredential
+}
+
+// PresentedCredential is one credential of a presentation that verified.
+type PresentedCredential struct {
+	// Issuer identifies who signed the credential; the policy decides whether to trust it.
+	Issuer string
+	// Type is the credential's own type, which matches the requested one.
 	Type string
 	// Claims are the disclosed claims that were asked for, the email included; anything else the wallet disclosed is dropped.
 	Claims map[string]any
@@ -102,6 +123,9 @@ func New(o Options) *Verifier {
 
 // NewRequest registers a request and returns its id and the `openid4vp://` link to give the wallet.
 func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err error) {
+	if len(r.Credentials) == 0 {
+		return "", "", errors.New("a request asks for at least one credential")
+	}
 	id, err = randomID()
 	if err != nil {
 		return "", "", err
@@ -116,18 +140,17 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 	}
 	responseURI := v.responseURI(id)
 
-	credential := map[string]any{
-		"id":     queryID,
-		"format": "dc+sd-jwt",
-		"meta":   map[string]any{"vct_values": []string{r.CredentialType}},
+	queries := make([]any, 0, len(r.Credentials))
+	for i, q := range r.Credentials {
+		claims := make([]map[string]any, 0)
+		for _, name := range q.asked() {
+			claims = append(claims, map[string]any{"path": []string{name}})
+		}
+		queries = append(queries, map[string]any{
+			"id": queryIDOf(i), "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []string{q.CredentialType}}, "claims": claims,
+		})
 	}
-	asked := r.asked()
-	claims := make([]map[string]any, len(asked))
-	for i, name := range asked {
-		claims[i] = map[string]any{"path": []string{name}}
-	}
-	credential["claims"] = claims
-	dcql, err := json.Marshal(map[string]any{"credentials": []any{credential}})
+	dcql, err := json.Marshal(map[string]any{"credentials": queries})
 	if err != nil {
 		return "", "", err
 	}
@@ -182,39 +205,52 @@ func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Pres
 	if err := json.Unmarshal([]byte(form.Get("vp_token")), &vpToken); err != nil {
 		return nil, invalid("vp_token is not a JSON object of presentations")
 	}
-	presentations := vpToken[queryID]
-	if len(vpToken) != 1 || len(presentations) != 1 {
-		return nil, invalid("expected exactly one presentation for %q", queryID)
+	queries := sess.request.Credentials
+	if len(vpToken) != len(queries) {
+		return nil, invalid("expected one presentation for each of %d credential queries", len(queries))
 	}
 
-	verified, err := sdjwt.Verify(presentations[0], sdjwt.Options{
-		Keys:             v.keys,
-		Audience:         clientID(sess.responseURI),
-		Nonce:            sess.nonce,
-		Now:              v.now,
-		KeyBindingMaxAge: v.ttl,
-	})
-	if err != nil {
-		return nil, invalid("%v", err)
-	}
-	if verified.Type != sess.request.CredentialType {
-		return nil, invalid("credential type %q is not the requested %q", verified.Type, sess.request.CredentialType)
-	}
-	claims := map[string]any{}
-	for _, name := range sess.request.asked() {
-		value, ok := verified.Claims[name]
-		if !ok {
-			return nil, invalid("the %q claim was not disclosed", name)
+	var presented []PresentedCredential
+	var emails []string
+	for i, q := range queries {
+		id := queryIDOf(i)
+		if len(vpToken[id]) != 1 {
+			return nil, invalid("expected exactly one presentation for %q", id)
 		}
-		claims[name] = value
+		verified, err := sdjwt.Verify(vpToken[id][0], sdjwt.Options{
+			Keys:             v.keys,
+			Audience:         clientID(sess.responseURI),
+			Nonce:            sess.nonce,
+			Now:              v.now,
+			KeyBindingMaxAge: v.ttl,
+		})
+		if err != nil {
+			return nil, invalid("%v", err)
+		}
+		if verified.Type != q.CredentialType {
+			return nil, invalid("credential type %q is not the requested %q", verified.Type, q.CredentialType)
+		}
+		claims := map[string]any{}
+		for _, name := range q.asked() {
+			value, ok := verified.Claims[name]
+			if !ok {
+				return nil, invalid("the %q claim of the %s credential was not disclosed", name, q.CredentialType)
+			}
+			claims[name] = value
+		}
+		email, _ := claims[identityClaim].(string)
+		if email == "" {
+			return nil, invalid("the %q claim that identifies the holder is not a text", identityClaim)
+		}
+		emails = append(emails, email)
+		presented = append(presented, PresentedCredential{Issuer: verified.Issuer, Type: verified.Type, Claims: claims})
 	}
-	email, _ := claims[identityClaim].(string)
-	if email == "" {
-		return nil, invalid("the %q claim that identifies the holder is not a text", identityClaim)
+	for _, email := range emails[1:] {
+		if !strings.EqualFold(email, emails[0]) {
+			return nil, invalid("the credentials are not of the same person")
+		}
 	}
-	return &Presented{
-		Request: sess.request, Issuer: verified.Issuer, Subject: Subject{Issuer: verified.Issuer, Email: email}, Type: verified.Type, Claims: claims,
-	}, nil
+	return &Presented{Request: sess.request, Subject: Subject{Issuer: presented[0].Issuer, Email: emails[0]}, Credentials: presented}, nil
 }
 
 // Complete records the decision on request id for Outcome to return.

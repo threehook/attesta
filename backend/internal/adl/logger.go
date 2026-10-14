@@ -22,6 +22,8 @@ type Decision struct {
 	SubjectID, Issuer string
 	// Claims are the disclosed claims the policy received.
 	Claims map[string]string
+	// Also are the further credentials the policy received, when the request asked for several.
+	Also []Credential
 	// UserRoles are the roles the application asserted; Attesta cannot verify them.
 	UserRoles []string
 	// Allow and Reason are the decision. DecidedBy says who gave the reason: "policy", or "attesta" when no policy ran.
@@ -32,6 +34,12 @@ type Decision struct {
 	Detail string
 	// Err is set when Attesta could not evaluate; the record is then an Error record without a response.
 	Err error
+}
+
+// Credential is one of the further credentials a decision was based on.
+type Credential struct {
+	Type, Issuer string
+	Claims       map[string]string
 }
 
 // Logger writes one record per decision to the configured outputs. A nil *Logger discards records.
@@ -165,15 +173,23 @@ func authzenRequest(d Decision) map[string]any {
 	if roles == nil {
 		roles = []string{}
 	}
+	context := map[string]any{
+		"request_id": d.RequestID, "policy_id": d.PolicyID, "credential_type": d.CredentialType,
+		"claims":     claims,
+		"user_roles": map[string]any{"values": roles, "origin": "application"},
+	}
+	if len(d.Also) > 0 {
+		also := make([]map[string]any, len(d.Also))
+		for i, c := range d.Also {
+			also[i] = map[string]any{"credential_type": c.Type, "issuer": c.Issuer, "claims": c.Claims}
+		}
+		context["also"] = also
+	}
 	return map[string]any{
 		"subject":  subject,
 		"action":   map[string]any{"name": "authorize"},
 		"resource": map[string]any{"type": "resource", "id": d.Resource},
-		"context": map[string]any{
-			"request_id": d.RequestID, "policy_id": d.PolicyID, "credential_type": d.CredentialType,
-			"claims":     claims,
-			"user_roles": map[string]any{"values": roles, "origin": "application"},
-		},
+		"context":  context,
 	}
 }
 

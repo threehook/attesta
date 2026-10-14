@@ -32,10 +32,39 @@ type Presenter interface {
 }
 
 type presentationRequest struct {
-	Resource       string   `json:"resource"`
-	PolicyID       string   `json:"policyId"`
+	Resource string `json:"resource"`
+	PolicyID string `json:"policyId"`
+	// Credentials are what the holder must present, each of a type of its own; the first identifies the person.
+	Credentials []credentialRequest `json:"credentials"`
+	// CredentialType and Claims ask for a single credential; they are shorthand for Credentials with one entry and cannot be combined with it.
 	CredentialType string   `json:"credentialType"`
 	Claims         []string `json:"claims"`
+}
+
+type credentialRequest struct {
+	CredentialType string   `json:"credentialType"`
+	Claims         []string `json:"claims"`
+}
+
+// credentials is the credentials a request asks for, or why the request is not acceptable.
+func (r presentationRequest) credentials() ([]presentation.CredentialQuery, string) {
+	list := r.Credentials
+	switch {
+	case len(list) > 0 && (r.CredentialType != "" || len(r.Claims) > 0):
+		return nil, "ask for credentials, or for a credentialType with claims, not both"
+	case len(list) == 0 && r.CredentialType != "":
+		list = []credentialRequest{{CredentialType: r.CredentialType, Claims: r.Claims}}
+	case len(list) == 0:
+		return nil, "at least one credential is required"
+	}
+	queries := make([]presentation.CredentialQuery, len(list))
+	for i, c := range list {
+		if c.CredentialType == "" || slices.ContainsFunc(queries[:i], func(q presentation.CredentialQuery) bool { return q.CredentialType == c.CredentialType }) {
+			return nil, "every credential needs a credentialType of its own"
+		}
+		queries[i] = presentation.CredentialQuery{CredentialType: c.CredentialType, Claims: c.Claims}
+	}
+	return queries, ""
 }
 
 type presentationRequestResponse struct {
@@ -55,8 +84,13 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if req.Resource == "" || req.PolicyID == "" || req.CredentialType == "" {
-		writeError(w, http.StatusBadRequest, "resource, policyId and credentialType are required")
+	if req.Resource == "" || req.PolicyID == "" {
+		writeError(w, http.StatusBadRequest, "resource and policyId are required")
+		return
+	}
+	queries, problem := req.credentials()
+	if problem != "" {
+		writeError(w, http.StatusBadRequest, problem)
 		return
 	}
 	if _, ok := s.Policies.Get(req.PolicyID); !ok {
@@ -65,16 +99,24 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 	}
 
 	id, link, err := s.Presenter.NewRequest(presentation.Request{
-		Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType, Claims: req.Claims, UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)),
-		TraceParent: traceParent(r),
+		Resource: req.Resource, PolicyID: req.PolicyID, Credentials: queries,
+		UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)), TraceParent: traceParent(r),
 	})
 	if err != nil {
 		s.Logger.Error("creating presentation request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not create the request")
 		return
 	}
-	s.Logger.Info("presentation request", "requestId", id, "resource", req.Resource, "policyId", req.PolicyID, "credentialType", req.CredentialType)
+	s.Logger.Info("presentation request", "requestId", id, "resource", req.Resource, "policyId", req.PolicyID, "credentialTypes", typesOf(queries))
 	writeJSON(w, http.StatusOK, presentationRequestResponse{RequestID: id, AuthorizationRequest: link})
+}
+
+func typesOf(queries []presentation.CredentialQuery) []string {
+	types := make([]string, len(queries))
+	for i, q := range queries {
+		types[i] = q.CredentialType
+	}
+	return types
 }
 
 // handlePresentationResponse is the wallet's direct_post answer. It verifies the presentation, applies the policy and records the decision for
@@ -113,8 +155,12 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	first, others := presented.Credentials[0], presented.Credentials[1:]
 	d := decisionFor(id, presented.Request)
-	d.SubjectID, d.Issuer, d.Claims = presented.Subject.Email, presented.Issuer, policyClaims(presented.Claims)
+	d.SubjectID, d.Issuer, d.Claims = presented.Subject.Email, first.Issuer, policyClaims(first.Claims)
+	for _, c := range others {
+		d.Also = append(d.Also, adl.Credential{Type: c.Type, Issuer: c.Issuer, Claims: policyClaims(c.Claims)})
+	}
 	source, ok := s.Policies.Get(presented.Request.PolicyID)
 	if !ok {
 		d.Err = fmt.Errorf("unknown policy %q", presented.Request.PolicyID)
@@ -124,8 +170,8 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	decision, err := s.Authz.Evaluate(source, authz.Input{
-		Resource: presented.Request.Resource, Type: presented.Type, Issuer: presented.Issuer, Claims: policyClaims(presented.Claims),
-		UserRoles: presented.Request.UserRoles,
+		Resource: presented.Request.Resource, Type: first.Type, Issuer: first.Issuer, Claims: policyClaims(first.Claims),
+		UserRoles: presented.Request.UserRoles, Others: othersOf(others),
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
@@ -136,7 +182,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	s.Logger.Info("authorize result", "requestId", id, "issuer", presented.Issuer, "resource", presented.Request.Resource, "decision", decision.Decision,
+	s.Logger.Info("authorize result", "requestId", id, "issuer", first.Issuer, "resource", presented.Request.Resource, "decision", decision.Decision,
 		"reason", decision.Reason)
 	d.Allow, d.Reason, d.DecidedBy = decision.Decision == authz.Permit, decision.Reason, "policy"
 	outcome := presentation.Outcome{Decision: decision.Decision, Reason: decision.Reason, Obligations: decision.Obligations, Advice: decision.Advice}
@@ -146,6 +192,18 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	if s.decide(w, r, id, d, outcome) {
 		writeJSON(w, http.StatusOK, struct{}{})
 	}
+}
+
+// othersOf gives a policy the further credentials by type.
+func othersOf(also []presentation.PresentedCredential) map[string]authz.Other {
+	if len(also) == 0 {
+		return nil
+	}
+	out := make(map[string]authz.Other, len(also))
+	for _, c := range also {
+		out[c.Type] = authz.Other{Issuer: c.Issuer, Claims: policyClaims(c.Claims)}
+	}
+	return out
 }
 
 // reasonNotVerified is what the decision log says when the wallet's answer did not verify; the outcome the application sees keeps its own wording.
@@ -161,10 +219,18 @@ func requestOf(r *presentation.Rejected) presentation.Request {
 	return r.Request
 }
 
+// firstType is the type of the credential that identifies the person, or empty for a request that is not known.
+func firstType(r presentation.Request) string {
+	if len(r.Credentials) == 0 {
+		return ""
+	}
+	return r.Credentials[0].CredentialType
+}
+
 // decisionFor starts the log entry for a decision on request id.
 func decisionFor(id string, req presentation.Request) adl.Decision {
 	return adl.Decision{
-		TraceParent: req.TraceParent, RequestID: id, Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: req.CredentialType,
+		TraceParent: req.TraceParent, RequestID: id, Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: firstType(req),
 		UserRoles: req.UserRoles,
 	}
 }

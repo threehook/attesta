@@ -49,7 +49,7 @@ func formOf(rec recording) url.Values {
 	return url.Values{"vp_token": {rec.VPToken}, "state": {rec.State}}
 }
 
-var diploma = Request{Resource: "vault", PolicyID: "p1", CredentialType: "Diploma", Claims: []string{"degree"}}
+var diploma = Request{Resource: "vault", PolicyID: "p1", Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree"}}}}
 
 func TestNewRequest(t *testing.T) {
 	v := New(Options{PublicURL: "http://backend.test/", Keys: sdjwt.DIDKey{}})
@@ -101,7 +101,7 @@ func TestNewRequest(t *testing.T) {
 func TestNewRequestAlwaysAsksForTheEmail(t *testing.T) {
 	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}})
 	for name, claims := range map[string][]string{"no claims": nil, "email already asked for": {"email", "degree"}} {
-		_, link, err := v.NewRequest(Request{CredentialType: "Diploma", Claims: claims})
+		_, link, err := v.NewRequest(Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: claims}}})
 		if err != nil {
 			t.Fatal(name, err)
 		}
@@ -132,7 +132,7 @@ func TestRespond(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
-	if got.Issuer != r.Issuer || got.Type != "Diploma" || got.Claims["degree"] != "Mathematics" || got.Request.Resource != "vault" {
+	if first := got.Credentials[0]; first.Issuer != r.Issuer || first.Type != "Diploma" || first.Claims["degree"] != "Mathematics" || got.Request.Resource != "vault" {
 		t.Errorf("Presented = %+v", got)
 	}
 	if got.Subject != (Subject{Issuer: r.Issuer, Email: "ada@example.com"}) {
@@ -152,7 +152,7 @@ func TestRespondRequiresTheEmail(t *testing.T) {
 
 func TestRespondRequiresEveryRequestedClaim(t *testing.T) {
 	r := loadRecorded(t)
-	v := newRecordedVerifier(t, r, r.Full, Request{CredentialType: "Diploma", Claims: []string{"degree", "department"}})
+	v := newRecordedVerifier(t, r, r.Full, Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}}})
 
 	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
 	if !errors.Is(err, ErrInvalidPresentation) || !strings.Contains(err.Error(), "department") {
@@ -162,14 +162,14 @@ func TestRespondRequiresEveryRequestedClaim(t *testing.T) {
 
 func TestRespondKeepsOnlyTheAskedClaims(t *testing.T) {
 	r := loadRecorded(t)
-	v := newRecordedVerifier(t, r, r.Full, Request{CredentialType: "Diploma"})
+	v := newRecordedVerifier(t, r, r.Full, Request{Credentials: []CredentialQuery{{CredentialType: "Diploma"}}})
 
 	got, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
 	if err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
-	if len(got.Claims) != 1 || got.Claims["email"] != "ada@example.com" {
-		t.Errorf("Claims = %v, want only the email: the degree was disclosed but not asked for", got.Claims)
+	if claims := got.Credentials[0].Claims; len(claims) != 1 || claims["email"] != "ada@example.com" {
+		t.Errorf("Claims = %v, want only the email: the degree was disclosed but not asked for", claims)
 	}
 }
 
@@ -190,7 +190,7 @@ func TestRespondRejects(t *testing.T) {
 		"vp_token not JSON":        {form: with("vp_token", "nope"), request: diploma},
 		"no presentation":          {form: with("vp_token", `{"credential":[]}`), request: diploma},
 		"unknown query id":         {form: with("vp_token", `{"other":["a~"]}`), request: diploma},
-		"another credential type":  {form: good, request: Request{CredentialType: "Passport"}},
+		"another credential type":  {form: good, request: Request{Credentials: []CredentialQuery{{CredentialType: "Passport"}}}},
 		"another nonce":            {form: good, request: diploma, mutate: func(v *Verifier) { v.sessions.m["req-1"].nonce = "other" }},
 		"another verifier address": {form: good, request: diploma, mutate: func(v *Verifier) { v.sessions.m["req-1"].responseURI = "http://evil.test/response" }},
 	}
@@ -269,12 +269,12 @@ func TestOutcome(t *testing.T) {
 
 func TestRespondRejectionCarriesTheRequest(t *testing.T) {
 	r := loadRecorded(t)
-	req := Request{CredentialType: "Diploma", Claims: []string{"degree", "department"}, TraceParent: "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"}
+	req := Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}}, TraceParent: "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"}
 	v := newRecordedVerifier(t, r, r.Full, req)
 
 	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
 	var rejected *Rejected
-	if !errors.As(err, &rejected) || rejected.Request.TraceParent != req.TraceParent || rejected.Request.CredentialType != "Diploma" {
+	if !errors.As(err, &rejected) || rejected.Request.TraceParent != req.TraceParent || rejected.Request.Credentials[0].CredentialType != "Diploma" {
 		t.Errorf("error = %v, want a Rejected carrying the request", err)
 	}
 }

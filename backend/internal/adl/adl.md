@@ -15,7 +15,7 @@ A wallet answering an unknown, expired or already answered request is not a deci
 
 The request is written in the AuthZEN shape the standard prescribes (Attesta itself does not use AuthZEN): `subject` is the holder (`id` is the email,
 `properties.issuer` the issuer DID; `unknown` when the credential did not verify), `action.name` is always `authorize`, `resource.id` is the resource
-the application asked about, and `context` holds the request id, policy id, credential type, the disclosed claims the policy received and the
+the application asked about, and `context` holds the request id, policy id, credential type, the disclosed claims the policy received, `also` (the type, issuer and claims of each further credential, when a request asked for several) and the
 `user_roles` the application sent, marked `origin: application` because Attesta cannot verify them. There are no source references (`attributes` is
 empty): those start at Level 2.
 
