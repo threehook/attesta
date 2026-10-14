@@ -16,10 +16,12 @@ import (
 	"github.com/makiuchi-d/gozxing"
 	zxqrcode "github.com/makiuchi-d/gozxing/qrcode"
 
+	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/mail"
 	"attesta/issuer/internal/postgres"
 	"attesta/issuer/internal/postgres/postgrestest"
+	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 )
 
@@ -60,6 +62,10 @@ func newFixture(t *testing.T, edit func(*service.Config)) fixture {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
+	// The roles the tests give; the table itself starts with laadpalen-aanvrager only.
+	if _, err := pool.Exec(context.Background(), "INSERT INTO roles (name) VALUES ('reader') ON CONFLICT DO NOTHING"); err != nil {
+		t.Fatal(err)
+	}
 	store := entitlement.NewStore(pool, 0)
 	m := &mailer{}
 	logged := &strings.Builder{}
@@ -70,13 +76,13 @@ func newFixture(t *testing.T, edit func(*service.Config)) fixture {
 	if edit != nil {
 		edit(&cfg)
 	}
-	return fixture{svc: service.New(cfg, store, &offers{}, m), store: store, mailer: m, logged: logged}
+	return fixture{svc: service.New(cfg, store, role.NewStore(pool), &offers{}, m), store: store, mailer: m, logged: logged}
 }
 
 func employee() service.EmployeeInput {
 	return service.EmployeeInput{
 		Name: "Jerry Smith", Email: uuid.NewString() + "@example.com", Department: "burgerzaken", Organisation: "Gemeente Utrecht",
-		Diploma: "Laadpalen", DiplomaValidUntil: "31-12-2099",
+		Roles: []string{"laadpalen-aanvrager"},
 	}
 }
 
@@ -192,55 +198,60 @@ func TestRecordsAnEmployeeWithTheClaimsOnFile(t *testing.T) {
 	if e.Type != "Employee" || e.Email != strings.ToLower(in.Email) || e.Status != entitlement.Open {
 		t.Fatalf("entitlement %+v", e)
 	}
-	if e.Claims["diplomaValidUntil"] != "2099-12-31" || e.Claims["department"] != "burgerzaken" || e.Claims["description"] == "" {
+	if e.Claims["validUntil"] != "" || e.Claims["roles"] != "laadpalen-aanvrager" || e.Claims["diploma"] != "" || e.Claims["department"] != "burgerzaken" || e.Claims["title"] != "" || e.Claims["description"] != "" {
 		t.Fatalf("claims %v", e.Claims)
 	}
-	if want := time.Date(2099, 12, 31, 23, 59, 59, 0, time.UTC); e.ValidUntil == nil || !e.ValidUntil.Equal(want) {
-		t.Fatalf("valid until %v", e.ValidUntil)
+	if e.ValidUntil != nil {
+		t.Fatalf("an Employee must not end, valid until %v", e.ValidUntil)
 	}
 }
 
-func TestAcceptsBothDateFormatsAndKeepsAGivenDescription(t *testing.T) {
+func TestAcceptsBothDateFormatsForADiploma(t *testing.T) {
 	f := newFixture(t, nil)
-	a, b := employee(), employee()
-	b.DiplomaValidUntil, b.Description = "2099-12-31", "  Mijn tekst "
-	ea, err := f.svc.RecordEmployee(context.Background(), a)
+	a := service.DiplomaInput{Name: "Jim", Email: "jim-a@example.com", ValidUntil: "31-12-2099"}
+	b := service.DiplomaInput{Name: "Jim", Email: "jim-b@example.com", ValidUntil: "2099-12-31"}
+	ea, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eb, err := f.svc.RecordEmployee(context.Background(), b)
+	eb, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], b)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ea.Claims["diplomaValidUntil"] != eb.Claims["diplomaValidUntil"] || eb.Claims["description"] != "Mijn tekst" {
+	if ea.Claims["validUntil"] != "2099-12-31" || eb.Claims["validUntil"] != "2099-12-31" {
 		t.Fatalf("%v %v", ea.Claims, eb.Claims)
 	}
 }
 
-func TestMakesOneEntitlementForTheSamePersonAndCredentialAndAnotherForADifferentOne(t *testing.T) {
+func TestMakesOneEntitlementForTheSamePersonAndCredentialAndRefusesOtherDataWhileItWaits(t *testing.T) {
 	f := newFixture(t, nil)
+	ctx := context.Background()
 	in := employee()
-	first, _ := f.svc.RecordEmployee(context.Background(), in)
-	again, _ := f.svc.RecordEmployee(context.Background(), in)
+	first, _ := f.svc.RecordEmployee(ctx, in)
+	again, _ := f.svc.RecordEmployee(ctx, in)
 	other := in
 	other.Department = "secretariaat"
-	different, _ := f.svc.RecordEmployee(context.Background(), other)
+	_, err := f.svc.RecordEmployee(ctx, other)
 
 	if first.ID != again.ID {
 		t.Fatal("the same request made two entitlements")
 	}
-	if first.ID == different.ID {
-		t.Fatal("a different request got the same entitlement")
+	if !errors.As(err, &service.AlreadyWaitingError{}) {
+		t.Fatalf("error %v", err)
+	}
+	diploma, err := f.svc.RecordDiploma(ctx, credential.Diplomas[0], service.DiplomaInput{Name: in.Name, Email: in.Email, ValidUntil: "31-12-2099"})
+	if err != nil || diploma.ID == first.ID {
+		t.Fatalf("another type was refused: %v", err)
 	}
 }
 
 func TestRecordsADiploma(t *testing.T) {
 	f := newFixture(t, nil)
-	e, err := f.svc.RecordDiploma(context.Background(), service.DiplomaInput{Name: "Jerry", Email: "J@Example.com", Degree: "Wiskunde", University: "UU"})
+	e, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: "J@Example.com", ValidUntil: "31-12-2099"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Type != "Diploma" || e.Email != "j@example.com" || e.ValidUntil != nil || e.Claims["degree"] != "Wiskunde" {
+	if e.Type != "Diploma Laadpalen Management" || e.Email != "j@example.com" || e.ValidUntil == nil || e.Claims["validUntil"] != "2099-12-31" || e.Claims["course"] != "" || e.Claims["email"] != "j@example.com" || e.Claims["title"] != "" {
 		t.Fatalf("entitlement %+v", e)
 	}
 }
@@ -256,8 +267,6 @@ func TestRefusesWhatCannotBeRecorded(t *testing.T) {
 		"missing field":      with(func(in *service.EmployeeInput) { in.Organisation = "  " }),
 		"not an email":       with(func(in *service.EmployeeInput) { in.Email = "jerry" }),
 		"another department": with(func(in *service.EmployeeInput) { in.Department = "sloop" }),
-		"not a date":         with(func(in *service.EmployeeInput) { in.DiplomaValidUntil = "morgen" }),
-		"a date in the past": with(func(in *service.EmployeeInput) { in.DiplomaValidUntil = "01-01-2020" }),
 	}
 	for name, in := range cases {
 		_, err := f.svc.RecordEmployee(context.Background(), in)
@@ -266,10 +275,123 @@ func TestRefusesWhatCannotBeRecorded(t *testing.T) {
 			t.Errorf("%s: err %v", name, err)
 		}
 	}
-	if _, err := f.svc.RecordDiploma(context.Background(), service.DiplomaInput{Name: "Jerry", Email: "j@example.com"}); err == nil {
-		t.Error("a diploma without degree and university was recorded")
+	if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: "j@example.com"}); err == nil {
+		t.Error("a diploma without an end was recorded")
 	}
-	if _, err := f.svc.RecordDiploma(context.Background(), service.DiplomaInput{Name: "J", Email: "x", Degree: "d", University: "u"}); err == nil {
+	if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "J", Email: "x", ValidUntil: "31-12-2099"}); err == nil {
 		t.Error("a diploma with a bad email was recorded")
+	}
+}
+
+func issue(t *testing.T, f fixture, e entitlement.Entitlement) {
+	t.Helper()
+	if ok, err := f.store.Claim(context.Background(), e.ID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+	if ok, err := f.store.MarkIssued(context.Background(), e.ID); err != nil || !ok {
+		t.Fatal(ok, err)
+	}
+}
+
+func TestRefusesACredentialOfATypeThePersonStillHasWhateverTheData(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	in := employee()
+	first, _ := f.svc.RecordEmployee(ctx, in)
+	issue(t, f, first)
+
+	for name, edit := range map[string]func(*service.EmployeeInput){
+		"same data":        func(*service.EmployeeInput) {},
+		"other department": func(i *service.EmployeeInput) { i.Department = "secretariaat" },
+		"other roles":      func(i *service.EmployeeInput) { i.Roles = []string{"reader"} },
+	} {
+		other := in
+		edit(&other)
+		_, err := f.svc.RecordEmployee(ctx, other)
+		var issued service.AlreadyIssuedError
+		if !errors.As(err, &issued) || issued.IssuedAt.IsZero() {
+			t.Errorf("%s: error %v", name, err)
+		}
+	}
+}
+
+func TestAllowsACredentialOnceTheOldOneHasEnded(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	soon := time.Now().Add(500 * time.Millisecond)
+	old, err := f.store.Create(ctx, entitlement.New{Email: "ended@example.com", Type: "Employee", Claims: map[string]string{"name": "A"}, ValidUntil: &soon})
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue(t, f, old)
+	time.Sleep(600 * time.Millisecond)
+
+	in := employee()
+	in.Email = "ended@example.com"
+	if _, err := f.svc.RecordEmployee(ctx, in); err != nil {
+		t.Fatalf("refused although the old credential ended: %v", err)
+	}
+}
+
+func TestAPersonCanHoldSeveralDiplomasButOnlyOneOfEach(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	laadpalen := credential.Diplomas[0]
+	cows := credential.Diploma{Type: "DiplomaKoeienMelken", Path: "koeien-melken", Title: "Diploma Koeien Melken"}
+	in := service.DiplomaInput{Name: "Jim", Email: "jim@example.com", ValidUntil: "31-12-2099"}
+	first, err := f.svc.RecordDiploma(ctx, laadpalen, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue(t, f, first)
+
+	other, err := f.svc.RecordDiploma(ctx, cows, in)
+	if err != nil || other.Type != "DiplomaKoeienMelken" {
+		t.Fatalf("a second diploma was refused or wrong: %v %+v", err, other)
+	}
+	var issued service.AlreadyIssuedError
+	if _, err := f.svc.RecordDiploma(ctx, laadpalen, in); !errors.As(err, &issued) {
+		t.Fatalf("the same diploma again: %v", err)
+	}
+	later := in
+	later.ValidUntil = "31-12-2100"
+	if _, err := f.svc.RecordDiploma(ctx, laadpalen, later); !errors.As(err, &issued) {
+		t.Fatalf("the same diploma with another end: %v", err)
+	}
+}
+
+func TestRecordsTheRolesOfAnEmployeeFromTheOnesThatExistWithoutDuplicates(t *testing.T) {
+	f := newFixture(t, nil)
+	in := employee()
+	in.Roles = []string{"laadpalen-aanvrager", "reader", "reader"}
+	e, err := f.svc.RecordEmployee(context.Background(), in)
+	if err != nil || e.Claims["roles"] != "laadpalen-aanvrager, reader" {
+		t.Fatalf("%v %v", e.Claims, err)
+	}
+
+	for _, roles := range [][]string{{"baas"}, {"reader", "everything"}, {""}} {
+		bad := employee()
+		bad.Roles = roles
+		var invalid service.InvalidError
+		if _, err := f.svc.RecordEmployee(context.Background(), bad); !errors.As(err, &invalid) {
+			t.Errorf("roles %v: %v", roles, err)
+		}
+	}
+	none := employee()
+	none.Roles = nil
+	if e, err := f.svc.RecordEmployee(context.Background(), none); err != nil || e.Claims["roles"] != "" {
+		t.Fatalf("no roles: %v %v", e.Claims, err)
+	}
+}
+
+func TestRefusesADiplomaWithoutAFutureEndDate(t *testing.T) {
+	f := newFixture(t, nil)
+	base := service.DiplomaInput{Name: "J", Email: "j@example.com"}
+	for name, day := range map[string]string{"none": "", "not a date": "soon", "past": "01-01-2020"} {
+		in := base
+		in.ValidUntil = day
+		if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], in); err == nil {
+			t.Errorf("%s: no error", name)
+		}
 	}
 }

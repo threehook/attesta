@@ -21,6 +21,7 @@ import (
 	"attesta/issuer/internal/mail"
 	"attesta/issuer/internal/oid4vci"
 	"attesta/issuer/internal/postgres"
+	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 )
 
@@ -53,7 +54,7 @@ func run() error {
 	protocol := oid4vci.New(oid4vci.Config{
 		PublicURL: cfg.PublicURL, IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
 	}, oid4vci.NewSessions(pool, secret[:]), store, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
-	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, protocol, mail.NewSMTP(cfg.SMTP))
+	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, role.NewStore(pool), protocol, mail.NewSMTP(cfg.SMTP))
 
 	// A credential made just before the issuer stopped may not have been marked issued; its session still names the entitlement.
 	if err := protocol.Reconcile(ctx); err != nil {

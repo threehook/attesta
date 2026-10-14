@@ -92,7 +92,7 @@ func (e *env) base() string { return e.http.URL + "/oid4vci" }
 
 var employeeClaims = map[string]string{
 	"name": "Jerry Smith", "email": "jerry@example.com", "department": "burgerzaken", "organisation": "Gemeente Vlierdam",
-	"diploma": "Laadpalen", "diplomaValidUntil": "31-12-2099", "description": "Autorisatie",
+	"roles": "laadpalen-aanvrager",
 }
 
 func (e *env) entitle(edit func(*entitlement.New)) entitlement.Entitlement {
@@ -296,7 +296,7 @@ func TestServesTheMetadataWalletsAskFor(t *testing.T) {
 		configs, _ := res.body["credential_configurations_supported"].(map[string]any)
 		employee, _ := configs["Employee"].(map[string]any)
 		if res.status != 200 || res.body["credential_issuer"] != e.base() || res.body["credential_endpoint"] != e.base()+"/credential" ||
-			res.body["nonce_endpoint"] != e.base()+"/nonce" || employee["format"] != "dc+sd-jwt" || employee["vct"] != "Employee" || configs["Diploma"] == nil {
+			res.body["nonce_endpoint"] != e.base()+"/nonce" || employee["format"] != "dc+sd-jwt" || employee["vct"] != "Employee" || configs["Diploma Laadpalen Management"] == nil {
 			t.Fatalf("%s: %d %v", path, res.status, res.body)
 		}
 	}
@@ -451,7 +451,7 @@ func TestRefusesTheWrongRequests(t *testing.T) {
 	if res := e.credential("made-up", request("Employee", e.goodProof(h))); res.status != 401 {
 		t.Errorf("made-up token: %d", res.status)
 	}
-	if res := e.credential(token, request("Diploma", e.goodProof(h))); res.errorCode() != "invalid_credential_request" {
+	if res := e.credential(token, request("Diploma Laadpalen Management", e.goodProof(h))); res.errorCode() != "invalid_credential_request" {
 		t.Errorf("another credential: %d %v", res.status, res.body)
 	}
 	if res := e.credential(token, request("Employee", e.goodProof(h), e.goodProof(h))); res.errorCode() != "invalid_proof" {

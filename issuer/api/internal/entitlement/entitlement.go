@@ -117,6 +117,24 @@ func (s *Store) FindOpenByEmail(ctx context.Context, email string) ([]Entitlemen
 	return out, rows.Err()
 }
 
+// FindIssuedByEmail returns the credentials issued to the person that have not ended, oldest first.
+func (s *Store) FindIssuedByEmail(ctx context.Context, email string) ([]Entitlement, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE email = $1 AND status = 'issued' AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", strings.ToLower(email))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Entitlement
+	for rows.Next() {
+		e, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
+}
+
 // Claim takes an entitlement that can be claimed, so that no one else can take it while the credential is made. It reports false when it cannot be claimed.
 func (s *Store) Claim(ctx context.Context, id string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'claimed', claimed_at = now() WHERE id = $2 AND "+claimable, s.lease.Seconds(), id)

@@ -23,6 +23,12 @@ const qrSize = 480
 type Store interface {
 	Create(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error)
 	FindOpenByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	FindIssuedByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+}
+
+// RoleStore lists the roles staff can give an employee.
+type RoleStore interface {
+	Names(ctx context.Context) ([]string, error)
 }
 
 // Offerer makes the link a QR code holds, with a one-time code of its own.
@@ -44,18 +50,19 @@ type Config struct {
 type Service struct {
 	cfg    Config
 	store  Store
+	roles  RoleStore
 	offers Offerer
 	mailer mail.Mailer
 }
 
-func New(cfg Config, store Store, offers Offerer, mailer mail.Mailer) *Service {
+func New(cfg Config, store Store, roles RoleStore, offers Offerer, mailer mail.Mailer) *Service {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
-	return &Service{cfg: cfg, store: store, offers: offers, mailer: mailer}
+	return &Service{cfg: cfg, store: store, roles: roles, offers: offers, mailer: mailer}
 }
 
 // InvalidError is a request that cannot be recorded; its message says why.
@@ -63,16 +70,30 @@ type InvalidError struct{ Message string }
 
 func (e InvalidError) Error() string { return e.Message }
 
+// AlreadyIssuedError is a request for a credential of a type the person already has and that has not ended: it must be revoked first.
+type AlreadyIssuedError struct{ IssuedAt time.Time }
+
+func (e AlreadyIssuedError) Error() string {
+	return "deze persoon heeft al een geldig credential van dit type (uitgegeven op " + e.IssuedAt.Format("02-01-2006") + "); dat moet eerst worden ingetrokken"
+}
+
+// AlreadyWaitingError is the same for a credential that is recorded but not yet fetched, with other data than the request.
+type AlreadyWaitingError struct{}
+
+func (AlreadyWaitingError) Error() string {
+	return "voor deze persoon staat al een credential van dit type klaar met andere gegevens; dat moet eerst worden ingetrokken"
+}
+
 type DiplomaInput struct {
-	Name, Email, Degree, University string
-	Description                     string
+	Name, Email string
+	// ValidUntil is dd-mm-yyyy or YYYY-MM-DD; the credential ends at the end of that day.
+	ValidUntil string
 }
 
 type EmployeeInput struct {
-	Name, Email, Department, Organisation, Diploma string
-	// DiplomaValidUntil is dd-mm-yyyy or YYYY-MM-DD; the credential ends at the end of that day.
-	DiplomaValidUntil string
-	Description       string
+	Name, Email, Department, Organisation string
+	// Roles are the employee's roles, each one of credential.Roles; they may be none.
+	Roles []string
 }
 
 var emailPattern = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
@@ -86,30 +107,26 @@ func blank(values ...string) bool {
 	return false
 }
 
-func (s *Service) description(given, credType string) string {
-	if d := strings.TrimSpace(given); d != "" {
-		return d
-	}
-	return credential.DefaultDescriptions[credType]
-}
-
-func (s *Service) RecordDiploma(ctx context.Context, in DiplomaInput) (entitlement.Entitlement, error) {
-	if blank(in.Name, in.Email, in.Degree, in.University) {
-		return entitlement.Entitlement{}, InvalidError{"name, email, degree and university are required"}
+func (s *Service) RecordDiploma(ctx context.Context, d credential.Diploma, in DiplomaInput) (entitlement.Entitlement, error) {
+	if blank(in.Name, in.Email, in.ValidUntil) {
+		return entitlement.Entitlement{}, InvalidError{"name, email and validUntil are required"}
 	}
 	if !emailPattern.MatchString(in.Email) {
 		return entitlement.Entitlement{}, InvalidError{"email is not an email address"}
 	}
-	claims := map[string]string{
-		"name": in.Name, "email": in.Email, "degree": in.Degree, "university": in.University,
-		"description": s.description(in.Description, credential.Diploma),
+	end, day, err := s.endOf(in.ValidUntil, "validUntil")
+	if err != nil {
+		return entitlement.Entitlement{}, err
 	}
-	return s.record(ctx, entitlement.New{Email: in.Email, Type: credential.Diploma, Claims: claims})
+	claims := map[string]string{
+		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "validUntil": day,
+	}
+	return s.record(ctx, entitlement.New{Email: in.Email, Type: d.Type, Claims: claims, ValidUntil: &end})
 }
 
 func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitlement.Entitlement, error) {
-	if blank(in.Name, in.Email, in.Department, in.Organisation, in.Diploma, in.DiplomaValidUntil) {
-		return entitlement.Entitlement{}, InvalidError{"name, email, department, organisation, diploma and diplomaValidUntil are required"}
+	if blank(in.Name, in.Email, in.Department, in.Organisation) {
+		return entitlement.Entitlement{}, InvalidError{"name, email, department and organisation are required"}
 	}
 	if !emailPattern.MatchString(in.Email) {
 		return entitlement.Entitlement{}, InvalidError{"email is not an email address"}
@@ -117,20 +134,42 @@ func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitle
 	if !contains(credential.Departments, in.Department) {
 		return entitlement.Entitlement{}, InvalidError{"department must be one of " + strings.Join(credential.Departments, ", ")}
 	}
-	day, err := credential.ParseDate(in.DiplomaValidUntil)
+	known, err := s.roles.Names(ctx)
 	if err != nil {
-		return entitlement.Entitlement{}, InvalidError{"diplomaValidUntil must be a date, dd-mm-yyyy or YYYY-MM-DD"}
+		return entitlement.Entitlement{}, err
 	}
-	end := credential.EndOfDay(day)
-	if !end.After(s.cfg.Now()) {
-		return entitlement.Entitlement{}, InvalidError{"diplomaValidUntil is in the past; a wallet refuses an expired credential"}
+	roles := []string{}
+	for _, r := range in.Roles {
+		if !contains(known, r) {
+			return entitlement.Entitlement{}, InvalidError{"roles must be among " + strings.Join(known, ", ")}
+		}
+		if !contains(roles, r) {
+			roles = append(roles, r)
+		}
 	}
 	claims := map[string]string{
-		"name": in.Name, "email": in.Email, "department": in.Department, "organisation": in.Organisation, "diploma": in.Diploma,
-		"diplomaValidUntil": day.Format(time.DateOnly), "description": s.description(in.Description, credential.Employee),
+		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "department": in.Department, "organisation": in.Organisation,
+		"roles": strings.Join(roles, ", "),
 	}
-	return s.record(ctx, entitlement.New{Email: in.Email, Type: credential.Employee, Claims: claims, ValidUntil: &end})
+	n := entitlement.New{Email: in.Email, Type: credential.Employee, Claims: claims}
+	return s.record(ctx, n)
 }
+
+// endOf reads the day a credential ends, which must be in the future: a wallet refuses an expired credential.
+func (s *Service) endOf(value, field string) (end time.Time, day string, err error) {
+	d, err := credential.ParseDate(value)
+	if err != nil {
+		return time.Time{}, "", InvalidError{field + " must be a date, dd-mm-yyyy or YYYY-MM-DD"}
+	}
+	end = credential.EndOfDay(d)
+	if !end.After(s.cfg.Now()) {
+		return time.Time{}, "", InvalidError{field + " is in the past; a wallet refuses an expired credential"}
+	}
+	return end, d.Format(time.DateOnly), nil
+}
+
+// Roles lists the roles staff can give an employee.
+func (s *Service) Roles(ctx context.Context) ([]string, error) { return s.roles.Names(ctx) }
 
 func contains(list []string, s string) bool {
 	for _, v := range list {
@@ -141,15 +180,29 @@ func contains(list []string, s string) bool {
 	return false
 }
 
-// record makes the entitlement; the same person with the same data again gets the entitlement they already have, while it is open.
+// record makes the entitlement. A person has one of each credential at a time (one of each credential type): the same data again gives the entitlement that is waiting (and its QR code is
+// mailed again), anything else is refused while one is waiting or issued and not ended.
 func (s *Service) record(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error) {
 	open, err := s.store.FindOpenByEmail(ctx, n.Email)
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
 	for _, e := range open {
-		if e.Type == n.Type && maps.Equal(e.Claims, n.Claims) {
+		if e.Type != n.Type {
+			continue
+		}
+		if maps.Equal(e.Claims, n.Claims) {
 			return e, nil
+		}
+		return entitlement.Entitlement{}, AlreadyWaitingError{}
+	}
+	issued, err := s.store.FindIssuedByEmail(ctx, n.Email)
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	for _, e := range issued {
+		if e.Type == n.Type {
+			return entitlement.Entitlement{}, AlreadyIssuedError{IssuedAt: *e.IssuedAt}
 		}
 	}
 	return s.store.Create(ctx, n)

@@ -127,7 +127,11 @@ func writeError(w http.ResponseWriter, status int, code, description string) {
 
 func (s *Server) issuerMetadata(w http.ResponseWriter, _ *http.Request) {
 	configurations := map[string]any{}
-	for _, t := range []string{credential.Diploma, credential.Employee} {
+	types := []string{credential.Employee}
+	for _, d := range credential.Diplomas {
+		types = append(types, d.Type)
+	}
+	for _, t := range types {
 		configurations[t] = map[string]any{
 			"format": "dc+sd-jwt", "scope": t, "vct": t,
 			"cryptographic_binding_methods_supported": []string{"jwk"},

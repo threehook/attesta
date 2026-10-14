@@ -14,9 +14,10 @@ import (
 )
 
 type Service interface {
-	RecordDiploma(ctx context.Context, in service.DiplomaInput) (entitlement.Entitlement, error)
+	RecordDiploma(ctx context.Context, d credential.Diploma, in service.DiplomaInput) (entitlement.Entitlement, error)
 	RecordEmployee(ctx context.Context, in service.EmployeeInput) (entitlement.Entitlement, error)
 	MailQRCode(ctx context.Context, e entitlement.Entitlement) error
+	Roles(ctx context.Context) ([]string, error)
 }
 
 type Config struct {
@@ -41,31 +42,46 @@ func Handler(cfg Config, svc Service) http.Handler {
 	}
 	mux.Handle("/info", protect(staff))
 	mux.Handle("/entitlements/", protect(staff))
-	staff.HandleFunc("GET /info", func(w http.ResponseWriter, _ *http.Request) {
+	staff.HandleFunc("GET /info", func(w http.ResponseWriter, r *http.Request) {
+		roles, err := svc.Roles(r.Context())
+		if err != nil {
+			slog.Error("could not read the roles", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rollen konden niet worden gelezen"})
+			return
+		}
+		diplomas := make([]map[string]string, len(credential.Diplomas))
+		for i, d := range credential.Diplomas {
+			diplomas[i] = map[string]string{"path": d.Path, "title": d.Title, "description": d.Description}
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "descriptions": credential.DefaultDescriptions,
+			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "roles": roles, "diplomas": diplomas,
 		})
 	})
-	staff.HandleFunc("POST /entitlements/diploma", func(w http.ResponseWriter, r *http.Request) {
+	staff.HandleFunc("POST /entitlements/diploma/{path}", func(w http.ResponseWriter, r *http.Request) {
+		diploma, ok := credential.DiplomaByPath(r.PathValue("path"))
+		if !ok {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekend diploma"})
+			return
+		}
 		var in struct {
-			Name, Email, Degree, University, Description string
+			Name, Email, ValidUntil string
 		}
 		if !decode(w, r, &in) {
 			return
 		}
-		e, err := svc.RecordDiploma(r.Context(), service.DiplomaInput{Name: in.Name, Email: in.Email, Degree: in.Degree, University: in.University, Description: in.Description})
+		e, err := svc.RecordDiploma(r.Context(), diploma, service.DiplomaInput{Name: in.Name, Email: in.Email, ValidUntil: in.ValidUntil})
 		grant(w, r, svc, e, err)
 	})
 	staff.HandleFunc("POST /entitlements/employee", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
-			Name, Email, Department, Organisation, Diploma, DiplomaValidUntil, Description string
+			Name, Email, Department, Organisation string
+			Roles                                 []string
 		}
 		if !decode(w, r, &in) {
 			return
 		}
 		e, err := svc.RecordEmployee(r.Context(), service.EmployeeInput{
-			Name: in.Name, Email: in.Email, Department: in.Department, Organisation: in.Organisation, Diploma: in.Diploma,
-			DiplomaValidUntil: in.DiplomaValidUntil, Description: in.Description,
+			Name: in.Name, Email: in.Email, Department: in.Department, Organisation: in.Organisation, Roles: in.Roles,
 		})
 		grant(w, r, svc, e, err)
 	})
@@ -77,6 +93,12 @@ func grant(w http.ResponseWriter, r *http.Request, svc Service, e entitlement.En
 	var invalid service.InvalidError
 	if errors.As(err, &invalid) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
+		return
+	}
+	var issued service.AlreadyIssuedError
+	var waiting service.AlreadyWaitingError
+	if errors.As(err, &issued) || errors.As(err, &waiting) {
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
 	if err != nil {
