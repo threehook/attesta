@@ -6,8 +6,7 @@ import { readQrImage } from "@attesta/wallet";
 export interface DiplomaClaims {
   name: string;
   email: string;
-  degree: string;
-  university: string;
+  validUntil?: string;
 }
 
 export interface EmployeeClaims {
@@ -15,8 +14,7 @@ export interface EmployeeClaims {
   email: string;
   department: string;
   organisation: string;
-  diploma: string;
-  diplomaValidUntil: string;
+  roles?: string[];
 }
 
 export interface TestIssuerOptions {
@@ -115,8 +113,12 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
     await sleep(100);
   }
 
+  // The tests give some employees a role other than the one the table starts with.
+  execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", "INSERT INTO roles (name) VALUES ('reader') ON CONFLICT DO NOTHING"]);
+
   const record = async (path: string, claims: DiplomaClaims | EmployeeClaims): Promise<string> => {
-    const response = await fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(claims) });
+    const body_ = path.includes("/diploma/") ? { validUntil: "31-12-2099", ...claims } : claims;
+    const response = await fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body_) });
     const body = (await response.json()) as { entitlementId?: string; error?: string };
     if (!response.ok || !body.entitlementId) throw new Error(`recording ${claims.email} failed: ${response.status} ${body.error}`);
     return body.entitlementId;
@@ -143,7 +145,7 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
   return {
     url,
     did,
-    recordDiploma: (claims) => record("/entitlements/diploma", claims),
+    recordDiploma: (claims) => record("/entitlements/diploma/laadpalen-management", claims),
     recordEmployee: (claims) => record("/entitlements/employee", claims),
     async revoke(entitlementId) {
       execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", `UPDATE entitlements SET status = 'revoked' WHERE id = '${entitlementId}' AND status IN ('open', 'claimed')`]);

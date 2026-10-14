@@ -66,8 +66,8 @@ test.describe.serial("desktop wallet", () => {
     await test_?.close();
   });
 
-  // A request for the Diploma credential the wallet holds by now, answered to the stand-in verifier.
-  const diplomaRequest = (state: string, vct = "Diploma", claims = ["degree", "email"]) =>
+  // A request for the diploma credential the wallet holds by now, answered to the stand-in verifier.
+  const diplomaRequest = (state: string, vct = "Diploma Laadpalen Management", claims = ["name", "email"]) =>
     `openid4vp://?${new URLSearchParams({
       response_type: "vp_token",
       client_id: `redirect_uri:${responseUri}`,
@@ -103,26 +103,27 @@ test.describe.serial("desktop wallet", () => {
   });
 
   test("shows what a QR code gives, and adds the credential only once the user agrees", async () => {
-    await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+    await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com" });
 
     await uploadQr(window, await test_.qrImageFor("ada@example.com"));
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Credential toevoegen?");
-    await expect(dialog).toContainText("Diploma");
+    await expect(dialog).toContainText("Diploma Laadpalen Management");
     await expect(window.locator("footer")).not.toContainText("credential");
 
     await dialog.getByRole("button", { name: "Toevoegen" }).click();
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
-    await expect(card).toContainText("Diploma");
+    await expect(card.getByRole("heading", { name: "Diploma Laadpalen Management" })).toBeVisible();
     await expect(card).toContainText("ada@example.com");
-    await expect(card).toContainText("Graad");
-    await expect(card).toContainText("Mathematics");
+    await expect(card).toContainText("Naam");
+    await expect(card).toContainText("Ada Lovelace");
+    await expect(card).toContainText("Geldig tot");
     await window.screenshot({ path: process.env.ATTESTA_E2E_SCREENSHOT });
   });
 
   test("adds nothing when the user declines", async () => {
-    await test_.recordDiploma({ name: "Grace Hopper", email: "grace@example.com", degree: "Computer Science", university: "Trusted University" });
+    await test_.recordDiploma({ name: "Grace Hopper", email: "grace@example.com" });
 
     await uploadQr(window, await test_.qrImageFor("grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
@@ -140,7 +141,7 @@ test.describe.serial("desktop wallet", () => {
       nonce: "n-1",
       state: "s-1",
       dcql_query: JSON.stringify({
-        credentials: [{ id: "credential", format: "dc+sd-jwt", meta: { vct_values: ["Diploma"] }, claims: [{ path: ["degree"] }, { path: ["email"] }] }],
+        credentials: [{ id: "credential", format: "dc+sd-jwt", meta: { vct_values: ["Diploma Laadpalen Management"] }, claims: [{ path: ["name"] }, { path: ["email"] }] }],
       }),
       client_metadata: JSON.stringify({
         vp_formats_supported: { "dc+sd-jwt": { "sd-jwt_alg_values": ["EdDSA", "ES256"], "kb-jwt_alg_values": ["EdDSA", "ES256"] } },
@@ -151,7 +152,7 @@ test.describe.serial("desktop wallet", () => {
     const dialog = window.getByRole("dialog");
     await expect(dialog).toContainText("Informatie delen?");
     await expect(dialog).toContainText(responseUri);
-    await expect(dialog).toContainText("Graad");
+    await expect(dialog).toContainText("Naam");
     await expect(dialog).toContainText("E-mailadres");
     expect(answers).toHaveLength(0);
 
@@ -194,7 +195,7 @@ test.describe.serial("desktop wallet", () => {
     expect(answers).toHaveLength(before + 1);
 
     await openLink(diplomaRequest("s-4"));
-    await expect(window.getByRole("status")).toContainText(`Gedeeld: Graad, E-mailadres met redirect_uri:${responseUri}`);
+    await expect(window.getByRole("status")).toContainText(`Gedeeld: Naam, E-mailadres met redirect_uri:${responseUri}`);
     await expect(window.getByRole("dialog")).toHaveCount(0);
     expect(answers).toHaveLength(before + 2);
     expect(answers[before + 1].get("state")).toBe("s-4");
@@ -232,7 +233,7 @@ test.describe.serial("desktop wallet", () => {
     await expect.poll(() => answers.length).toBe(before + 1);
     const [first] = await popups();
     expect(first.message).toContain(application);
-    expect(first.detail).toBe("• wie het heeft uitgegeven\n• Graad\n• E-mailadres");
+    expect(first.detail).toBe("• wie het heeft uitgegeven\n• Naam\n• E-mailadres");
     expect(first.buttons).toEqual(["Delen", "Altijd delen", "Weigeren"]);
     await expect(window.getByRole("dialog")).toHaveCount(0);
 
@@ -282,7 +283,7 @@ test.describe.serial("desktop wallet", () => {
     const popups = () =>
       app.evaluate(() => (globalThis as unknown as { popups: Array<{ message: string; detail: string; buttons: string[]; checkboxLabel?: string }> }).popups);
     const handOver = (link: string) => app.evaluate(({ app: electronApp }, l) => electronApp.emit("open-url", { preventDefault() {} }, l), link);
-    const signIn = (state: string) => diplomaRequest(state, "Diploma", ["email"]);
+    const signIn = (state: string) => diplomaRequest(state, "Diploma Laadpalen Management", ["email"]);
 
     await answerPopupsWith(0, false);
     await handOver(signIn("si-1"));
@@ -324,7 +325,7 @@ test.describe.serial("desktop wallet", () => {
   test("tells a page which identities the user has, and signs in with the one the link names", async () => {
     const application = new URL(responseUri).origin;
     const before = answers.length;
-    const res = await fetch(`http://127.0.0.1:${identityPort}/identities?type=Diploma&application=${encodeURIComponent(application)}`, {
+    const res = await fetch(`http://127.0.0.1:${identityPort}/identities?type=Diploma Laadpalen Management&application=${encodeURIComponent(application)}`, {
       headers: { Origin: "https://page.example" },
     });
     expect(res.headers.get("access-control-allow-origin")).toBe("*");
@@ -351,7 +352,7 @@ test.describe.serial("desktop wallet", () => {
     const popups = () => app.evaluate(() => (globalThis as unknown as { popups: Array<{ message: string; detail: string }> }).popups);
     const handOver = (link: string) => app.evaluate(({ app: electronApp }, l) => electronApp.emit("open-url", { preventDefault() {} }, l), link);
     const named = (state: string, email: string, issuer: string) =>
-      `${diplomaRequest(state, "Diploma", ["email"])}&${new URLSearchParams({ login_hint: email, issuer_hint: issuer })}`;
+      `${diplomaRequest(state, "Diploma Laadpalen Management", ["email"])}&${new URLSearchParams({ login_hint: email, issuer_hint: issuer })}`;
 
     await answerPopupsWith(0, true);
     await handOver(named("h-1", identity.email, identity.issuer));
@@ -361,7 +362,7 @@ test.describe.serial("desktop wallet", () => {
     expect(popup.detail).toBe(`E-mailadres: ${identity.email}\nDID: ${identity.issuer}`);
 
     // The wallet remembered the identity, and tells the page so.
-    const again = await fetch(`http://127.0.0.1:${identityPort}/identities?type=Diploma&application=${encodeURIComponent(application)}`);
+    const again = await fetch(`http://127.0.0.1:${identityPort}/identities?type=Diploma Laadpalen Management&application=${encodeURIComponent(application)}`);
     expect(((await again.json()) as { identities: Array<{ automatic: boolean }> }).identities[0].automatic).toBe(true);
     await answerPopupsWith(1, false);
     await handOver(named("h-2", identity.email, identity.issuer));
@@ -416,7 +417,7 @@ test("starts with its data in a folder whose path has spaces, as the system app 
 
 test("opens a link handed to the app when it starts", async () => {
   const issuer = await startTestIssuer();
-  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com" });
   const link = await issuer.qrLinkFor("ada@example.com");
   const app = await electron.launch({
     args: [appDir, link],
@@ -439,7 +440,7 @@ test("opens a link handed to the app when it starts", async () => {
 test("opens a new window for a link that arrives after its window was closed", async () => {
   test.skip(process.platform !== "darwin", "only macOS keeps the app running without a window");
   const issuer = await startTestIssuer();
-  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "Trusted University" });
+  await issuer.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com" });
   const link = await issuer.qrLinkFor("ada@example.com");
   const app = await electron.launch({
     args: [appDir],
@@ -475,8 +476,7 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
     email: "jerry@example.com",
     department: "burgerzaken" as const,
     organisation: "Gemeente Vlierdam",
-    diploma: "laadpalen-management",
-    diplomaValidUntil: "2031-06-30",
+    roles: ["laadpalen-aanvrager", "reader"],
   };
 
   test.beforeAll(async () => {
@@ -508,8 +508,12 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
 
     await goTo("Credentials");
     const card = window.getByRole("region", { name: "Credentials" });
-    await expect(card).toContainText("Employee");
+    await expect(card.getByRole("heading", { name: "Medewerker afdeling & rollen" })).toBeVisible();
     await expect(card).toContainText("jerry@example.com");
+    await expect(card).toContainText("Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente");
+    await expect(card).toContainText("Rollen");
+    await expect(card).toContainText("laadpalen-aanvrager, reader");
+    await expect(card).not.toContainText("Geldig tot");
     await expect(card).toContainText("burgerzaken");
   });
 

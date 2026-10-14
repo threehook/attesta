@@ -1,6 +1,6 @@
 // The whole flow through the real app and the real backend: issuer -> wallet -> backend -> Gno policy. Needs a running backend whose
 // ATTESTA_PUBLIC_URL is ATTESTA_BACKEND_URL (and ATTESTA_ADMIN_TOKEN for it); skipped otherwise.
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -58,12 +58,12 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
         await window.getByRole("dialog").getByRole("button", { name: button }).click();
       };
 
-      await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com", degree: "Mathematics", university: "U" });
+      await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com" });
       await addCredential(window, test_, "ada@example.com");
       await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Credentials", exact: true }).click();
       await expect(window.getByRole("region", { name: "Credentials" })).toContainText("ada@example.com");
 
-      const started = await post("/v1/authorize/requests", { resource: "diploma-vault", policyId, credentialType: "Diploma", claims: ["degree"] });
+      const started = await post("/v1/authorize/requests", { resource: "diploma-vault", policyId, credentialType: "Diploma Laadpalen Management", claims: ["name"] });
       const { requestId, authorizationRequest } = (await started.json()) as { requestId: string; authorizationRequest: string };
       await open(authorizationRequest, "Delen");
       await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
@@ -82,6 +82,81 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
         expect(outcome.reason).toContain("issuer not trusted");
         expect(outcome.subject).toBeUndefined();
       }
+    } finally {
+      await app.close();
+      await test_.close();
+    }
+  });
+}
+
+// The laadpalen policy as it ships decides on two credentials of one person: an Employee (department, roles) and the diploma Laadpalen Management.
+const laadpaalPolicy = readFileSync(join(import.meta.dirname, "../../examples/laadpalen/policies/request_laadpaal.gno"), "utf8");
+
+const laadpaalCases = [
+  { name: "an employee of Burgerzaken with the role and the diploma", roles: ["laadpalen-aanvrager"], department: "burgerzaken", decision: "Permit", reason: "Geautoriseerd" },
+  { name: "an employee of another department", roles: ["laadpalen-aanvrager"], department: "secretariaat", decision: "Deny", reason: "Niet geautoriseerd vanwege afdeling" },
+  { name: "an employee without the role", roles: ["reader"], department: "burgerzaken", decision: "Deny", reason: "Niet geautoriseerd vanwege rol" },
+  { name: "an employee without any roles", roles: [], department: "burgerzaken", decision: "Deny", reason: "Niet geautoriseerd vanwege rol" },
+];
+
+for (const c of laadpaalCases) {
+  test(`decides a laadpaal request on the Employee and the diploma together: ${c.name}`, async () => {
+    const test_ = await startTestIssuer();
+    const deployed = await post("/admin/policies", { id: "request_laadpaal_e2e", source: laadpaalPolicy }, { "X-Admin-Token": adminToken });
+    expect(deployed.status).toBe(200);
+
+    const app = await electron.launch({
+      args: [join(import.meta.dirname, "..")],
+      env: {
+        ...process.env,
+        ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+        ATTESTA_WALLET_KEY: "e2e-wallet-key-c",
+        ATTESTA_ALLOW_INSECURE_HTTP: "1",
+      },
+    });
+    try {
+      const window = await app.firstWindow();
+      const email = "jim.wever@example.com";
+      await test_.recordEmployee({
+        name: "Jim Wever",
+        email,
+        department: c.department,
+        organisation: "Gemeente Vlierdam",
+        roles: c.roles,
+      });
+      await addCredential(window, test_, email);
+      await test_.recordDiploma({ name: "Jim Wever", email });
+      await addCredential(window, test_, email);
+
+      const started = await post("/v1/authorize/requests", {
+        resource: "request_laadpaal",
+        policyId: "request_laadpaal_e2e",
+        credentials: [
+          { credentialType: "Employee", claims: ["department", "roles"] },
+          { credentialType: "Diploma Laadpalen Management" },
+        ],
+      });
+      expect(started.status).toBe(200);
+      const { requestId, authorizationRequest } = (await started.json()) as { requestId: string; authorizationRequest: string };
+
+      await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Link openen", exact: true }).click();
+      await window.getByLabel("Link").fill(authorizationRequest);
+      await window.getByRole("button", { name: "Openen" }).click();
+      const dialog = window.getByRole("dialog");
+      await expect(dialog).toContainText("Employee");
+      await expect(dialog).toContainText("Diploma Laadpalen Management");
+      await dialog.getByRole("button", { name: "Delen" }).click();
+      await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
+
+      const outcome = (await (await fetch(`${backend}/v1/authorize/requests/${requestId}`)).json()) as {
+        status: string;
+        decision: string;
+        reason: string;
+        subject?: { email: string };
+      };
+      expect(outcome.status).toBe("done");
+      expect({ decision: outcome.decision, reason: outcome.reason }).toEqual({ decision: c.decision, reason: c.reason });
+      expect(outcome.subject?.email).toBe(c.decision === "Permit" ? email : undefined);
     } finally {
       await app.close();
       await test_.close();
