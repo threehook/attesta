@@ -35,17 +35,14 @@ describe('a QR code that is mailed', () => {
     await test.close()
   })
 
-  it('mails the person a QR code as an image, in the mail and as an attachment', async () => {
+  it('mails the person a QR code once, as an image in the mail', async () => {
     await test.issuer.mailQrCode(await test.issuer.createEmployeeEntitlement(employee))
 
     expect(test.sent).toHaveLength(1)
     const mail = test.sent[0]
     expect(mail).toMatchObject({ to: 'jerry@example.com', subject: 'Uw credential staat klaar bij Gemeente Utrecht' })
-    expect(mail.attachments).toHaveLength(2)
-    expect(mail.attachments![0]).toMatchObject({ filename: 'credential.png', contentType: 'image/png' })
-    expect(mail.attachments![0].cid).toBeUndefined()
-    expect(mail.attachments![1]).toMatchObject({ contentType: 'image/png', cid: 'credential-qr' })
-    expect(mail.attachments![1].content).toEqual(mail.attachments![0].content)
+    expect(mail.attachments).toHaveLength(1)
+    expect(mail.attachments![0]).toMatchObject({ filename: 'credential.png', contentType: 'image/png', cid: 'credential-qr' })
     expect(mail.html).toContain('cid:credential-qr')
     expect(mail.text).toContain('24 uur')
     expect(mail.text).toContain('QR-code uploaden')

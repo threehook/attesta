@@ -8,7 +8,7 @@ configured to trust the issuer's DID. It has two parts:
   - An **entitlement** is the right of the person with an email address to receive one credential. `POST /entitlements/diploma` records one for a `Diploma`,
     `POST /entitlements/employee` for an `Employee` (name, email, `department` of `burgerzaken` or `secretariaat`, organisation, diploma course and the date the
     diploma is valid until; the credential expires at the end of that day, and a date in the past is refused). Both answer `{ "entitlementId": ..., "mailedTo": ... }`.
-  - **Recording an entitlement mails the person a QR code**, as an image in the mail and as the attachment `credential.png`. The code holds a link with a one-time code for that
+  - **Recording an entitlement mails the person a QR code**, as the image `credential.png` in the mail. The code holds a link with a one-time code for that
     entitlement. The person saves the image and uploads it in their wallet, which then fetches the credential by itself. The code works once and
     for 24 hours (`ATTESTA_ISSUER_QR_LIFETIME_SECONDS`).
   - **An expired code is replaced.** When a wallet comes with an expired code and the entitlement is still open, the issuer mails a new code and tells the wallet so
