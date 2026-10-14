@@ -25,17 +25,12 @@ type fakeAttesta struct {
 	answers map[string]outcome
 	raw     string
 
-	started      []startedWith
+	started      []enforcer.Authorization
 	outcomeCalls int
 }
 
-type startedWith struct {
-	resource, policyID, credentialType string
-	claims, userRoles                  []string
-}
-
-func (f *fakeAttesta) Start(_ context.Context, resource, policyID, credentialType string, claims, userRoles []string) (authorizationRequest, error) {
-	f.started = append(f.started, startedWith{resource, policyID, credentialType, claims, userRoles})
+func (f *fakeAttesta) Start(_ context.Context, a enforcer.Authorization) (authorizationRequest, error) {
+	f.started = append(f.started, a)
 	if f.startErr != nil {
 		return authorizationRequest{}, f.startErr
 	}
@@ -144,7 +139,7 @@ func TestSignInAsksAttestaForTheIdentityOnly(t *testing.T) {
 	if len(f.started) != 1 {
 		t.Fatalf("Attesta was asked %d times, want once", len(f.started))
 	}
-	if g := f.started[0]; g.resource != "sign_in" || g.policyID != "sign_in" || g.credentialType != "Employee" || len(g.claims) != 0 {
+	if g := f.started[0]; g.Resource != "sign_in" || g.PolicyID != "sign_in" || len(g.Credentials) != 1 || g.Credentials[0].Type != "Employee" || len(g.Credentials[0].Claims) != 0 {
 		t.Errorf("asked Attesta for %+v, want the Employee identity for sign_in and no other claims", g)
 	}
 }
@@ -189,8 +184,10 @@ func TestSubmitAsksAttestaForTheEmployeeClaims(t *testing.T) {
 	if len(f.started) != 2 {
 		t.Fatalf("Attesta was asked %d times, want a sign-in and a request", len(f.started))
 	}
-	if g := f.started[1]; g.resource != "request_laadpaal" || g.policyID != "request_laadpaal" || g.credentialType != "Employee" || strings.Join(g.claims, ",") != "department,diploma" {
-		t.Errorf("asked Attesta for %+v, want the Employee department and diploma for request_laadpaal", g)
+	if g := f.started[1]; g.Resource != "request_laadpaal" || g.PolicyID != "request_laadpaal" || len(g.Credentials) != 2 ||
+		g.Credentials[0].Type != "Employee" || strings.Join(g.Credentials[0].Claims, ",") != "department,roles" ||
+		g.Credentials[1].Type != "Diploma Laadpalen Management" || len(g.Credentials[1].Claims) != 0 {
+		t.Errorf("asked Attesta for %+v, want the Employee department and roles and the Diploma Laadpalen Management for request_laadpaal", g)
 	}
 }
 
@@ -383,41 +380,5 @@ func TestOldSubmissionsAreForgotten(t *testing.T) {
 func TestHealthz(t *testing.T) {
 	if rec := call(newTestServer(&fakeAttesta{}), "GET", "/healthz", ""); rec.Code != http.StatusOK {
 		t.Errorf("status = %d, want 200", rec.Code)
-	}
-}
-
-func TestSubmitSendsTheEmployeesRoles(t *testing.T) {
-	f := authorizedAttesta()
-	s := newTestServer(f)
-	s.userRoles = parseUserRoles("Jerry@Example.com=laadpalen-aanvrager;tom@example.com=reader")
-	c := signedIn(t, s, f)
-
-	withCookies(s, "POST", "/api/request-laadpaal", freeAddress, []*http.Cookie{c}, nil)
-
-	if g := f.started[0]; len(g.userRoles) != 0 {
-		t.Errorf("the sign-in sent roles %v", g.userRoles)
-	}
-	if g := f.started[1]; strings.Join(g.userRoles, ",") != "laadpalen-aanvrager" {
-		t.Errorf("the request sent roles %v, want laadpalen-aanvrager", g.userRoles)
-	}
-}
-
-func TestSubmitSendsNoRolesForAnEmployeeWithoutAny(t *testing.T) {
-	f := authorizedAttesta()
-	s := newTestServer(f)
-	s.userRoles = parseUserRoles("tom@example.com=laadpalen-aanvrager")
-	c := signedIn(t, s, f)
-
-	withCookies(s, "POST", "/api/request-laadpaal", freeAddress, []*http.Cookie{c}, nil)
-
-	if g := f.started[1]; len(g.userRoles) != 0 {
-		t.Errorf("the request sent roles %v, want none", g.userRoles)
-	}
-}
-
-func TestParseUserRoles(t *testing.T) {
-	got := parseUserRoles(" Ada@Example.com = a, b ;bob@example.com=;;=x;broken")
-	if len(got) != 1 || strings.Join(got["ada@example.com"], ",") != "a,b" {
-		t.Errorf("parseUserRoles = %v", got)
 	}
 }

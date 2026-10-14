@@ -25,6 +25,8 @@ const (
 	resource       = "request_laadpaal"
 	policyID       = "request_laadpaal"
 	credentialType = "Employee"
+	// diplomaType is the second credential a laadpaal request asks for: the diploma Laadpalen Management.
+	diplomaType = "Diploma Laadpalen Management"
 	// submissionTTL is how long a submission is remembered; Attesta forgets a request after five minutes, so a longer one only keeps finished results.
 	submissionTTL = 30 * time.Minute
 	// sessionTTL is how long an employee who signed in with the wallet stays signed in. It runs from the sign-in and is not extended by use.
@@ -32,7 +34,11 @@ const (
 	sessionCookie = "laadpalen_session"
 )
 
-var claimsAsked = []string{"department", "diploma"}
+// A laadpaal request asks for the Employee's department and roles and for the diploma.
+var laadpaalCredentials = []enforcer.Credential{
+	{Type: credentialType, Claims: []string{"department", "roles"}},
+	{Type: diplomaType},
+}
 
 var postcodePattern = regexp.MustCompile(`^[0-9]{4}[A-Z]{2}$`)
 
@@ -85,8 +91,6 @@ type server struct {
 	now     func() time.Time
 	// application is the origin wallets know this app by (where they answer Attesta); the page gives it to the wallet to ask about this app.
 	application string
-	// userRoles gives an employee, by email, the roles this app sends Attesta with a laadpaal request. An employee not listed has none.
-	userRoles map[string][]string
 
 	mu          sync.Mutex
 	submissions map[string]*submission
@@ -132,7 +136,7 @@ func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 
 // handleSignIn starts a sign-in: Attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
 func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
-	started, err := s.attesta.Start(r.Context(), signInResource, signInPolicyID, credentialType, nil, nil)
+	started, err := s.attesta.Start(r.Context(), enforcer.Authorization{Resource: signInResource, PolicyID: signInPolicyID, Credentials: []enforcer.Credential{{Type: credentialType}}})
 	if err != nil {
 		s.logger.Error("starting the sign-in failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon het aanmelden niet starten"})
@@ -173,7 +177,7 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	started, err := s.attesta.Start(r.Context(), resource, policyID, credentialType, claimsAsked, s.userRoles[strings.ToLower(sess.subject.Email)])
+	started, err := s.attesta.Start(r.Context(), enforcer.Authorization{Resource: resource, PolicyID: policyID, Credentials: laadpaalCredentials})
 	if err != nil {
 		s.logger.Error("starting the authorization failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon de autorisatie niet starten"})

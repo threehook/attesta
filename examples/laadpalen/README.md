@@ -10,9 +10,9 @@ Who may submit is Attesta's decision, made from a credential in the employee's o
   It records every decided request with the employee's `subject` (issuer and email).
 - `gui/` is the page (Vite + React), in Dutch. The employee signs in, enters an address and sees the outcome; the page hands each step to the wallet itself.
 - `policies/sign_in.gno` signs in an `Employee` credential from a trusted issuer; nothing but the identity is read.
-- `policies/request_laadpaal.gno` decides a request: an `Employee` credential from a trusted issuer, for the `burgerzaken` department and
-  a `laadpalen-management` diploma, and the role `laadpalen-aanvrager`, which this app gives an employee (`LAADPALEN_USER_ROLES`) and sends to Attesta
-  in the `Att-User-Roles` header. Secretariaat employees are refused. The credential's own expiry (the diploma's last day) is checked before the policy runs.
+- `policies/request_laadpaal.gno` decides a request on two credentials of the same person, both from a trusted issuer: an `Employee` for the `burgerzaken`
+  department with the role `laadpalen-aanvrager` in its `roles`, and the diploma `Diploma Laadpalen Management` (a credential type of its own). Secretariaat employees are refused.
+  Each credential's own expiry (a diploma's last day) is checked before the policy runs, so an expired diploma never gets here.
 
 ## How it fits together
 
@@ -31,7 +31,7 @@ wallet ────────────────────────�
    (from the sign-in, not extended by use) the employee is signed in. The page shows who (`GET /api/session`) and has "Afmelden" (`DELETE /api/session`).
    Sessions live in memory, so a restart signs everyone out.
 3. **Request a laadpaal.** Only in a session: the page posts the address to `POST /api/request-laadpaal`, which answers 401 without one. The backend asks
-   Attesta for a request (`request_laadpaal`, credential `Employee`, claims `department` and `diploma`) and returns a link. The wallet asks what to
+   Attesta for a request (`request_laadpaal`, credential `Employee` with the claims `department` and `roles`, and credential `Diploma Laadpalen Management`) and returns a link. The wallet asks what to
    share, or answers on its own when the user chose to always share with this application.
 4. The page polls `GET /api/request-laadpaal/{id}`. When Attesta has decided, an authorized submission is carried out once: the address rules run and the
    outcome is recorded. The credential shown must be the signed-in employee's, otherwise the request is refused.
@@ -50,8 +50,8 @@ make laadpalen            # builds and deploys the backend with its sidecar, and
 pnpm --filter @attesta/wallet-desktop package    # the wallet: open the app once; it needs https, see CLAUDE.md for the names
 ```
 
-Get a credential: open http://localhost:4000/employee, fill in the form (department Burgerzaken or Secretariaat; the diploma date must be in the future),
-and paste the offer link into the wallet. Then open http://localhost:4174, sign in and enter an address (1111BB 2 is free, 1111AA 1 has a laadpaal, 1111DD 4 has no
+Get the credentials: open https://issuer.attesta.corbencreatives.nl, sign in, and record an `Employee` (department Burgerzaken or Secretariaat, roles chosen from the list) and
+the diploma Laadpalen Management (a date in the future) for the same email address; upload each QR code from the mail in the wallet. Then open http://localhost:4174, sign in and enter an address (1111BB 2 is free, 1111AA 1 has a laadpaal, 1111DD 4 has no
 electric vehicle). Press "Aanmelden", then "Dien aanvraag in". The page opens the wallet each time; the link is also under "Toon API-aanroep" for a wallet
 that has to be given it by hand.
 
@@ -59,17 +59,17 @@ The wallet reaches Attesta at http://localhost:4175 (the `laadpalen-attesta` Ser
 
 ## Roles
 
-The roles are the application's own: `LAADPALEN_USER_ROLES` in `k8s/local/laadpalen/api/deployment.yaml` lists them by email, as
-`ada@example.com=laadpalen-aanvrager;bob@example.com=reader`. A laadpaal request carries the signed-in employee's roles in `Att-User-Roles`; an employee
-who is not listed has none, and the policy then refuses with "Niet geautoriseerd vanwege rol". The sign-in sends no roles.
+The roles are in the employee's `Employee` credential (chosen from the list on the issuer's form); the policy reads them from there. An employee whose roles do not
+include `laadpalen-aanvrager` is refused with "Niet geautoriseerd vanwege rol". The sign-in asks for the Employee's identity and nothing else.
 
-The demo employees (issue each an employee credential at http://localhost:4000/employee):
+The demo employees (record an `Employee` and the diploma for each at https://issuer.attesta.corbencreatives.nl):
 
-| Employee | Email | Department | Role | Outcome |
-|---|---|---|---|---|
-| Jerry Smith | jsmith@vlierdam.nl | Burgerzaken | `laadpalen-aanvrager` | allowed |
-| Tom de Vries | tdvries@vlierdam.nl | Burgerzaken | none | refused, "Niet geautoriseerd vanwege rol" |
-| Sanne Bakker | sbakker@vlierdam.nl | Secretariaat | none | refused, "Niet geautoriseerd vanwege afdeling" |
+| Employee | Email | Department | Roles | Diploma Laadpalen Management | Outcome |
+|---|---|---|---|---|---|
+| Jerry Smith | jsmith@vlierdam.nl | Burgerzaken | `laadpalen-aanvrager` | yes | allowed |
+| Tom de Vries | tdvries@vlierdam.nl | Burgerzaken | none | yes | refused, "Niet geautoriseerd vanwege rol" |
+| Sanne Bakker | sbakker@vlierdam.nl | Secretariaat | none | yes | refused, "Niet geautoriseerd vanwege afdeling" |
+| Piet Jansen | pjansen@vlierdam.nl | Burgerzaken | `laadpalen-aanvrager` | no | the wallet holds no diploma, so it cannot answer |
 
 ## Policies
 
