@@ -4,7 +4,11 @@ import { escape, MENU, renderPage, type Crumb } from './layout.js'
 export interface Chrome {
   issuerName?: string
   did: string
+  /** Whether the pages offer a way to sign out. */
+  signOut?: boolean
 }
+
+const signOutOf = ({ signOut }: Chrome) => signOut
 
 const logoOf = ({ issuerName }: Chrome) => ({ src: '/logo.svg', alt: issuerName ?? 'Logo' })
 
@@ -26,6 +30,7 @@ export function renderWelcome(chrome: Chrome): string {
     body: `<p class="intro">Maak een keuze in het menu om verder te gaan.</p><div class="blocks">${blocks}</div>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
+    signOut: signOutOf(chrome),
   })
 }
 
@@ -43,6 +48,7 @@ export function renderForm(description: string, chrome: Chrome, university = '')
 </form>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
+    signOut: signOutOf(chrome),
   })
 }
 
@@ -67,6 +73,7 @@ export function renderEmployeeForm(departments: string[], description: string, c
 </form>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
+    signOut: signOutOf(chrome),
   })
 }
 
@@ -79,5 +86,6 @@ export function renderCreated(email: string, chrome: Chrome, employee: boolean):
     body: `<p class="intro">Er is een e-mail met een QR-code gestuurd naar <strong>${escape(email)}</strong>. De medewerker zet die in de wallet, en het credential komt er vanzelf in.</p>`,
     footer: footerOf(chrome),
     logo: logoOf(chrome),
+    signOut: signOutOf(chrome),
   })
 }

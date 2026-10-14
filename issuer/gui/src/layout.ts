@@ -107,6 +107,8 @@ export interface Page {
   logo?: { src: string; alt: string }
   /** Important information for the one-line footer, if there is any. */
   footer?: string
+  /** Adds a sign-out link below the menu. */
+  signOut?: boolean
 }
 
 export function renderPage(page: Page): string {
@@ -120,11 +122,12 @@ export function renderPage(page: Page): string {
   const list = (items: MenuItem[]) =>
     `<ul>${items.map((i) => `<li><a href="${escape(i.href)}"${i.id === page.active ? ' aria-current="page"' : ''}>${escape(i.label)}</a></li>`).join('')}</ul>`
   const menu = list([HOME]) + MENU.map((group) => `<h2>${escape(group.label)}</h2>${list(group.items)}`).join('')
+  const signOut = page.signOut ? `<ul><li><a href="/logout">Afmelden</a></li></ul>` : ''
   const footer = page.footer ? `<footer title="${escape(page.footer)}">${escape(page.footer)}</footer>` : '<footer>&nbsp;</footer>'
   return `<!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${APP_NAME}</title><style>${theme}</style>
 <header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div></header>
-<nav class="menu" aria-label="Menu">${menu}</nav>
+<nav class="menu" aria-label="Menu">${menu}${signOut}</nav>
 <main>${page.body}</main>
 ${footer}`
 }

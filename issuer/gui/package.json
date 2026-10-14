@@ -10,7 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "openid-client": "^6.8.8"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
