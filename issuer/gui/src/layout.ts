@@ -28,11 +28,11 @@ const theme = `
 :root{
   --menu-w:260px;--logo-bg:#efe8f6;
   --bg:#f4f6f9;--surface:#fff;--text:#1b2433;--muted:#5d6b82;--border:#d9dfe8;
-  --brand:#14315c;--brand-text:#fff;--brand-muted:#b9c6dc;--accent:#1f5fbf;--accent-text:#fff;--accent-soft:#e6eefb;--focus:#7aa7ec;--label-bg:#c9d7ee;--label-text:#14315c;
+  --brand:#14315c;--brand-text:#fff;--brand-muted:#b9c6dc;--accent:#1f5fbf;--accent-text:#fff;--accent-soft:#e6eefb;--focus:#7aa7ec;--label-bg:#c9d7ee;--label-text:#14315c;--danger:#b3261e;--danger-text:#fff;
 }
 @media (prefers-color-scheme:dark){:root{
   --bg:#12171f;--surface:#1b222d;--text:#e6eaf1;--muted:#98a4b8;--border:#2c3646;
-  --brand:#0e2242;--brand-text:#f2f5fa;--brand-muted:#9db0d1;--accent:#5b92e5;--accent-text:#0b1220;--accent-soft:#22304a;--focus:#5b92e5;--label-bg:#2f3f5c;--label-text:#c3d3f0;
+  --brand:#0e2242;--brand-text:#f2f5fa;--brand-muted:#9db0d1;--accent:#5b92e5;--accent-text:#0b1220;--accent-soft:#22304a;--focus:#5b92e5;--label-bg:#2f3f5c;--label-text:#c3d3f0;--danger:#e0605a;--danger-text:#1b0a09;
 }}
 *{box-sizing:border-box}
 html,body{height:100%}
@@ -72,6 +72,14 @@ input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid 
 button{padding:9px 16px;font:inherit;font-weight:600;color:var(--accent-text);background:var(--accent);border:0;border-radius:6px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
 code{word-break:break-all}
+button.danger{background:var(--danger);color:var(--danger-text)}
+.item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:44rem;margin:0 0 16px}
+.item h2{margin:0 0 2px;font-size:16px;font-weight:600}
+.item .meta{margin:0 0 10px;color:var(--muted)}
+.item dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 16px;margin:0 0 14px}
+.item dt{color:var(--muted)}.item dd{margin:0}
+.actions{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
+.actions form{margin:0}
 .field{margin:0 0 14px}
 .field>span{display:block;font-weight:600;font-size:13px}
 details.multi{margin-top:4px;position:relative}

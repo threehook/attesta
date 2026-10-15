@@ -3,7 +3,21 @@ import type { AddressInfo } from 'node:net'
 import express from 'express'
 import type { Auth } from './auth.js'
 import { LOGO_SVG } from './logo.js'
-import { renderCreated, renderDiplomaForm, renderEmployeeForm, renderRefused, renderWelcome, type Chrome, type DiplomaInfo, type Kind } from './page.js'
+import {
+  renderCorrection,
+  renderCreated,
+  renderDiplomaForm,
+  renderEmployeeForm,
+  renderNotRevoked,
+  renderRefused,
+  renderRevoke,
+  renderRevoked,
+  renderWelcome,
+  type ActiveCredential,
+  type Chrome,
+  type DiplomaInfo,
+  type Kind,
+} from './page.js'
 
 export interface GuiOptions {
   port: number
@@ -87,6 +101,62 @@ export async function startGui(options: GuiOptions) {
       return
     }
     await create(`/entitlements/diploma/${diploma.path}`, { diploma })(req, res, next)
+  })
+
+  // Revoking: look a person up, revoke what they hold, or revoke it and record the corrected data in its place.
+  const activeOf = async (req: express.Request, email: string): Promise<{ list?: ActiveCredential[]; error?: string }> => {
+    const answer = await fetch(`${api}/entitlements?email=${encodeURIComponent(email)}`, { headers: await asStaff(req) })
+    const body = (await answer.json()) as { entitlements?: ActiveCredential[]; error?: string }
+    return answer.ok ? { list: body.entitlements ?? [] } : { error: body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.' }
+  }
+  const queryEmail = (req: express.Request) => (typeof req.query.email === 'string' ? req.query.email.trim() : '')
+  const post = async (req: express.Request, path: string, body?: unknown) => {
+    const answer = await fetch(`${api}${path}`, {
+      method: 'POST',
+      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(await asStaff(req)) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    })
+    return { ok: answer.ok, status: answer.status, body: (await answer.json()) as { error?: string; mailedTo?: string; entitlementId?: string } }
+  }
+
+  app.get('/revoke', async (req, res) => {
+    const email = queryEmail(req)
+    const chrome = chromeOf(await info(req))
+    if (!email) {
+      res.type('html').send(renderRevoke(chrome, ''))
+      return
+    }
+    const { list, error } = await activeOf(req, email)
+    res.status(error ? 400 : 200).type('html').send(renderRevoke(chrome, email, list, error))
+  })
+  app.post('/revoke/:id', async (req, res) => {
+    const answer = await post(req, `/entitlements/revoke/${encodeURIComponent(req.params.id)}`)
+    const chrome = chromeOf(await info(req))
+    if (!answer.ok) {
+      res.status(answer.status).type('html').send(renderNotRevoked(answer.body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.', chrome, '/revoke'))
+      return
+    }
+    res.type('html').send(renderRevoked(chrome))
+  })
+  app.get('/revoke/:id/correct', async (req, res) => {
+    const email = queryEmail(req)
+    const { list } = email ? await activeOf(req, email) : { list: undefined }
+    const credential = list?.find((c) => c.id === req.params.id)
+    if (!credential) {
+      res.status(404).type('text').send('Dit credential bestaat niet of is al ingetrokken.')
+      return
+    }
+    const i = await info(req)
+    res.type('html').send(renderCorrection(credential, email, i.departments, i.roles, chromeOf(i)))
+  })
+  app.post('/revoke/:id/correct', async (req, res) => {
+    const answer = await post(req, `/entitlements/revoke/${encodeURIComponent(req.params.id)}`, withRolesAsList(req.body ?? {}))
+    const chrome = chromeOf(await info(req))
+    if (!answer.ok) {
+      res.status(answer.status).type('html').send(renderNotRevoked(answer.body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.', chrome, '/revoke'))
+      return
+    }
+    res.type('html').send(renderRevoked(chrome, String(req.body?.email ?? '')))
   })
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {

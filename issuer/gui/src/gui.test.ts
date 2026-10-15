@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startGui } from './gui.js'
 
-const DIPLOMA = { path: 'laadpalen-management', title: 'Diploma Laadpalen Management', description: 'Bewijs dat de opleiding Laadpalen Management is afgerond' }
+const DIPLOMA = { type: 'Diploma Laadpalen Management', path: 'laadpalen-management', title: 'Diploma Laadpalen Management', description: 'Bewijs dat de opleiding Laadpalen Management is afgerond' }
 const DID = 'did:key:z6MkTest'
 
 // A stand-in for the issuer API: it answers /info and records what the pages post.
@@ -11,6 +11,12 @@ let api: Server
 let apiUrl: string
 let posted: { path: string; body: Record<string, string> }[]
 let refuse: string | undefined
+const held = [
+  { id: 'e-1', type: 'Employee', title: 'Medewerker afdeling & rollen', status: 'issued', issuedAt: '2026-10-14T09:00:00Z',
+    claims: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'secretariaat', organisation: 'Gemeente Utrecht', roles: 'laadpalen-aanvrager, reader' } },
+  { id: 'e-2', type: 'Diploma Laadpalen Management', title: 'Diploma Laadpalen Management', status: 'waiting', issuedAt: null,
+    claims: { name: 'Jerry Smith', email: 'jerry@example.com', validUntil: '2099-12-31' } },
+]
 
 beforeEach(async () => {
   posted = []
@@ -24,7 +30,13 @@ beforeEach(async () => {
         res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], roles: ['laadpalen-aanvrager', 'reader'], diplomas: [DIPLOMA] }))
         return
       }
-      posted.push({ path: req.url ?? '', body: JSON.parse(raw) })
+      if (req.method === 'GET' && req.url?.startsWith('/entitlements?')) {
+        const email = new URL(req.url, 'http://x').searchParams.get('email')
+        res.statusCode = email === 'nope' ? 400 : 200
+        res.end(JSON.stringify(email === 'nope' ? { error: 'email is not an email address' } : { entitlements: email === 'jerry@example.com' ? held : [] }))
+        return
+      }
+      posted.push({ path: req.url ?? '', body: raw ? JSON.parse(raw) : {} })
       if (refuse) {
         res.statusCode = 400
         res.end(JSON.stringify({ error: refuse }))
@@ -108,7 +120,7 @@ describe('issuer pages', () => {
   it('serves the employee form with a drop-down of the roles to tick, not to type', async () => {
     const html = await (await fetch(`${baseUrl}/employee`)).text()
 
-    expect(html).toContain('<details class="multi"><summary>Kies rol(len)</summary>')
+    expect(html).toContain('<details class="multi" data-none="Kies rol(len)"><summary>Kies rol(len)</summary>')
     expect(html).toContain('<input type="checkbox" name="roles" value="laadpalen-aanvrager">laadpalen-aanvrager')
     expect(html).toContain('<input type="checkbox" name="roles" value="reader">reader')
     expect(html).not.toContain('<input name="roles"')
@@ -173,5 +185,71 @@ describe('issuer pages', () => {
     } finally {
       await lonely.close()
     }
+  })
+
+  it('offers Intrekken in the menu and on the welcome page', async () => {
+    const html = await (await fetch(baseUrl)).text()
+
+    expect(html).toContain('<h2>Beheer</h2>')
+    expect(html).toContain('<h2>Intrekken</h2>')
+  })
+
+  it('lists what a person holds, with the date it was issued, and a button to revoke each', async () => {
+    const html = await (await fetch(`${baseUrl}/revoke?email=jerry%40example.com`)).text()
+
+    expect(html).toContain('Medewerker afdeling &#38; rollen')
+    expect(html).toContain('Uitgegeven op 14-10-2026')
+    expect(html).toContain('Staat klaar om op te halen')
+    expect(html).toContain('<dd>31-12-2099</dd>')
+    expect(html).toContain('action="/revoke/e-1"')
+    expect(html).toContain('href="/revoke/e-2/correct?email=jerry%40example.com"')
+  })
+
+  it('says so when a person holds nothing, and why a search was refused', async () => {
+    expect(await (await fetch(`${baseUrl}/revoke?email=nobody%40example.com`)).text()).toContain('Er is geen credential om in te trekken')
+    const refused = await fetch(`${baseUrl}/revoke?email=nope`)
+    expect(refused.status).toBe(400)
+    expect(await refused.text()).toContain('email is not an email address')
+  })
+
+  it('revokes through the API without sending data', async () => {
+    const res = await fetch(`${baseUrl}/revoke/e-1`, { method: 'POST' })
+
+    expect(posted).toEqual([{ path: '/entitlements/revoke/e-1', body: {} }])
+    expect(await res.text()).toContain('Het credential is ingetrokken.')
+  })
+
+  it('passes on why a revocation was refused', async () => {
+    refuse = 'dit credential bestaat niet of is al ingetrokken'
+
+    const res = await fetch(`${baseUrl}/revoke/e-1`, { method: 'POST' })
+
+    expect(res.status).toBe(400)
+    expect(await res.text()).toContain('dit credential bestaat niet of is al ingetrokken')
+  })
+
+  it('shows the form of the credential with its data filled in', async () => {
+    const employee = await (await fetch(`${baseUrl}/revoke/e-1/correct?email=jerry%40example.com`)).text()
+
+    expect(employee).toContain('value="Jerry Smith"')
+    expect(employee).toContain('<option value="secretariaat" selected>')
+    expect(employee).toContain('value="laadpalen-aanvrager" checked')
+    expect(employee).toContain('value="reader" checked')
+    expect(employee).toContain('<summary>laadpalen-aanvrager, reader</summary>')
+    expect(employee).toContain('action="/revoke/e-1/correct"')
+
+    const diploma = await (await fetch(`${baseUrl}/revoke/e-2/correct?email=jerry%40example.com`)).text()
+    expect(diploma).toContain('name="validUntil"')
+    expect(diploma).toContain('value="31-12-2099"')
+    expect((await fetch(`${baseUrl}/revoke/e-9/correct?email=jerry%40example.com`)).status).toBe(404)
+  })
+
+  it('revokes and replaces by posting the corrected data to the same endpoint', async () => {
+    const res = await fetch(`${baseUrl}/revoke/e-1/correct`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
+
+    expect(posted).toEqual([{ path: '/entitlements/revoke/e-1', body: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } }])
+    const html = await res.text()
+    expect(html).toContain('Het credential is ingetrokken.')
+    expect(html).toContain('<strong>jerry@example.com</strong>')
   })
 })
