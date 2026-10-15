@@ -73,6 +73,11 @@ spec:
               value: "true"
             - name: ATTESTA_ADL_RESOURCE
               value: "application=laadpalen"
+            # Revocation: status lists are read from the issuer only. The issuer's public name resolves to 127.0.0.1 inside the cluster, so it is reached at its Service.
+            - name: ATTESTA_STATUS_URL_PREFIXES
+              value: https://issuer.attesta.corbencreatives.nl/status/
+            - name: ATTESTA_STATUS_HOSTS
+              value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
             # This app's policies; the sidecar reloads them when the ConfigMap changes: no restart (make laadpalen-policies).
             - name: ATTESTA_POLICIES_DIR
               value: /policies

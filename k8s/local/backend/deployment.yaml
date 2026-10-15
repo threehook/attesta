@@ -45,6 +45,11 @@ spec:
               value: alloy.observability.svc.cluster.local:4317
             - name: ATTESTA_ADL_OTLP_INSECURE
               value: "true"
+            # Revocation: status lists are read from the issuer only. The issuer's public name resolves to 127.0.0.1 inside the cluster, so it is reached at its Service.
+            - name: ATTESTA_STATUS_URL_PREFIXES
+              value: https://issuer.attesta.corbencreatives.nl/status/
+            - name: ATTESTA_STATUS_HOSTS
+              value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
             # The backend loads every *.gno file here and reloads it when the ConfigMap changes: no restart (make k8s-policies).
             - name: ATTESTA_POLICIES_DIR
               value: /policies
