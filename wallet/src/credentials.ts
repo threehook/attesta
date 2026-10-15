@@ -19,6 +19,9 @@ function bindToNewKey(agent: WalletAgent): OpenId4VciCredentialBindingResolver {
   }
 }
 
+// Where a held credential came from (the issuer's address), kept with it so that a new credential of the same type from the same issuer is recognised.
+const ISSUER_URL = 'attesta/issuerUrl'
+
 /** What the wallet read from a link or QR code, in a form a consent screen can show. The standard calls the link a credential offer. */
 export interface CredentialPreview {
   /** The issuer's address. */
@@ -33,12 +36,26 @@ export async function previewCredential(agent: WalletAgent, link: string): Promi
   const resolved = await agent.openid4vc.holder.resolveCredentialOffer(link).catch((error: unknown) => {
     throw saidByIssuer(error) ?? error
   })
-  return {
+  const preview = {
     issuer: resolved.credentialOfferPayload.credential_issuer,
     types: Object.values(resolved.offeredCredentialConfigurations).map((config) =>
       'vct' in config && typeof config.vct === 'string' ? config.vct : config.scope ?? config.format,
     ),
     resolved,
+  }
+  await assertNotHeld(agent, preview)
+  return preview
+}
+
+/** Refuses a credential of a type the wallet already holds from the same issuer, before the link is used. A held credential of unknown origin counts as the same issuer. */
+async function assertNotHeld(agent: WalletAgent, preview: CredentialPreview): Promise<void> {
+  for (const record of await agent.sdJwtVc.getAll()) {
+    const held = describe(agent, record)
+    const origin = record.metadata.get<{ url: string }>(ISSUER_URL)?.url
+    if (preview.types.includes(held.type) && (origin === undefined || origin === preview.issuer)) {
+      const title = typeof held.claims.title === 'string' && held.claims.title !== '' ? held.claims.title : held.type
+      throw new CredoError(`U heeft al een credential "${title}" van deze uitgever. Verwijder dat eerst om een nieuw credential toe te voegen.`)
+    }
   }
 }
 
@@ -49,6 +66,7 @@ export async function acceptCredential(agent: WalletAgent, link: string): Promis
 
 /** Takes the credential that was read with previewCredential. */
 export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPreview): Promise<HeldCredential[]> {
+  await assertNotHeld(agent, preview)
   const holder = agent.openid4vc.holder
   const resolvedCredentialOffer = preview.resolved
   const token = await holder.requestToken({ resolvedCredentialOffer })
@@ -63,6 +81,7 @@ export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPre
     if (!(record instanceof SdJwtVcRecord)) {
       throw new CredoError('the issuer sent a credential that is not an SD-JWT VC; only SD-JWT VC is supported')
     }
+    record.metadata.set(ISSUER_URL, { url: preview.issuer })
     await agent.sdJwtVc.store({ record })
     held.push(describe(agent, record))
   }
@@ -72,6 +91,11 @@ export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPre
 export async function listCredentials(agent: WalletAgent): Promise<HeldCredential[]> {
   const records = await agent.sdJwtVc.getAll()
   return records.map((record) => describe(agent, record))
+}
+
+/** Removes a held credential. */
+export async function removeCredential(agent: WalletAgent, id: string): Promise<void> {
+  await agent.sdJwtVc.deleteById(id)
 }
 
 function describe(agent: WalletAgent, record: SdJwtVcRecord): HeldCredential {

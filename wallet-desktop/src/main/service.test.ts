@@ -8,6 +8,7 @@ const core = vi.hoisted(() => ({
   resolvePresentationRequest: vi.fn(),
   submitPresentation: vi.fn(),
   listCredentials: vi.fn(),
+  removeCredential: vi.fn(),
   previewCredential: vi.fn(),
   acceptPreviewed: vi.fn(),
   readQrImage: vi.fn(),
@@ -34,6 +35,7 @@ const service = (s = settings()) => new WalletService({} as WalletAgent, s);
 beforeEach(() => {
   core.resolvePresentationRequest.mockReset();
   core.listCredentials.mockReset().mockResolvedValue([]);
+  core.removeCredential.mockReset().mockResolvedValue(undefined);
   core.submitPresentation.mockReset().mockResolvedValue({ status: 200 });
   core.previewCredential.mockReset();
   core.acceptPreviewed.mockReset().mockResolvedValue([]);
@@ -49,6 +51,12 @@ describe("WalletService", () => {
 
   it("rejects approving something it never prepared", async () => {
     await expect(service().approve("unknown")).rejects.toThrow("verlopen");
+  });
+
+  it("removes a credential by its id", async () => {
+    const agent = {} as WalletAgent;
+    await expect(new WalletService(agent, settings()).remove("c-1")).resolves.toBeNull();
+    expect(core.removeCredential).toHaveBeenCalledWith(agent, "c-1");
   });
 
   it("forgets what was declined", async () => {

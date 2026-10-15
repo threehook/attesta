@@ -4,6 +4,7 @@ import {
   listCredentials,
   previewCredential,
   readQrImage,
+  removeCredential,
   resolvePresentationRequest,
   submitPresentation,
   type CredentialPreview,
@@ -42,6 +43,12 @@ export class WalletService {
 
   list(): Promise<HeldCredential[]> {
     return listCredentials(this.agent);
+  }
+
+  /** Removes a credential from the wallet; what the user shared with it earlier stays shared. */
+  async remove(id: string): Promise<null> {
+    await removeCredential(this.agent, id);
+    return null;
   }
 
   /** Reads the QR code in an image the user chose; it holds a link, which is then read like any other. */

@@ -4,9 +4,9 @@ The desktop wallet: an Electron app around the wallet core (`wallet/`). The user
 
 ## What it does
 
-- **Holds credentials.** The Credentials page lists them with the claims they carry.
+- **Holds credentials.** The Credentials page lists them with the claims they carry, and each has a Verwijderen button that asks to confirm.
 - **Takes an issuer's offer.** An `openid-credential-offer://` link, from a link the system hands to the app or pasted on the Link openen page, opens a
-  confirmation showing who offers what. The credential is fetched and stored only when the user agrees.
+  confirmation showing who offers what. The credential is fetched and stored only when the user agrees. A credential of a type the wallet already holds from that issuer is refused before the link is used, so the QR code still works after the old one is removed.
 - **Answers a verifier.** An `openid4vp://` link that the system hands to the app never opens the window. The wallet discloses exactly the requested
   claims and nothing else (the issuer is always shown to the verifier), and a small popup asks first: Delen, Altijd delen, or Weigeren. "Altijd delen" makes
   that application, kept as the origin it answers to, get answers with no popup at all; a notification says what was shared. If the wallet holds nothing

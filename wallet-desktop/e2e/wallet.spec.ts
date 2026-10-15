@@ -123,7 +123,7 @@ test.describe.serial("desktop wallet", () => {
   });
 
   test("adds nothing when the user declines", async () => {
-    await test_.recordDiploma({ name: "Grace Hopper", email: "grace@example.com" });
+    await test_.recordEmployee({ name: "Grace Hopper", email: "grace@example.com", department: "burgerzaken", organisation: "Gemeente Vlierdam" });
 
     await uploadQr(window, await test_.qrImageFor("grace@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Weigeren" }).click();
@@ -501,6 +501,18 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
   const credentials = () => window.getByRole("region", { name: "Credentials" }).locator("article");
   const goTo = (page: string) => window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: page, exact: true }).click();
 
+  test("says so when the credential was withdrawn after the mail", async () => {
+    const id = await issuer.recordEmployee({ ...employee, email: "henk@example.com", name: "Henk" });
+    await issuer.revoke(id);
+
+    await uploadQr(window, await issuer.qrImageFor("henk@example.com"));
+    await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
+
+    await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
+    await goTo("Credentials");
+    await expect(credentials()).toHaveCount(0);
+  });
+
   test("adds an employee credential from the uploaded QR code", async () => {
     await issuer.recordEmployee(employee);
 
@@ -530,31 +542,45 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
     await expect(window.getByRole("status")).toContainText("geen PNG- of JPEG");
   });
 
-  test("tells the user that an expired QR code was replaced, and the new one works", async () => {
+  test("refuses a credential of a type it already holds from that issuer, and the QR code stays usable", async () => {
     await issuer.recordEmployee({ ...employee, email: "grace@example.com", name: "Grace Hopper" });
+
+    await uploadQr(window, await issuer.qrImageFor("grace@example.com"));
+
+    await expect(window.getByRole("status")).toContainText("U heeft al een credential \"Medewerker afdeling & rollen\"");
+    await expect(window.getByRole("dialog")).toHaveCount(0);
+  });
+
+  test("removes a credential after the user confirms, and then accepts the QR code that was refused", async () => {
+    await goTo("Credentials");
+    await credentials().getByRole("button", { name: "Verwijderen" }).click();
+    await credentials().getByRole("button", { name: "Annuleren" }).click();
+    await expect(credentials()).toHaveCount(1);
+
+    await credentials().getByRole("button", { name: "Verwijderen" }).click();
+    await credentials().getByRole("button", { name: "Ja, verwijderen" }).click();
+    await expect(window.getByRole("status")).toContainText("Credential verwijderd");
+    await expect(credentials()).toHaveCount(0);
+
+    await addCredential(window, issuer, "grace@example.com");
+    await goTo("Credentials");
+    await expect(credentials()).toHaveCount(1);
+    await expect(credentials().first()).toContainText("grace@example.com");
+  });
+
+  test("tells the user that an expired QR code was replaced, and the new one works", async () => {
+    await issuer.recordDiploma({ email: "hopper@example.com", name: "Grace Hopper" });
     const mails = await issuer.mailCount();
-    const old = await issuer.qrImageFor("grace@example.com");
+    const old = await issuer.qrImageFor("hopper@example.com");
     await new Promise((resolve) => setTimeout(resolve, 2500));
 
     await uploadQr(window, old);
 
     await expect(window.getByRole("status")).toContainText("De QR-code is verlopen. Er is een nieuwe QR-code naar uw e-mail gestuurd.");
     expect(await issuer.mailCount()).toBe(mails + 1);
-    await uploadQr(window, await issuer.qrImageFor("grace@example.com"));
+    await uploadQr(window, await issuer.qrImageFor("hopper@example.com"));
     await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
     await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
-    await goTo("Credentials");
-    await expect(credentials()).toHaveCount(2);
-  });
-
-  test("says so when the credential was withdrawn after the mail", async () => {
-    const id = await issuer.recordEmployee({ ...employee, email: "henk@example.com", name: "Henk" });
-    await issuer.revoke(id);
-
-    await uploadQr(window, await issuer.qrImageFor("henk@example.com"));
-    await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
-
-    await expect(window.getByRole("status")).toContainText("Er staat geen credential voor u klaar");
     await goTo("Credentials");
     await expect(credentials()).toHaveCount(2);
   });

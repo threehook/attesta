@@ -71,6 +71,8 @@ export interface WalletApi {
   // sign-in that identity signs in to it automatically, for other requests the application gets what it asks for.
   approve(id: string, remember?: boolean): Promise<Result<Approved>>;
   decline(id: string): Promise<Result<null>>;
+  // Removes a credential from the wallet.
+  remove(id: string): Promise<Result<null>>;
   settings(): Promise<Result<Settings>>;
   forgetApplication(application: string): Promise<Result<Settings>>;
   forgetSignIn(choice: SignInChoice): Promise<Result<Settings>>;
@@ -86,6 +88,7 @@ export const channels = {
   prepareImage: "wallet:prepare-image",
   approve: "wallet:approve",
   decline: "wallet:decline",
+  remove: "wallet:remove",
   settings: "wallet:settings",
   forgetApplication: "wallet:forget-application",
   forgetSignIn: "wallet:forget-sign-in",

@@ -93,6 +93,12 @@ export function App() {
     }
   }
 
+  async function remove(id: string) {
+    const result = await window.wallet.remove(id);
+    setNotice(result.ok ? { kind: "info", text: "Credential verwijderd." } : { kind: "error", text: result.error });
+    await refresh();
+  }
+
   async function decline() {
     if (pending) await window.wallet.decline(pending.id);
     setPending(null);
@@ -121,7 +127,7 @@ export function App() {
 
       {route === HOME && <Blocks />}
 
-      {route.id === "credentials" && <CredentialList credentials={credentials} />}
+      {route.id === "credentials" && <CredentialList credentials={credentials} onRemove={(id) => void remove(id)} />}
 
       {route.id === "qr" && (
         <div

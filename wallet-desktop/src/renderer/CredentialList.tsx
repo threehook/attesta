@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { HeldCredential } from "../shared/api.js";
 import { claimLabel } from "../shared/labels.js";
 
@@ -7,7 +8,9 @@ const technical = new Set(["iss", "iat", "exp", "nbf", "vct", "cnf", "_sd_alg", 
 // What the issuer calls the credential; the type where it gave no title.
 const title = (credential: HeldCredential): string => (typeof credential.claims.title === "string" && credential.claims.title !== "" ? credential.claims.title : credential.type);
 
-export function CredentialList({ credentials }: { credentials: HeldCredential[] }) {
+export function CredentialList({ credentials, onRemove }: { credentials: HeldCredential[]; onRemove: (id: string) => void }) {
+  // The credential the user is asked to confirm removing.
+  const [removing, setRemoving] = useState<string | null>(null);
   if (credentials.length === 0) {
     return <p className="empty">Nog geen credentials. Upload de QR-code uit een e-mail van een uitgever om er een toe te voegen.</p>;
   }
@@ -33,6 +36,29 @@ export function CredentialList({ credentials }: { credentials: HeldCredential[] 
               </div>
             )}
           </dl>
+          {removing === credential.id ? (
+            <p className="actions">
+              Dit credential verwijderen?{" "}
+              <button
+                type="button"
+                onClick={() => {
+                  setRemoving(null);
+                  onRemove(credential.id);
+                }}
+              >
+                Ja, verwijderen
+              </button>{" "}
+              <button type="button" onClick={() => setRemoving(null)}>
+                Annuleren
+              </button>
+            </p>
+          ) : (
+            <p className="actions">
+              <button type="button" onClick={() => setRemoving(credential.id)}>
+                Verwijderen
+              </button>
+            </p>
+          )}
         </article>
       ))}
     </section>
