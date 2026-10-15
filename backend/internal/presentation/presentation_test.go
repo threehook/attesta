@@ -14,6 +14,11 @@ import (
 	"github.com/threehook/sdjwt-go"
 )
 
+// goodStanding says every credential is not revoked, whatever its status reference: most tests are not about revocation.
+type goodStanding struct{}
+
+func (goodStanding) Check(context.Context, string, *sdjwt.StatusReference) error { return nil }
+
 // recorded is a presentation captured from a Credo wallet (see testdata): the session below is built to match its audience, nonce
 // and state, and the clock is set to when it was made.
 type recording struct{ Nonce, State, VPToken string }
@@ -40,7 +45,7 @@ func loadRecorded(t *testing.T) recorded {
 
 func newRecordedVerifier(t *testing.T, r recorded, rec recording, request Request) *Verifier {
 	t.Helper()
-	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Now: func() time.Time { return time.Unix(r.IssuedAt, 0) }})
+	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Status: goodStanding{}, Now: func() time.Time { return time.Unix(r.IssuedAt, 0) }})
 	v.sessions.put("req-1", session{request: request, nonce: rec.Nonce, state: rec.State, responseURI: r.Audience[len("redirect_uri:"):]})
 	return v
 }

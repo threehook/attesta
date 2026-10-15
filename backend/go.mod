@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/gnolang/gno v1.5.0
-	github.com/threehook/sdjwt-go v0.1.0
+	github.com/threehook/sdjwt-go v0.2.0
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc v0.23.0
 	go.opentelemetry.io/otel/log v1.47.0

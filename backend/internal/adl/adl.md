@@ -9,6 +9,7 @@ the answer to a wallet's response: the sign-in and every request, allowed or den
 |---|---|---|
 | A policy decided (allow or deny) | `Ok` | `decision` and `context.reason.policy` |
 | The credential did not verify | `Ok` | `decision: false`, `context.reason.attesta` = "credential could not be verified", `context.reason.detail` = why |
+| The credential was revoked | `Ok` | `decision: false`, `context.reason.attesta` = "credential has been revoked", `context.reason.detail` = which credential |
 | The policy could not be evaluated (unknown policy, a policy error) | `Error` | absent; the cause is in `attributes.error` |
 
 A wallet answering an unknown, expired or already answered request is not a decision and is not recorded.

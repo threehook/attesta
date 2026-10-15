@@ -17,6 +17,7 @@ import (
 	"attesta/backend/internal/httpapi"
 	"attesta/backend/internal/presentation"
 	"attesta/backend/internal/scripts"
+	"attesta/backend/internal/status"
 	"github.com/threehook/sdjwt-go"
 )
 
@@ -32,7 +33,10 @@ func main() {
 
 func run() error {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	cfg := config.FromEnv()
+	cfg, err := config.FromEnv()
+	if err != nil {
+		return err
+	}
 
 	gnoVM, err := authz.NewGnoVM(os.Stderr)
 	if err != nil {
@@ -60,7 +64,14 @@ func run() error {
 		})
 	}
 
-	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}})
+	statuses, err := status.New(status.Options{Prefixes: cfg.StatusPrefixes, Hosts: cfg.StatusHosts, Keys: sdjwt.DIDKey{}})
+	if err != nil {
+		return err
+	}
+	if len(cfg.StatusPrefixes) == 0 {
+		logger.Warn("no status list prefixes are allowed (ATTESTA_STATUS_URL_PREFIXES): every credential will be refused")
+	}
+	presenter := presentation.New(presentation.Options{PublicURL: cfg.PublicURL, Keys: sdjwt.DIDKey{}, Status: statuses})
 
 	decisions, err := adl.New(context.Background(), adl.ConfigFromEnv(), logger)
 	if err != nil {

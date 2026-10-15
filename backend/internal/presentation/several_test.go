@@ -15,6 +15,8 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/threehook/sdjwt-go"
+
+	"attesta/backend/internal/status"
 )
 
 // wallet makes presentations the way a wallet does, for a request with several credentials.
@@ -54,7 +56,7 @@ func (w wallet) present(credType string, claims map[string]any, nonce string, re
 }
 
 func (w wallet) verifier(request Request) (*Verifier, session) {
-	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Now: func() time.Time { return w.now }})
+	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Status: goodStanding{}, Now: func() time.Time { return w.now }})
 	sess := session{request: request, nonce: "n-1", state: "s-1", responseURI: "http://backend.test/v1/authorize/requests/req-1/response"}
 	v.sessions.put("req-1", sess)
 	return v, sess
@@ -164,5 +166,64 @@ func TestNewRequestNeedsACredential(t *testing.T) {
 	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}})
 	if _, _, err := v.NewRequest(Request{Resource: "r", PolicyID: "p"}); err == nil {
 		t.Fatal("a request without credentials was accepted")
+	}
+}
+
+// asked records what the verifier asked the status checker.
+type asked struct {
+	issuer string
+	ref    *sdjwt.StatusReference
+	err    error
+}
+
+func (a *asked) Check(_ context.Context, issuer string, ref *sdjwt.StatusReference) error {
+	a.issuer, a.ref = issuer, ref
+	return a.err
+}
+
+func TestRespondAsksAboutTheCredentialsStatusAndRefusesWhatIsRevoked(t *testing.T) {
+	w := newWallet(t)
+	one := Request{Resource: "r", PolicyID: "p", Credentials: []CredentialQuery{{CredentialType: "Employee", Claims: []string{"department"}}}}
+	for name, tc := range map[string]struct {
+		err  error
+		want error
+	}{
+		"in good standing": {nil, nil},
+		"revoked":          {status.ErrRevoked, status.ErrRevoked},
+		"no reference":     {status.ErrNoStatus, status.ErrNoStatus},
+		"unavailable":      {status.ErrUnavailable, status.ErrUnavailable},
+	} {
+		v, sess := w.verifier(one)
+		check := &asked{err: tc.err}
+		v.status = check
+		_, err := v.Respond(context.Background(), "req-1", form(map[string]string{
+			"credential": w.present("Employee", map[string]any{"email": "j@example.com", "department": "d"}, sess.nonce, sess.responseURI),
+		}))
+		if check.issuer != w.did {
+			t.Errorf("%s: asked about issuer %q", name, check.issuer)
+		}
+		if tc.want == nil {
+			if err != nil {
+				t.Errorf("%s: %v", name, err)
+			}
+			continue
+		}
+		var rejected *Rejected
+		if !errors.Is(err, tc.want) || !errors.Is(err, ErrInvalidPresentation) || !errors.As(err, &rejected) {
+			t.Errorf("%s: error %v", name, err)
+		}
+	}
+}
+
+func TestRespondRefusesEverythingWithoutAStatusChecker(t *testing.T) {
+	w := newWallet(t)
+	one := Request{Resource: "r", PolicyID: "p", Credentials: []CredentialQuery{{CredentialType: "Employee", Claims: []string{"department"}}}}
+	v, sess := w.verifier(one)
+	v.status = nil
+	_, err := v.Respond(context.Background(), "req-1", form(map[string]string{
+		"credential": w.present("Employee", map[string]any{"email": "j@example.com", "department": "d"}, sess.nonce, sess.responseURI),
+	}))
+	if !errors.Is(err, ErrInvalidPresentation) {
+		t.Fatalf("error %v", err)
 	}
 }

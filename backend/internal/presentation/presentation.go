@@ -91,10 +91,18 @@ type PresentedCredential struct {
 	Claims map[string]any
 }
 
+// StatusChecker finds out whether a credential was revoked. It gives nil only for a credential that is in good standing, so a credential without a
+// status reference or one whose status cannot be established must give an error.
+type StatusChecker interface {
+	Check(ctx context.Context, issuer string, ref *sdjwt.StatusReference) error
+}
+
 type Options struct {
 	// PublicURL is where wallets reach this backend; response URIs are built from it.
 	PublicURL string
 	Keys      sdjwt.KeyResolver
+	// Status is asked about every credential after its signature has verified. Without it every presentation is refused.
+	Status StatusChecker
 	// TTL is how long a request stays answerable, and how old a presentation's key binding may be. Zero means five minutes.
 	TTL time.Duration
 	// Now defaults to time.Now.
@@ -104,6 +112,7 @@ type Options struct {
 type Verifier struct {
 	publicURL string
 	keys      sdjwt.KeyResolver
+	status    StatusChecker
 	ttl       time.Duration
 	now       func() time.Time
 	sessions  *sessions
@@ -118,7 +127,7 @@ func New(o Options) *Verifier {
 	if ttl == 0 {
 		ttl = 5 * time.Minute
 	}
-	return &Verifier{publicURL: strings.TrimSuffix(o.PublicURL, "/"), keys: o.Keys, ttl: ttl, now: now, sessions: newSessions(ttl, now)}
+	return &Verifier{publicURL: strings.TrimSuffix(o.PublicURL, "/"), keys: o.Keys, status: o.Status, ttl: ttl, now: now, sessions: newSessions(ttl, now)}
 }
 
 // NewRequest registers a request and returns its id and the `openid4vp://` link to give the wallet.
@@ -189,7 +198,7 @@ func (r *Rejected) Unwrap() error { return r.Err }
 
 // Respond verifies the wallet's direct_post answer (`vp_token` and `state` form fields) to request id. The request is consumed whether or not the
 // answer verifies.
-func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Presented, error) {
+func (v *Verifier) Respond(ctx context.Context, id string, form url.Values) (*Presented, error) {
 	sess, err := v.sessions.claim(id)
 	if err != nil {
 		return nil, err
@@ -229,6 +238,12 @@ func (v *Verifier) Respond(_ context.Context, id string, form url.Values) (*Pres
 		}
 		if verified.Type != q.CredentialType {
 			return nil, invalid("credential type %q is not the requested %q", verified.Type, q.CredentialType)
+		}
+		if v.status == nil {
+			return nil, invalid("no way to check whether the %s credential was revoked", q.CredentialType)
+		}
+		if err := v.status.Check(ctx, verified.Issuer, verified.Status); err != nil {
+			return nil, &Rejected{Request: sess.request, Err: fmt.Errorf("%w: the %s credential: %w", ErrInvalidPresentation, q.CredentialType, err)}
 		}
 		claims := map[string]any{}
 		for _, name := range q.asked() {

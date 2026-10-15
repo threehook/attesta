@@ -16,6 +16,7 @@ import (
 	"attesta/backend/internal/adl"
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/presentation"
+	"attesta/backend/internal/status"
 )
 
 // fakePresenter isolates httpapi's routing and status codes from the real verifier, which internal/presentation tests with a recorded wallet answer.
@@ -351,6 +352,24 @@ func TestAnAnswerThatDoesNotVerifyIsLogged(t *testing.T) {
 		t.Errorf("decision = %+v", d)
 	}
 	if p.completed == nil || p.completed.Decision != authz.Deny || p.completed.Reason != "presentation did not verify" {
+		t.Errorf("outcome = %+v", p.completed)
+	}
+}
+
+func TestARevokedCredentialIsDeniedWithItsOwnReason(t *testing.T) {
+	req := presentation.Request{Resource: "vault", PolicyID: "p1", Credentials: []presentation.CredentialQuery{{CredentialType: "Diploma"}}}
+	p := &fakePresenter{respondErr: &presentation.Rejected{Request: req, Err: fmt.Errorf("%w: the Diploma credential: %w", presentation.ErrInvalidPresentation, status.ErrRevoked)}}
+	log := &fakeDecisionLog{}
+	s := newPresentationServer(t, p, &fakeEvaluator{})
+	s.Decisions = log
+
+	if rec := answer(s); rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	if len(log.decisions) != 1 || log.decisions[0].Allow || log.decisions[0].Reason != "credential has been revoked" || log.decisions[0].Detail == "" {
+		t.Errorf("decisions = %+v", log.decisions)
+	}
+	if p.completed == nil || p.completed.Decision != authz.Deny || p.completed.Reason != "credential has been revoked" {
 		t.Errorf("outcome = %+v", p.completed)
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"attesta/backend/internal/adl"
 	"attesta/backend/internal/authz"
 	"attesta/backend/internal/presentation"
+	"attesta/backend/internal/status"
 )
 
 // maxResponseBytes bounds a wallet's answer; an SD-JWT presentation is a few KB.
@@ -148,7 +149,11 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		errors.As(err, &rejected)
 		d := decisionFor(id, requestOf(rejected))
 		d.Reason, d.DecidedBy, d.Detail = reasonNotVerified, "attesta", err.Error()
-		if !s.decide(w, r, id, d, presentation.Outcome{Decision: authz.Deny, Reason: reasonOutcomeNotVerified}) {
+		outcome := presentation.Outcome{Decision: authz.Deny, Reason: reasonOutcomeNotVerified}
+		if errors.Is(err, status.ErrRevoked) {
+			d.Reason, outcome.Reason = reasonRevoked, reasonRevoked
+		}
+		if !s.decide(w, r, id, d, outcome) {
 			return
 		}
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": "the presentation did not verify"})
@@ -210,6 +215,7 @@ func othersOf(also []presentation.PresentedCredential) map[string]authz.Other {
 const (
 	reasonNotVerified        = "credential could not be verified"
 	reasonOutcomeNotVerified = "presentation did not verify"
+	reasonRevoked            = "credential has been revoked"
 )
 
 func requestOf(r *presentation.Rejected) presentation.Request {

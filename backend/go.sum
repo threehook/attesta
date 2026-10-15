@@ -130,6 +130,8 @@ github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70
 github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7/go.mod h1:q4W45IWZaF22tdD+VEXcAWRA037jwmWEB5VWYORlTpc=
 github.com/threehook/sdjwt-go v0.1.0 h1:GUK0/eh5KGbal6RGDe6EiLHm4GlYsdaEGRjybxqss7Q=
 github.com/threehook/sdjwt-go v0.1.0/go.mod h1:ZvhI5pBZvJoPDdbqX2s6stWm0wS1o3Y2IfT47yW+Sds=
+github.com/threehook/sdjwt-go v0.2.0 h1:1t2eWnVNqQaJvfsYP6kkIBTqkicfmXKwmNSSRwHM+Nc=
+github.com/threehook/sdjwt-go v0.2.0/go.mod h1:ZvhI5pBZvJoPDdbqX2s6stWm0wS1o3Y2IfT47yW+Sds=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=
 github.com/valyala/bytebufferpool v1.0.0/go.mod h1:6bBcMArwyJ5K/AmCkWv1jt77kVWyCJ6HpOuEn7z0Csc=
 go.etcd.io/bbolt v1.5.0 h1:S7GAl7Fxv12yohbwFfIbQCGDWbQbtDGPET4P/bD4lxU=
