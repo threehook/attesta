@@ -31,7 +31,7 @@ export interface TestIssuer {
   /** Records the entitlement; the issuer mails its person a QR code. Gives the entitlement's id. */
   recordDiploma(claims: DiplomaClaims): Promise<string>;
   recordEmployee(claims: EmployeeClaims): Promise<string>;
-  /** Withdraws an entitlement that was not issued yet. */
+  /** Withdraws an entitlement, issued or not; a verifier that reads the status list learns of it. */
   revoke(entitlementId: string): Promise<void>;
   /** The number of mails this issuer sent. */
   mailCount(): Promise<number>;
@@ -63,7 +63,8 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
   const n = ++started;
   const database = `e2e_${process.pid}_${n}`;
   const from = `issuer-${process.pid}-${n}@e2e.test`;
-  const port = await freePort();
+  // A verifier that fetches the status list only reads it from an address it was told, so it needs the port in advance.
+  const port = process.env.ATTESTA_E2E_ISSUER_PORT ? Number(process.env.ATTESTA_E2E_ISSUER_PORT) : await freePort();
   const url = `http://localhost:${port}`;
   const mailApi = env("ATTESTA_E2E_MAIL_API");
 
@@ -116,6 +117,9 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
   // The tests give some employees a role other than the one the table starts with.
   execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", "INSERT INTO roles (name) VALUES ('reader') ON CONFLICT DO NOTHING"]);
 
+  // Every test issuer starts with an empty database, but a verifier keeps the status list of the one before it for a minute: positions must not repeat.
+  execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", `ALTER SEQUENCE status_index_seq RESTART WITH ${n * 100}`]);
+
   const record = async (path: string, claims: DiplomaClaims | EmployeeClaims): Promise<string> => {
     const body_ = path.includes("/diploma/") ? { validUntil: "31-12-2099", ...claims } : claims;
     const response = await fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body_) });
@@ -148,7 +152,8 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
     recordDiploma: (claims) => record("/entitlements/diploma/laadpalen-management", claims),
     recordEmployee: (claims) => record("/entitlements/employee", claims),
     async revoke(entitlementId) {
-      execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", `UPDATE entitlements SET status = 'revoked' WHERE id = '${entitlementId}' AND status IN ('open', 'claimed')`]);
+      const response = await fetch(`${url}/entitlements/revoke/${entitlementId}`, { method: "POST" });
+      if (!response.ok) throw new Error(`revoking ${entitlementId} failed: ${response.status}`);
     },
     mailCount: async () => (await search(`from:${from}`)).length,
     qrImageFor,

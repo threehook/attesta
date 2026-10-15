@@ -89,6 +89,58 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
   });
 }
 
+// Revoking: the backend reads the issuer's status list, so it must be started with ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/ and the
+// tests' issuer runs on that port (ATTESTA_E2E_ISSUER_PORT=4099).
+test("denies a credential after the issuer revoked it, and allows it before", async () => {
+  test.skip(process.env.ATTESTA_E2E_ISSUER_PORT !== "4099", "set ATTESTA_E2E_ISSUER_PORT=4099, and start the backend as the comment above says");
+  test.setTimeout(240_000);
+  const test_ = await startTestIssuer();
+  const trustAnyone = `package policy
+
+func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
+	return "Permit", "credential accepted for resource " + resource, nil, nil
+}
+`;
+  expect((await post("/admin/policies", { id: "desktop_e2e_revocation", source: trustAnyone }, { "X-Admin-Token": adminToken })).status).toBe(200);
+
+  const app = await electron.launch({
+    args: [join(import.meta.dirname, "..")],
+    env: {
+      ...process.env,
+      ATTESTA_WALLET_DATA_DIR: mkdtempSync(join(tmpdir(), "attesta-wallet-")),
+      ATTESTA_WALLET_KEY: "e2e-wallet-key-d",
+      ATTESTA_ALLOW_INSECURE_HTTP: "1",
+    },
+  });
+  try {
+    const window = await app.firstWindow();
+    const present = async () => {
+      const started = await post("/v1/authorize/requests", { resource: "diploma-vault", policyId: "desktop_e2e_revocation", credentialType: "Diploma Laadpalen Management", claims: ["name"] });
+      const { requestId, authorizationRequest } = (await started.json()) as { requestId: string; authorizationRequest: string };
+      await window.getByRole("navigation", { name: "Menu" }).getByRole("link", { name: "Link openen", exact: true }).click();
+      await window.getByLabel("Link").fill(authorizationRequest);
+      await window.getByRole("button", { name: "Openen" }).click();
+      await window.getByRole("dialog").getByRole("button", { name: "Delen" }).click();
+      await expect(window.getByRole("status")).toContainText("Uw antwoord is verstuurd");
+      return (await (await fetch(`${backend}/v1/authorize/requests/${requestId}`)).json()) as { status: string; decision: string; reason: string };
+    };
+
+    const entitlementId = await test_.recordDiploma({ name: "Ada Lovelace", email: "ada@example.com" });
+    await addCredential(window, test_, "ada@example.com");
+
+    expect(await present()).toMatchObject({ status: "done", decision: "Permit" });
+
+    await test_.revoke(entitlementId);
+    // The backend keeps the issuer's list for its ttl (a minute).
+    await new Promise((resolve) => setTimeout(resolve, 62_000));
+
+    expect(await present()).toMatchObject({ status: "done", decision: "Deny", reason: "credential has been revoked" });
+  } finally {
+    await app.close();
+    await test_.close();
+  }
+});
+
 // The laadpalen policy as it ships decides on two credentials of one person: an Employee (department, roles) and the diploma Laadpalen Management.
 const laadpaalPolicy = readFileSync(join(import.meta.dirname, "../../examples/laadpalen/policies/request_laadpaal.gno"), "utf8");
 
