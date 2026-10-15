@@ -40,9 +40,16 @@ const REVOKE: MenuItem = {
   description: 'Trek een credential in en maak er eventueel een gecorrigeerd credential voor in de plaats.',
 }
 
+const ROLES: MenuItem = {
+  id: 'roles',
+  label: 'Rollen',
+  href: '/roles',
+  description: 'Maak rollen aan, wijzig ze en verwijder ze. Een rol die een medewerker heeft, kan niet worden verwijderd.',
+}
+
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.diplomas.map(diplomaItem)] },
-  { label: 'Beheer', items: [REVOKE] },
+  { label: 'Beheer', items: [REVOKE, ROLES] },
 ]
 
 /** What a form or a page after it is for: the employee credential, or the diploma at this path. */
@@ -253,5 +260,148 @@ export function renderRefused(message: string, chrome: Chrome, kind: Kind): stri
     crumbs: [...home, { label: item.label, href: item.href }],
     active: item.id,
     body: `<p class="intro">${escape(message)}</p><p><a href="${escape(item.href)}">Terug naar het formulier</a></p>`,
+  })
+}
+
+// The roles table: the list comes from /roles/data, and filtering, sorting and paging happen here. A change goes to the GUI, which passes it on to the API;
+// the table is read again when a popup closes.
+const ROLES_SCRIPT = `(() => {
+  const $ = (id) => document.getElementById(id)
+  const state = { roles: [], filter: '', key: 'name', dir: 1, size: 10, page: 0 }
+  const edit = $('role-edit'), remove = $('role-delete')
+  let target = null
+
+  const cell = (tr, text) => { const td = document.createElement('td'); td.textContent = text; tr.append(td); return td }
+  const action = (tr, label, role, cls, open) => {
+    const b = document.createElement('button')
+    b.type = 'button'; b.textContent = label; if (cls) b.className = cls
+    b.addEventListener('click', () => open(role))
+    const td = document.createElement('td'); td.append(b); tr.append(td)
+  }
+  const render = () => {
+    const f = state.filter.toLowerCase()
+    const rows = state.roles.filter((r) => r.name.toLowerCase().includes(f) || r.id.includes(f))
+    rows.sort((a, b) => a[state.key].localeCompare(b[state.key]) * state.dir)
+    const pages = Math.max(1, Math.ceil(rows.length / state.size))
+    state.page = Math.min(state.page, pages - 1)
+    const from = state.page * state.size, shown = rows.slice(from, from + state.size)
+    const body = $('roles-body')
+    body.replaceChildren()
+    for (const r of shown) {
+      const tr = document.createElement('tr')
+      cell(tr, r.id).className = 'mono'; cell(tr, r.name)
+      action(tr, 'Wijzigen', r, '', openEdit); action(tr, 'Verwijderen', r, 'danger', openDelete)
+      body.append(tr)
+    }
+    if (!shown.length) { const tr = document.createElement('tr'); const td = cell(tr, 'Geen rollen gevonden.'); td.colSpan = 4; body.append(tr) }
+    $('roles-range').textContent = rows.length ? (from + 1) + '–' + (from + shown.length) + ' van ' + rows.length : '0 van 0'
+    $('roles-prev').disabled = state.page === 0
+    $('roles-next').disabled = state.page >= pages - 1
+    $('roles-first').disabled = state.page === 0
+    $('roles-last').disabled = state.page >= pages - 1
+    $('roles-pages').textContent = 'Pagina ' + (state.page + 1) + ' van ' + pages
+    document.querySelectorAll('th[data-key]').forEach((th) => {
+      th.setAttribute('aria-sort', th.dataset.key === state.key ? (state.dir > 0 ? 'ascending' : 'descending') : 'none')
+    })
+  }
+  const load = async () => {
+    const res = await fetch('/roles/data')
+    if (res.ok) { state.roles = (await res.json()).roles; render() }
+  }
+
+  function openEdit(role) {
+    target = role
+    $('role-edit-title').textContent = role ? 'Rol wijzigen' : 'Rol aanmaken'
+    $('role-edit-name').value = role ? role.name : ''
+    $('role-edit-error').textContent = ''
+    edit.showModal()
+  }
+  function openDelete(role) {
+    target = role
+    $('role-delete-name').textContent = role.name
+    $('role-delete-error').textContent = ''
+    $('role-delete-ask').hidden = role.inUse
+    $('role-delete-yes').hidden = role.inUse
+    $('role-delete-busy').hidden = !role.inUse
+    $('role-delete-close').textContent = role.inUse ? 'Sluiten' : 'Annuleren'
+    remove.showModal()
+  }
+  const send = async (method, url, body, errorBox, dialog) => {
+    const res = await fetch(url, { method, headers: { 'content-type': 'application/json' }, body })
+    if (res.ok) { dialog.close(); return }
+    const answer = await res.json().catch(() => ({}))
+    errorBox.textContent = answer.error || 'De wijziging is niet gelukt.'
+  }
+  $('role-add').addEventListener('click', () => openEdit(null))
+  $('role-edit-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    const body = JSON.stringify({ name: $('role-edit-name').value })
+    send(target ? 'PUT' : 'POST', target ? '/roles/' + encodeURIComponent(target.id) : '/roles', body, $('role-edit-error'), edit)
+  })
+  $('role-delete-yes').addEventListener('click', () => send('DELETE', '/roles/' + encodeURIComponent(target.id), undefined, $('role-delete-error'), remove))
+  document.querySelectorAll('dialog [data-close]').forEach((b) => b.addEventListener('click', () => b.closest('dialog').close()))
+  for (const d of [edit, remove]) d.addEventListener('close', load)
+
+  $('roles-filter').addEventListener('input', (e) => { state.filter = e.target.value; state.page = 0; render() })
+  $('roles-size').addEventListener('change', (e) => { state.size = Number(e.target.value); state.page = 0; render() })
+  $('roles-first').addEventListener('click', () => { state.page = 0; render() })
+  $('roles-prev').addEventListener('click', () => { state.page--; render() })
+  $('roles-next').addEventListener('click', () => { state.page++; render() })
+  $('roles-last').addEventListener('click', () => { state.page = Infinity; render() })
+  document.querySelectorAll('th[data-key] button').forEach((b) => b.addEventListener('click', () => {
+    const key = b.closest('th').dataset.key
+    state.dir = state.key === key ? -state.dir : 1
+    state.key = key
+    render()
+  }))
+  load()
+})()`
+
+/** The roles in a table that can be filtered, sorted and paged, with popups to add, change and delete one. */
+export function renderRoles(chrome: Chrome): string {
+  return shell(chrome, {
+    title: ROLES.label,
+    crumbs: home,
+    active: ROLES.id,
+    body: `<p class="intro">${escape(ROLES.description)}</p>
+<div class="toolbar">
+  <button type="button" id="role-add">Rol aanmaken</button>
+  <input id="roles-filter" type="search" placeholder="Filter op id of naam" aria-label="Filter">
+</div>
+<table class="data">
+  <thead><tr>
+    <th data-key="id" aria-sort="none"><button type="button" class="sort">ID</button></th>
+    <th data-key="name" aria-sort="ascending"><button type="button" class="sort">Rol</button></th>
+    <th>Wijzigen</th><th>Verwijderen</th>
+  </tr></thead>
+  <tbody id="roles-body"></tbody>
+</table>
+<div class="pager">
+  <label>Rollen per pagina <select id="roles-size"><option>5</option><option selected>10</option><option>25</option><option>50</option></select></label>
+  <span id="roles-range"></span>
+  <span class="nav">
+    <button type="button" id="roles-first" aria-label="Eerste pagina">&laquo;</button>
+    <button type="button" id="roles-prev">Vorige</button>
+    <span id="roles-pages"></span>
+    <button type="button" id="roles-next">Volgende</button>
+    <button type="button" id="roles-last" aria-label="Laatste pagina">&raquo;</button>
+  </span>
+</div>
+<dialog id="role-edit">
+  <form id="role-edit-form">
+    <h2 id="role-edit-title"></h2>
+    <label>Naam <input id="role-edit-name" required></label>
+    <p class="error" id="role-edit-error" role="alert"></p>
+    <div class="actions"><button type="submit">Opslaan</button><button type="button" class="secondary" data-close>Annuleren</button></div>
+  </form>
+</dialog>
+<dialog id="role-delete">
+  <h2>Rol verwijderen</h2>
+  <p id="role-delete-ask">Weet u zeker dat u de rol <strong id="role-delete-name"></strong> wilt verwijderen?</p>
+  <p id="role-delete-busy" hidden>Deze rol kan niet worden verwijderd: er is minimaal één medewerker met deze rol.</p>
+  <p class="error" id="role-delete-error" role="alert"></p>
+  <div class="actions"><button type="button" class="danger" id="role-delete-yes">Ja, verwijderen</button><button type="button" class="secondary" id="role-delete-close" data-close>Annuleren</button></div>
+</dialog>
+<script>${ROLES_SCRIPT}</script>`,
   })
 }

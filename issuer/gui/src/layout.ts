@@ -80,6 +80,28 @@ button.danger{background:var(--danger);color:var(--danger-text)}
 .item dt{color:var(--muted)}.item dd{margin:0}
 .actions{display:flex;flex-wrap:wrap;gap:16px;align-items:center}
 .actions form{margin:0}
+.toolbar{display:flex;gap:16px;align-items:center;margin:0 0 16px}
+.toolbar input{margin:0;max-width:20rem}
+table.data{width:100%;max-width:56rem;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+table.data th,table.data td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
+table.data th{font-size:13px}
+table.data td .mono,td.mono{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)}
+table.data td button{padding:5px 12px}
+table.data td button:disabled{opacity:.4;cursor:not-allowed}
+button.sort{padding:0;background:none;color:inherit;font-weight:600}
+th[aria-sort=ascending] button.sort::after{content:" \\25B2";font-size:10px}
+th[aria-sort=descending] button.sort::after{content:" \\25BC";font-size:10px}
+.pager{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;max-width:56rem;margin:12px 0 0;color:var(--muted)}
+.pager label{display:flex;align-items:center;gap:8px;margin:0;font-weight:400}
+.pager select{width:auto;margin:0}
+.pager .nav{display:flex;gap:8px;align-items:center}
+.pager button{padding:5px 12px}
+.pager button:disabled{opacity:.4;cursor:not-allowed}
+button.secondary{background:var(--surface);color:var(--text);border:1px solid var(--border)}
+dialog{border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);padding:20px;min-width:20rem;max-width:90vw}
+dialog::backdrop{background:rgba(0,0,0,.4)}
+dialog h2{margin:0 0 12px;font-size:16px}
+.error{color:var(--danger);min-height:1.2em;margin:0 0 10px}
 .field{margin:0 0 14px}
 .field>span{display:block;font-weight:600;font-size:13px}
 details.multi{margin-top:4px;position:relative}

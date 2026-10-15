@@ -15,8 +15,9 @@ configured to trust the issuer's DID. It has two parts:
     `credential.Diplomas` ("Diploma Laadpalen Management"), and each holder reads a description of what the credential is for. The title is a plain, always visible claim.
     Another diploma is one more entry in `credential.Diplomas` (type, path, title, description); its form and menu item appear by themselves, and the policy that needs it
     names its type.
-  - **The roles an employee can be given are rows of the table `roles`** (`name`, no comma, not blank), not code. A deployment starts with `laadpalen-aanvrager` and `reader`; add
-    one with `INSERT INTO roles (name) VALUES ('...')` and the form offers it at once. The form is a list to choose from, and the API refuses a role that is not in the table.
+  - **The roles an employee can be given are rows of the table `roles`** (`name`, no comma, not blank), not code. A deployment starts with `laadpalen-aanvrager`. Staff manage them at `/roles`
+    in the pages, or through `GET /roles`, `POST /roles`, `PUT /roles/<id>` (rename) and `DELETE /roles/<id>`; the employee form offers a new role at once and the API refuses a role that is not in the table.
+    A role is deleted softly (`deleted_at`; its name can be used again). A role held by an employee credential that is not revoked is in use: deleting it is refused with 409. Renaming is allowed; credentials already issued keep the old name.
   - **Revoking.** Each credential gets a position in a status list when its entitlement is first claimed, and carries it as `status.status_list` (`idx`, `uri`).
     `POST /entitlements/revoke/<id>` without a body withdraws an entitlement, issued or not; the person may then get a new credential of that type. With the corrected data of the
     credential in the body (the fields of its form) it withdraws the entitlement and records the corrected one in one step, and mails its QR code. `GET /entitlements?email=` lists
@@ -43,7 +44,7 @@ configured to trust the issuer's DID. It has two parts:
     (`ATTESTA_ISSUER_OIDC_ISSUER`, the name in its tokens; `_OIDC_DISCOVERY_URL` when its metadata is reached at another address; `_OIDC_CLIENT_ID`, default `issuer-gui`).
     The token must be issued to that client and carry the role `issuer-staff` (`_OIDC_ROLE`; in `realm_access.roles` or `roles`). The wallet endpoints under `/oid4vci`
     and `/healthz` need no token. Without `_OIDC_ISSUER` the issuer refuses to start; `ATTESTA_ISSUER_AUTH_DISABLED=true` leaves the endpoints open, for tests and local development only.
-- `gui/` (`@attesta/issuer-gui`) serves the pages: `/`, the forms at `/employee` and `/diploma/<path>`, and `/revoke`, where staff search a person by email, revoke a credential, or revoke it and fill in the corrected data. A form posts to the page, which passes it to the API and says that a mail
+- `gui/` (`@attesta/issuer-gui`) serves the pages: `/`, the forms at `/employee` and `/diploma/<path>`, `/roles`, and `/revoke`, where staff search a person by email, revoke a credential, or revoke it and fill in the corrected data. A form posts to the page, which passes it to the API and says that a mail
   with a QR code is on its way. The page has no key and no store; it only calls the API. Staff sign in at the OpenID Connect server (authorization code with PKCE,
   confidential client): `ATTESTA_ISSUER_OIDC_ISSUER`, `_OIDC_DISCOVERY_URL`, `_OIDC_CLIENT_ID`, `_OIDC_CLIENT_SECRET` and `ATTESTA_ISSUER_GUI_PUBLIC_URL` (where staff reach the pages, which
     the server sends them back to). The session lives in the page's memory, so a restart signs everyone out; the access token is renewed with the refresh token, and "Afmelden" ends the session at the server too.

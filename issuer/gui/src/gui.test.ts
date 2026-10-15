@@ -11,6 +11,7 @@ let api: Server
 let apiUrl: string
 let posted: { path: string; body: Record<string, string> }[]
 let refuse: string | undefined
+let changed: string[]
 const held = [
   { id: 'e-1', type: 'Employee', title: 'Medewerker afdeling & rollen', status: 'issued', issuedAt: '2026-10-14T09:00:00Z',
     claims: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'secretariaat', organisation: 'Gemeente Utrecht', roles: 'laadpalen-aanvrager, reader' } },
@@ -21,6 +22,7 @@ const held = [
 beforeEach(async () => {
   posted = []
   refuse = undefined
+  changed = []
   api = createServer((req, res) => {
     let raw = ''
     req.on('data', (chunk) => (raw += chunk))
@@ -34,6 +36,16 @@ beforeEach(async () => {
         const email = new URL(req.url, 'http://x').searchParams.get('email')
         res.statusCode = email === 'nope' ? 400 : 200
         res.end(JSON.stringify(email === 'nope' ? { error: 'email is not an email address' } : { entitlements: email === 'jerry@example.com' ? held : [] }))
+        return
+      }
+      if (req.url?.startsWith('/roles')) {
+        if (req.method === 'GET') {
+          res.end(JSON.stringify({ roles: [{ id: 'r-1', name: 'laadpalen-aanvrager', inUse: true }, { id: 'r-2', name: 'reader', inUse: false }] }))
+          return
+        }
+        changed.push(`${req.method} ${req.url} ${raw}`.trim())
+        res.statusCode = refuse ? 409 : req.method === 'DELETE' ? 204 : 200
+        res.end(refuse ? JSON.stringify({ error: refuse }) : req.method === 'DELETE' ? undefined : '{}')
         return
       }
       posted.push({ path: req.url ?? '', body: raw ? JSON.parse(raw) : {} })
@@ -251,5 +263,47 @@ describe('issuer pages', () => {
     const html = await res.text()
     expect(html).toContain('Het credential is ingetrokken.')
     expect(html).toContain('<strong>jerry@example.com</strong>')
+  })
+
+  it('offers Rollen under Beheer', async () => {
+    expect(await (await fetch(baseUrl)).text()).toContain('<h2>Rollen</h2>')
+  })
+
+  it('shows the roles page with a table to sort and page, and popups to add, change and delete', async () => {
+    const html = await (await fetch(`${baseUrl}/roles`)).text()
+
+    expect(html).toContain('id="role-add"')
+    expect(html).toContain('<th data-key="id"')
+    expect(html).toContain('<th data-key="name"')
+    expect(html).toContain('id="roles-filter"')
+    expect(html).toContain('id="roles-size"')
+    expect(html).toContain('id="roles-next"')
+    expect(html).toContain('<dialog id="role-edit">')
+    expect(html).toContain('<dialog id="role-delete">')
+  })
+
+  it('gives the table the roles the API has', async () => {
+    const res = await fetch(`${baseUrl}/roles/data`)
+
+    expect(((await res.json()) as { roles: { name: string }[] }).roles.map((r) => r.name)).toEqual(['laadpalen-aanvrager', 'reader'])
+  })
+
+  it('creates, renames and deletes a role through the API', async () => {
+    const json = (method: string, name?: string) => ({ method, headers: { 'Content-Type': 'application/json' }, body: name ? JSON.stringify({ name }) : undefined })
+    await fetch(`${baseUrl}/roles`, json('POST', 'auditor'))
+    await fetch(`${baseUrl}/roles/r-2`, json('PUT', 'readers'))
+    const res = await fetch(`${baseUrl}/roles/r-2`, json('DELETE'))
+
+    expect(changed).toEqual(['POST /roles {"name":"auditor"}', 'PUT /roles/r-2 {"name":"readers"}', 'DELETE /roles/r-2'])
+    expect(res.status).toBe(204)
+  })
+
+  it('passes on why a role could not be changed', async () => {
+    refuse = 'de rol is in gebruik bij een medewerker'
+
+    const res = await fetch(`${baseUrl}/roles/r-1`, { method: 'DELETE' })
+
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'de rol is in gebruik bij een medewerker' })
   })
 })

@@ -12,6 +12,7 @@ import {
   renderRefused,
   renderRevoke,
   renderRevoked,
+  renderRoles,
   renderWelcome,
   type ActiveCredential,
   type Chrome,
@@ -46,6 +47,7 @@ export async function startGui(options: GuiOptions) {
   const api = options.apiUrl.replace(/\/$/, '')
   const app = express()
   app.use(express.urlencoded({ extended: false }))
+  app.use(express.json())
 
   const asStaff = async (req: express.Request): Promise<Record<string, string>> => {
     const token = await options.auth?.token(req)
@@ -158,6 +160,23 @@ export async function startGui(options: GuiOptions) {
     }
     res.type('html').send(renderRevoked(chrome, String(req.body?.email ?? '')))
   })
+
+  // Roles: the table asks for the list and sends changes as JSON; the API refuses a role an employee holds, and the page shows why.
+  const passOn = (method: string, path: string): express.RequestHandler => async (req, res) => {
+    const answer = await fetch(`${api}${path.replace(':id', encodeURIComponent(req.params.id as string))}`, {
+      method,
+      headers: { ...(method === 'GET' || method === 'DELETE' ? {} : { 'content-type': 'application/json' }), ...(await asStaff(req)) },
+      body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify({ name: req.body?.name ?? '' }),
+    })
+    res.status(answer.status).type('json').send(await answer.text())
+  }
+  app.get('/roles', async (req, res) => {
+    res.type('html').send(renderRoles(chromeOf(await info(req))))
+  })
+  app.get('/roles/data', passOn('GET', '/roles'))
+  app.post('/roles', passOn('POST', '/roles'))
+  app.put('/roles/:id', passOn('PUT', '/roles/:id'))
+  app.delete('/roles/:id', passOn('DELETE', '/roles/:id'))
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)
