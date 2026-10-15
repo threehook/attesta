@@ -7,7 +7,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
 
 - `backend/` (Go, module `attesta/backend`): SD-JWT VC presentations are verified with `sdjwt-go` (issuer signature, disclosures, key binding; issuers
   are Ed25519 `did:key`), `internal/presentation` is the OpenID4VP verifier (unsigned requests, `redirect_uri` client id, DCQL, `direct_post`, one answer
-  per request, 5 minute lifetime), `internal/authz` runs Gno policies in-process (gnovm), `internal/scripts` stores policy source (loaded from `ATTESTA_POLICIES_DIR`, which
+  per request, 5 minute lifetime), `internal/status` reads the issuer's Token Status List (only from `ATTESTA_STATUS_URL_PREFIXES`, `ATTESTA_STATUS_HOSTS` maps a public host to an internal one) and denies a revoked credential, one without a status reference, and one whose list cannot be read, `internal/authz` runs Gno policies in-process (gnovm), `internal/scripts` stores policy source (loaded from `ATTESTA_POLICIES_DIR`, which
   it watches, and hot-deployed through `POST /admin/policies`; hot deployment without a restart is a requirement), `internal/httpapi` is the HTTP layer.
 - `github.com/threehook/sdjwt-go` (own public repo, MIT, checked out beside this one as `../sdjwt-go`): issues and verifies SD-JWT VC; the backend and the Go issuer use it by tag.
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
@@ -15,7 +15,7 @@ presentation that discloses only what was asked; the backend verifies it and a G
   authorization, read the outcome, act only on Permit and carry out its obligations. `examples/laadpalen/api` depends on it by tag; the application keeps its own rules.
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
-- `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code; credential types `Employee`, department and roles only, and one type per diploma, today `Diploma Laadpalen Management`, each with a form of its own) and `gui/` (the pages, which only call the API). Staff sign in at an OpenID Connect server (Keycloak in the cluster, a customer's own elsewhere); the API checks their token and the role `issuer-staff`.
+- `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code; credential types `Employee`, department and roles only, and one type per diploma, today `Diploma Laadpalen Management`, each with a form of its own; revoking a credential, with or without a corrected one, and the signed status list at `/status/1`) and `gui/` (the pages, which only call the API, among them `/revoke`). Staff sign in at an OpenID Connect server (Keycloak in the cluster, a customer's own elsewhere); the API checks their token and the role `issuer-staff`.
 - `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
@@ -34,7 +34,7 @@ pnpm install                                     # repo root; pnpm-workspace.yam
 pnpm --filter @attesta/client build              # client-lib/dist is not in git; build it before the page's build or typecheck
 pnpm -r typecheck && pnpm -r test                # all TS packages
 pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
-ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts
+ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> ATTESTA_E2E_ISSUER_PORT=4099 pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts   # that backend needs ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/
 make k8s-apply k8s-issuer-apply                  # build and deploy
 make k8s-policies POLICIES="<a.gno> <b.gno>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES
 make k8s-policies-add POLICIES=<a.gno>           # hot deploy of one policy, the others stay

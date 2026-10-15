@@ -22,6 +22,7 @@ Key design decisions:
 | Issuer identity | an Ed25519 `did:key`; the key is in the DID, so resolving needs no network. Which issuers are trusted is the policy's decision, by DID |
 | Verifier identity | requests are unsigned and identify the verifier by its response URI (`redirect_uri` client identifier prefix), so there is no verifier key to manage |
 | Identity | the holder is identified by the `email` claim of their credential, together with the issuer's DID. Every request asks the wallet for it, a presentation without it is rejected, and an allowed outcome carries it as `subject`; a denial does not, since an untrusted issuer's claims prove nothing |
+| Revocation | the issuer publishes a signed [Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) (1 bit per credential) and every credential points to its bit. The backend reads the list of the credential's issuer, only from the URLs it is configured with, and denies a revoked credential with the reason "credential has been revoked". A credential without a status reference, and a list that cannot be read or has expired, are denied |
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
 | Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string)`; `decision` is `Permit`, `Deny`, `NotApplicable` or `Indeterminate` (XACML), anything else is an error. `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. Every map in `obligations` and `advice` is one statement: its `id` key is the identifier and every other key is an attribute ID with a string value. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice A request that asks for several credentials (`credentials`) is decided by `AuthorizeWithOthers(resource, credType, issuer string, claims map[string]string, roles []string, others map[string]map[string]string, otherIssuers map[string]string)`, where `others` and `otherIssuers` hold the further credentials' claims and issuers by credential type; the credentials must all be of the same person (the same email), and a policy without that function answers such a request with an error. |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
@@ -40,6 +41,7 @@ backend/
     config/            env-based configuration
     sdjwt/             verifies SD-JWT VC presentations: issuer signature, disclosures, key binding; resolves did:key issuers
     presentation/      OpenID4VP verifier: builds requests, checks the wallet's answer, keeps the decision for polling
+    status/            reads the issuer's status list and tells whether a credential was revoked
     authz/             Evaluator backed by an embedded gnovm interpreter
     scripts/           policy source store (loaded from a directory that is watched, plus admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
@@ -102,7 +104,8 @@ go test ./...
 ```
 
 Configuration comes from the environment: `ATTESTA_ADDR`, `ATTESTA_PUBLIC_URL` (where wallets reach the backend: it appears in every presentation
-request), `ATTESTA_POLICIES_DIR`, `ATTESTA_ADMIN_TOKEN`, `ATTESTA_CORS_ORIGINS`. `internal/config` falls back to an insecure dev default for the admin token when its variable
+request), `ATTESTA_POLICIES_DIR`, `ATTESTA_ADMIN_TOKEN`, `ATTESTA_CORS_ORIGINS`, `ATTESTA_STATUS_URL_PREFIXES` (the URLs, each ending in `/`, that status lists are read from; with none set
+every credential is denied) and `ATTESTA_STATUS_HOSTS` (`https://public=http://internal` pairs, for a list that is reached at another address than its public one). `internal/config` falls back to an insecure dev default for the admin token when its variable
 isn't set — fine for local Docker Desktop, not fine for anything beyond it.
 
 For the k8s loop (requires Docker Desktop running, with Kubernetes enabled):
@@ -167,7 +170,7 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
   scale.
 - **Presentations are linkable.** SD-JWT hides undisclosed claims but not the issuer's signature or the holder's key, so a verifier, or a verifier
   together with the issuer, can correlate presentations of the same credential.
-- **No revocation.** The backend does not check a credential's status; a credential is valid until it expires.
+- **A revocation takes up to a minute to reach the backend**, which keeps the issuer's status list for its `ttl`. A policy that must not wait has no way to ask for a fresh list.
 - **The email is not checked beyond being disclosed and signed by the issuer.** Only Ed25519 `did:key` issuers are accepted.
 
 ## License
