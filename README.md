@@ -55,7 +55,7 @@ examples/
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    issuer/           deployments/services for the issuer: api, gui, Postgres, Mailpit and Keycloak (https://issuer.attesta.corbencreatives.nl)
+    issuer/           deployments/services for the issuer: api, gui, Postgres and Keycloak (https://issuer.attesta.corbencreatives.nl)
     laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach Attesta at https://api.attesta.corbencreatives.nl)
     ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
   cloud/              (empty for now)

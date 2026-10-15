@@ -24,7 +24,7 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4001
-          # Where the mail with the QR code goes: the mail server's settings are in this Secret (make k8s-issuer-mail). By default it is the mail catcher.
+          # Where the mail with the QR code goes: the mail server's settings are in this Secret (make k8s-issuer-mail).
           envFrom:
             - secretRef:
                 name: attesta-issuer-smtp
