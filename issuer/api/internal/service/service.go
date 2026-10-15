@@ -17,6 +17,7 @@ import (
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/mail"
 	"attesta/issuer/internal/qr"
+	"attesta/issuer/internal/role"
 )
 
 const qrSize = 480
@@ -31,9 +32,13 @@ type Store interface {
 	Replace(ctx context.Context, id string, n entitlement.New) (entitlement.Entitlement, error)
 }
 
-// RoleStore lists the roles staff can give an employee.
+// RoleStore keeps the roles staff can give an employee.
 type RoleStore interface {
 	Names(ctx context.Context) ([]string, error)
+	List(ctx context.Context) ([]role.Role, error)
+	Create(ctx context.Context, name string) (role.Role, error)
+	Rename(ctx context.Context, id, name string) (role.Role, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // Offerer makes the link a QR code holds, with a one-time code of its own.
@@ -256,6 +261,20 @@ func (s *Service) endOf(value, field string) (end time.Time, day string, err err
 
 // Roles lists the roles staff can give an employee.
 func (s *Service) Roles(ctx context.Context) ([]string, error) { return s.roles.Names(ctx) }
+
+// ListRoles lists the roles with whether an employee holds them.
+func (s *Service) ListRoles(ctx context.Context) ([]role.Role, error) { return s.roles.List(ctx) }
+
+func (s *Service) CreateRole(ctx context.Context, name string) (role.Role, error) {
+	return s.roles.Create(ctx, name)
+}
+
+// DeleteRole refuses a role an employee holds (role.ErrInUse).
+func (s *Service) RenameRole(ctx context.Context, id, name string) (role.Role, error) {
+	return s.roles.Rename(ctx, id, name)
+}
+
+func (s *Service) DeleteRole(ctx context.Context, id string) error { return s.roles.Delete(ctx, id) }
 
 func contains(list []string, s string) bool {
 	for _, v := range list {

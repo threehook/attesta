@@ -11,6 +11,7 @@ import (
 
 	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/entitlement"
+	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 	"attesta/issuer/internal/statuslist"
 )
@@ -20,6 +21,10 @@ type Service interface {
 	RecordEmployee(ctx context.Context, in service.EmployeeInput) (entitlement.Entitlement, error)
 	MailQRCode(ctx context.Context, e entitlement.Entitlement) error
 	Roles(ctx context.Context) ([]string, error)
+	ListRoles(ctx context.Context) ([]role.Role, error)
+	CreateRole(ctx context.Context, name string) (role.Role, error)
+	RenameRole(ctx context.Context, id, name string) (role.Role, error)
+	DeleteRole(ctx context.Context, id string) error
 	Active(ctx context.Context, email string) ([]entitlement.Entitlement, error)
 	Revoke(ctx context.Context, id string) error
 	Replace(ctx context.Context, id string, r service.Replacement) (entitlement.Entitlement, error)
@@ -53,6 +58,8 @@ func Handler(cfg Config, svc Service) http.Handler {
 	mux.Handle("/info", protect(staff))
 	mux.Handle("/entitlements", protect(staff))
 	mux.Handle("/entitlements/", protect(staff))
+	mux.Handle("/roles", protect(staff))
+	mux.Handle("/roles/", protect(staff))
 	staff.HandleFunc("GET /info", func(w http.ResponseWriter, r *http.Request) {
 		roles, err := svc.Roles(r.Context())
 		if err != nil {
@@ -121,6 +128,50 @@ func Handler(cfg Config, svc Service) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"entitlements": out})
 	})
+	staff.HandleFunc("GET /roles", func(w http.ResponseWriter, r *http.Request) {
+		roles, err := svc.ListRoles(r.Context())
+		if err != nil {
+			slog.Error("could not read the roles", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rollen konden niet worden gelezen"})
+			return
+		}
+		out := make([]map[string]any, len(roles))
+		for i, ro := range roles {
+			out[i] = roleJSON(ro)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"roles": out})
+	})
+	staff.HandleFunc("POST /roles", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Name string }
+		if !decode(w, r, &in) {
+			return
+		}
+		ro, err := svc.CreateRole(r.Context(), in.Name)
+		if err != nil {
+			refuseRole(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, roleJSON(ro))
+	})
+	staff.HandleFunc("PUT /roles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Name string }
+		if !decode(w, r, &in) {
+			return
+		}
+		ro, err := svc.RenameRole(r.Context(), r.PathValue("id"), in.Name)
+		if err != nil {
+			refuseRole(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, roleJSON(ro))
+	})
+	staff.HandleFunc("DELETE /roles/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.DeleteRole(r.Context(), r.PathValue("id")); err != nil {
+			refuseRole(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	// Without a body this revokes; with the corrected data of the credential it revokes and records the corrected one, and mails its QR code.
 	staff.HandleFunc("POST /entitlements/revoke/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -154,6 +205,25 @@ func Handler(cfg Config, svc Service) http.Handler {
 		grant(w, r, svc, e, nil)
 	})
 	return mux
+}
+
+func roleJSON(r role.Role) map[string]any {
+	return map[string]any{"id": r.ID, "name": r.Name, "inUse": r.InUse, "createdAt": r.CreatedAt, "updatedAt": r.UpdatedAt}
+}
+
+// refuseRole answers a request to change a role that could not be done.
+func refuseRole(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, role.ErrInvalid):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, role.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case errors.Is(err, role.ErrExists), errors.Is(err, role.ErrInUse):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	default:
+		slog.Error("could not change the role", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rol kon niet worden gewijzigd"})
+	}
 }
 
 // refuse answers a request to revoke that could not be done.

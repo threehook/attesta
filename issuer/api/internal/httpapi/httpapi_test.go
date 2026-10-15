@@ -14,6 +14,7 @@ import (
 	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/httpapi"
+	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 )
 
@@ -29,6 +30,27 @@ type fake struct {
 	replaced           string
 	replacement        service.Replacement
 	revokeErr          error
+	roleErr            error
+	roleCalls          []string
+}
+
+func (f *fake) ListRoles(context.Context) ([]role.Role, error) {
+	return []role.Role{{ID: "r1", Name: "reader", InUse: true}}, f.roleErr
+}
+
+func (f *fake) CreateRole(_ context.Context, name string) (role.Role, error) {
+	f.roleCalls = append(f.roleCalls, "create "+name)
+	return role.Role{ID: "r2", Name: name}, f.roleErr
+}
+
+func (f *fake) RenameRole(_ context.Context, id, name string) (role.Role, error) {
+	f.roleCalls = append(f.roleCalls, "rename "+id+" "+name)
+	return role.Role{ID: id, Name: name}, f.roleErr
+}
+
+func (f *fake) DeleteRole(_ context.Context, id string) error {
+	f.roleCalls = append(f.roleCalls, "delete "+id)
+	return f.roleErr
 }
 
 func (f *fake) Active(_ context.Context, email string) ([]entitlement.Entitlement, error) {
@@ -279,6 +301,39 @@ func TestSaysWhyARevocationWasRefused(t *testing.T) {
 		code, body := call(setup(f), "POST", "/entitlements/revoke/abc", tc.body)
 		if code != tc.want || len(f.mailed) != 0 || strings.Contains(fmt.Sprint(body["error"]), "password") {
 			t.Errorf("%s: %d %v", name, code, body)
+		}
+	}
+}
+
+func TestListsCreatesRenamesAndDeletesRoles(t *testing.T) {
+	f := &fake{}
+	h := setup(f)
+
+	code, body := call(h, "GET", "/roles", "")
+	roles, _ := body["roles"].([]any)
+	first, _ := roles[0].(map[string]any)
+	if code != 200 || len(roles) != 1 || first["name"] != "reader" || first["inUse"] != true {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, body = call(h, "POST", "/roles", `{"name":"auditor"}`); code != 201 || body["id"] != "r2" {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, body = call(h, "PUT", "/roles/r2", `{"name":"auditors"}`); code != 200 || body["name"] != "auditors" {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, _ = call(h, "DELETE", "/roles/r2", ""); code != 204 {
+		t.Fatalf("%d", code)
+	}
+	if got := strings.Join(f.roleCalls, "|"); got != "create auditor|rename r2 auditors|delete r2" {
+		t.Fatalf("calls %s", got)
+	}
+}
+
+func TestAnswersWhyARoleCouldNotBeChanged(t *testing.T) {
+	for err, want := range map[error]int{role.ErrInvalid: 400, role.ErrNotFound: 404, role.ErrExists: 409, role.ErrInUse: 409, errors.New("db down"): 500} {
+		code, body := call(setup(&fake{roleErr: err}), "DELETE", "/roles/r1", "")
+		if code != want {
+			t.Errorf("%v: %d %v", err, code, body)
 		}
 	}
 }
