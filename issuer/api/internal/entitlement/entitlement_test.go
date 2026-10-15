@@ -214,7 +214,7 @@ func TestDoesNotGiveBackAClaimedEntitlementPastItsEnd(t *testing.T) {
 	}
 }
 
-func TestRevokesOpenOrClaimedButNotIssued(t *testing.T) {
+func TestRevokesOpenClaimedAndIssuedOnce(t *testing.T) {
 	f := start(t)
 	ctx := context.Background()
 	open := f.create(t, nil)
@@ -224,8 +224,11 @@ func TestRevokesOpenOrClaimedButNotIssued(t *testing.T) {
 	must(f.store.Claim(ctx, issued.ID))
 	must(f.store.MarkIssued(ctx, issued.ID))
 
-	if !must(f.store.Revoke(ctx, open.ID)) || !must(f.store.Revoke(ctx, claimed.ID)) || must(f.store.Revoke(ctx, issued.ID)) {
-		t.Fatal("open and claimed must be revoked, issued must not")
+	if !must(f.store.Revoke(ctx, open.ID)) || !must(f.store.Revoke(ctx, claimed.ID)) || !must(f.store.Revoke(ctx, issued.ID)) {
+		t.Fatal("open, claimed and issued must be revoked")
+	}
+	if must(f.store.Revoke(ctx, issued.ID)) {
+		t.Fatal("a revoked entitlement was revoked again")
 	}
 	if must(f.store.Claim(ctx, open.ID)) || must(f.store.MarkIssued(ctx, claimed.ID)) {
 		t.Fatal("a revoked entitlement was used")
@@ -294,5 +297,46 @@ func TestDifferentDataOrAnIssuedOrWithdrawnEntitlementMakesANewOne(t *testing.T)
 	}
 	if third := f.create(t, nil); third.ID == second.ID {
 		t.Fatal("a withdrawn entitlement was handed out again")
+	}
+}
+
+func TestGivesAStatusIndexAtTheFirstClaimAndKeepsIt(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	a, b := f.create(t, nil), f.create(t, func(n *entitlement.New) { n.Type = "Diploma" })
+	if a.StatusIndex != nil {
+		t.Fatal("an entitlement that was not claimed has a status index")
+	}
+	must(f.store.Claim(ctx, a.ID))
+	must(f.store.Claim(ctx, b.ID))
+	first, second := must(f.store.Find(ctx, a.ID)).StatusIndex, must(f.store.Find(ctx, b.ID)).StatusIndex
+	if first == nil || second == nil || *first == *second {
+		t.Fatalf("indexes %v %v", first, second)
+	}
+	time.Sleep(2 * lease) // the claim lapses and is taken again
+	must(f.store.Claim(ctx, a.ID))
+	if again := must(f.store.Find(ctx, a.ID)).StatusIndex; *again != *first {
+		t.Fatalf("index changed from %d to %d", *first, *again)
+	}
+}
+
+func TestListsTheStatusIndexOfEveryRevokedCredential(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	kept := f.create(t, nil)
+	gone := f.create(t, func(n *entitlement.New) { n.Type = "Diploma" })
+	unclaimed := f.create(t, func(n *entitlement.New) { n.Type = "Certificate" })
+	must(f.store.Claim(ctx, kept.ID))
+	must(f.store.Claim(ctx, gone.ID))
+	must(f.store.Revoke(ctx, gone.ID))
+	must(f.store.Revoke(ctx, unclaimed.ID))
+
+	revoked, size, err := f.store.StatusIndexes(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	goneIndex := *must(f.store.Find(ctx, gone.ID)).StatusIndex
+	if len(revoked) != 1 || revoked[0] != goneIndex || size <= goneIndex || size <= *must(f.store.Find(ctx, kept.ID)).StatusIndex {
+		t.Fatalf("revoked %v size %d", revoked, size)
 	}
 }

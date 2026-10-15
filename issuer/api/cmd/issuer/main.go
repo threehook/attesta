@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 	"attesta/issuer/internal/postgres"
 	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
+	"attesta/issuer/internal/statuslist"
 )
 
 func main() {
@@ -50,9 +52,10 @@ func run() error {
 	secret := sha256.Sum256([]byte("attesta-issuer:" + cfg.Seed))
 	store := entitlement.NewStore(pool, 0)
 
+	status := statuslist.New(me, store, strings.TrimSuffix(cfg.PublicURL, "/"), nil)
 	var svc *service.Service
 	protocol := oid4vci.New(oid4vci.Config{
-		PublicURL: cfg.PublicURL, IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
+		PublicURL: cfg.PublicURL, StatusURI: status.URI(), IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
 	}, oid4vci.NewSessions(pool, secret[:]), store, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
 	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, role.NewStore(pool), protocol, mail.NewSMTP(cfg.SMTP))
 
@@ -61,7 +64,7 @@ func run() error {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 
-	httpCfg := httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler()}
+	httpCfg := httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler(), Status: status.Handler()}
 	if cfg.Auth.Disabled {
 		slog.Warn("sign-in is switched off: anyone who reaches the forms can record entitlements")
 	} else {

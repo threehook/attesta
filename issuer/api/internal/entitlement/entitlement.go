@@ -39,6 +39,8 @@ type Entitlement struct {
 	CreatedAt  time.Time
 	ClaimedAt  *time.Time
 	IssuedAt   *time.Time
+	// StatusIndex is the credential's position in the status list; nil until the entitlement is first claimed.
+	StatusIndex *int64
 }
 
 type New struct {
@@ -65,16 +67,33 @@ func NewStore(pool *pgxpool.Pool, lease time.Duration) *Store {
 const claimable = `(status = 'open' OR (status = 'claimed' AND claimed_at + make_interval(secs => $1::double precision) <= now()))
   AND (valid_until IS NULL OR valid_until > now())`
 
-const columns = "id, email, type, claims, valid_until, status, created_at, claimed_at, issued_at"
+// insert records an entitlement; one that is waiting with the same person, type and data is returned instead.
+const insert = `INSERT INTO entitlements (id, email, type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4)
+  ON CONFLICT (email, type, claims) WHERE status IN ('open', 'claimed') DO UPDATE SET email = EXCLUDED.email RETURNING ` + columns
+
+const columns = "id, email, type, claims, valid_until, status, created_at, claimed_at, issued_at, status_index"
 
 func scan(row pgx.Row) (Entitlement, error) {
 	var e Entitlement
 	var claims []byte
-	err := row.Scan(&e.ID, &e.Email, &e.Type, &claims, &e.ValidUntil, &e.Status, &e.CreatedAt, &e.ClaimedAt, &e.IssuedAt)
+	err := row.Scan(&e.ID, &e.Email, &e.Type, &claims, &e.ValidUntil, &e.Status, &e.CreatedAt, &e.ClaimedAt, &e.IssuedAt, &e.StatusIndex)
 	if err != nil {
 		return Entitlement{}, err
 	}
 	return e, json.Unmarshal(claims, &e.Claims)
+}
+
+func scanAll(rows pgx.Rows) ([]Entitlement, error) {
+	defer rows.Close()
+	var out []Entitlement
+	for rows.Next() {
+		e, err := scan(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // Create records the entitlement. A person has one unissued entitlement per type and data: asking again, also at the same moment, gives the one there is.
@@ -84,8 +103,7 @@ func (s *Store) Create(ctx context.Context, n New) (Entitlement, error) {
 		return Entitlement{}, err
 	}
 	return scan(s.pool.QueryRow(ctx,
-		`INSERT INTO entitlements (id, email, type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4)
-		 ON CONFLICT (email, type, claims) WHERE status IN ('open', 'claimed') DO UPDATE SET email = EXCLUDED.email RETURNING `+columns,
+		insert,
 		strings.ToLower(n.Email), n.Type, claims, n.ValidUntil))
 }
 
@@ -105,16 +123,7 @@ func (s *Store) FindOpenByEmail(ctx context.Context, email string) ([]Entitlemen
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Entitlement
-	for rows.Next() {
-		e, err := scan(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return scanAll(rows)
 }
 
 // FindIssuedByEmail returns the credentials issued to the person that have not ended, oldest first.
@@ -123,21 +132,22 @@ func (s *Store) FindIssuedByEmail(ctx context.Context, email string) ([]Entitlem
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []Entitlement
-	for rows.Next() {
-		e, err := scan(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, e)
-	}
-	return out, rows.Err()
+	return scanAll(rows)
 }
 
-// Claim takes an entitlement that can be claimed, so that no one else can take it while the credential is made. It reports false when it cannot be claimed.
+// FindActiveByEmail returns the person's entitlements that were not revoked and have not ended, issued or not, oldest first.
+func (s *Store) FindActiveByEmail(ctx context.Context, email string) ([]Entitlement, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE email = $1 AND status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", strings.ToLower(email))
+	if err != nil {
+		return nil, err
+	}
+	return scanAll(rows)
+}
+
+// Claim takes an entitlement that can be claimed, so that no one else can take it while the credential is made, and gives it its status index if it has none.
+// It reports false when it cannot be claimed.
 func (s *Store) Claim(ctx context.Context, id string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'claimed', claimed_at = now() WHERE id = $2 AND "+claimable, s.lease.Seconds(), id)
+	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'claimed', claimed_at = now(), status_index = COALESCE(status_index, nextval('status_index_seq')) WHERE id = $2 AND "+claimable, s.lease.Seconds(), id)
 	return tag.RowsAffected() == 1, err
 }
 
@@ -147,8 +157,55 @@ func (s *Store) MarkIssued(ctx context.Context, id string) (bool, error) {
 	return tag.RowsAffected() == 1, err
 }
 
-// Revoke withdraws an entitlement that was not issued yet. It reports false when it was.
+// Replace withdraws an entitlement and records n in its place, or neither. It gives ErrNotFound when there is nothing to withdraw.
+func (s *Store) Replace(ctx context.Context, id string, n New) (Entitlement, error) {
+	claims, err := json.Marshal(n.Claims)
+	if err != nil {
+		return Entitlement{}, err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return Entitlement{}, err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE id = $1 AND status IN ('open', 'claimed', 'issued')", id)
+	if err != nil {
+		return Entitlement{}, err
+	}
+	if tag.RowsAffected() != 1 {
+		return Entitlement{}, ErrNotFound
+	}
+	e, err := scan(tx.QueryRow(ctx,
+		insert,
+		strings.ToLower(n.Email), n.Type, claims, n.ValidUntil))
+	if err != nil {
+		return Entitlement{}, err
+	}
+	return e, tx.Commit(ctx)
+}
+
+// Revoke withdraws an entitlement, issued or not. It reports false when it was withdrawn already or does not exist.
 func (s *Store) Revoke(ctx context.Context, id string) (bool, error) {
-	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE id = $1 AND status IN ('open', 'claimed')", id)
+	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE id = $1 AND status IN ('open', 'claimed', 'issued')", id)
 	return tag.RowsAffected() == 1, err
+}
+
+// StatusIndexes gives the status index of every revoked credential, and how many positions the list needs (one past the highest index given out).
+func (s *Store) StatusIndexes(ctx context.Context) (revoked []int64, size int64, err error) {
+	if err := s.pool.QueryRow(ctx, "SELECT COALESCE(max(status_index) + 1, 0) FROM entitlements").Scan(&size); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.pool.Query(ctx, "SELECT status_index FROM entitlements WHERE status = 'revoked' AND status_index IS NOT NULL")
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var i int64
+		if err := rows.Scan(&i); err != nil {
+			return nil, 0, err
+		}
+		revoked = append(revoked, i)
+	}
+	return revoked, size, rows.Err()
 }

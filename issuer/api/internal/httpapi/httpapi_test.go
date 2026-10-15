@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,6 +24,28 @@ type fake struct {
 	employee           service.EmployeeInput
 	mailed             []string
 	recordErr, mailErr error
+	active             []entitlement.Entitlement
+	revoked            []string
+	replaced           string
+	replacement        service.Replacement
+	revokeErr          error
+}
+
+func (f *fake) Active(_ context.Context, email string) ([]entitlement.Entitlement, error) {
+	if email != "jerry@example.com" {
+		return nil, service.InvalidError{Message: "email is not an email address"}
+	}
+	return f.active, nil
+}
+
+func (f *fake) Revoke(_ context.Context, id string) error {
+	f.revoked = append(f.revoked, id)
+	return f.revokeErr
+}
+
+func (f *fake) Replace(_ context.Context, id string, r service.Replacement) (entitlement.Entitlement, error) {
+	f.replaced, f.replacement = id, r
+	return entitlement.Entitlement{ID: "id-3", Email: strings.ToLower(r.Email)}, f.revokeErr
 }
 
 func (f *fake) RecordDiploma(_ context.Context, d credential.Diploma, in service.DiplomaInput) (entitlement.Entitlement, error) {
@@ -195,5 +218,67 @@ func TestKnowsOnlyTheDiplomasItOffers(t *testing.T) {
 func TestSaysSoWhenTheRolesCannotBeRead(t *testing.T) {
 	if code, _ := call(setup(&fake{rolesErr: errors.New("connection refused")}), "GET", "/info", ""); code != http.StatusInternalServerError {
 		t.Fatalf("status %d", code)
+	}
+}
+
+func TestListsWhatAPersonCanHaveRevoked(t *testing.T) {
+	issued := time.Date(2026, 10, 14, 9, 0, 0, 0, time.UTC)
+	f := &fake{active: []entitlement.Entitlement{
+		{ID: "a", Type: "Employee", Status: entitlement.Issued, Claims: map[string]string{"name": "Jerry"}, IssuedAt: &issued},
+		{ID: "b", Type: "Diploma Laadpalen Management", Status: entitlement.Claimed},
+	}}
+	code, body := call(setup(f), "GET", "/entitlements?email=jerry@example.com", "")
+
+	list, _ := body["entitlements"].([]any)
+	if code != 200 || len(list) != 2 {
+		t.Fatalf("%d %v", code, body)
+	}
+	first, second := list[0].(map[string]any), list[1].(map[string]any)
+	if first["id"] != "a" || first["status"] != "issued" || first["title"] != "Medewerker afdeling & rollen" || second["status"] != "waiting" {
+		t.Fatalf("%v %v", first, second)
+	}
+	if code, _ := call(setup(f), "GET", "/entitlements?email=nope", ""); code != 400 {
+		t.Fatalf("a bad email gave %d", code)
+	}
+}
+
+func TestRevokesWithoutABody(t *testing.T) {
+	f := &fake{}
+	code, body := call(setup(f), "POST", "/entitlements/revoke/abc", "")
+
+	if code != 200 || body["revoked"] != true || len(f.revoked) != 1 || f.revoked[0] != "abc" || f.replaced != "" || len(f.mailed) != 0 {
+		t.Fatalf("%d %v %+v", code, body, f)
+	}
+}
+
+func TestRevokesAndMailsTheCorrectedCredentialWhenGivenItsData(t *testing.T) {
+	f := &fake{}
+	code, body := call(setup(f), "POST", "/entitlements/revoke/abc", `{"name":"Jerry","email":"Jerry@Example.com","department":"secretariaat","organisation":"Utrecht","roles":["reader"]}`)
+
+	if code != 200 || body["entitlementId"] != "id-3" || body["mailedTo"] != "jerry@example.com" || f.replaced != "abc" || len(f.revoked) != 0 || len(f.mailed) != 1 {
+		t.Fatalf("%d %v %+v", code, body, f)
+	}
+	if f.replacement.Department != "secretariaat" || strings.Join(f.replacement.Roles, ",") != "reader" {
+		t.Fatalf("replacement %+v", f.replacement)
+	}
+}
+
+func TestSaysWhyARevocationWasRefused(t *testing.T) {
+	for name, tc := range map[string]struct {
+		err  error
+		body string
+		want int
+	}{
+		"unknown":  {service.NotFoundError{}, "", 404},
+		"conflict": {service.AlreadyWaitingError{}, `{"email":"x@y.z"}`, 409},
+		"invalid":  {service.InvalidError{Message: "x"}, `{"email":"x"}`, 400},
+		"not json": {nil, "name=x", 400},
+		"storage":  {errors.New("password authentication failed"), "", 500},
+	} {
+		f := &fake{revokeErr: tc.err}
+		code, body := call(setup(f), "POST", "/entitlements/revoke/abc", tc.body)
+		if code != tc.want || len(f.mailed) != 0 || strings.Contains(fmt.Sprint(body["error"]), "password") {
+			t.Errorf("%s: %d %v", name, code, body)
+		}
 	}
 }

@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"log/slog"
@@ -24,6 +25,10 @@ type Store interface {
 	Create(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error)
 	FindOpenByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
 	FindIssuedByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	FindActiveByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	Find(ctx context.Context, id string) (entitlement.Entitlement, error)
+	Revoke(ctx context.Context, id string) (bool, error)
+	Replace(ctx context.Context, id string, n entitlement.New) (entitlement.Entitlement, error)
 }
 
 // RoleStore lists the roles staff can give an employee.
@@ -108,40 +113,56 @@ func blank(values ...string) bool {
 }
 
 func (s *Service) RecordDiploma(ctx context.Context, d credential.Diploma, in DiplomaInput) (entitlement.Entitlement, error) {
+	n, err := s.diplomaOf(d, in)
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	return s.record(ctx, n)
+}
+
+func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitlement.Entitlement, error) {
+	n, err := s.employeeOf(ctx, in)
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	return s.record(ctx, n)
+}
+
+func (s *Service) diplomaOf(d credential.Diploma, in DiplomaInput) (entitlement.New, error) {
 	if blank(in.Name, in.Email, in.ValidUntil) {
-		return entitlement.Entitlement{}, InvalidError{"name, email and validUntil are required"}
+		return entitlement.New{}, InvalidError{"name, email and validUntil are required"}
 	}
 	if !emailPattern.MatchString(in.Email) {
-		return entitlement.Entitlement{}, InvalidError{"email is not an email address"}
+		return entitlement.New{}, InvalidError{"email is not an email address"}
 	}
 	end, day, err := s.endOf(in.ValidUntil, "validUntil")
 	if err != nil {
-		return entitlement.Entitlement{}, err
+		return entitlement.New{}, err
 	}
 	claims := map[string]string{
 		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "validUntil": day,
 	}
-	return s.record(ctx, entitlement.New{Email: in.Email, Type: d.Type, Claims: claims, ValidUntil: &end})
+	return entitlement.New{Email: in.Email, Type: d.Type, Claims: claims, ValidUntil: &end}, nil
 }
 
-func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitlement.Entitlement, error) {
+func (s *Service) employeeOf(ctx context.Context, in EmployeeInput) (entitlement.New, error) {
 	if blank(in.Name, in.Email, in.Department, in.Organisation) {
-		return entitlement.Entitlement{}, InvalidError{"name, email, department and organisation are required"}
+		return entitlement.New{}, InvalidError{"name, email, department and organisation are required"}
 	}
 	if !emailPattern.MatchString(in.Email) {
-		return entitlement.Entitlement{}, InvalidError{"email is not an email address"}
+		return entitlement.New{}, InvalidError{"email is not an email address"}
 	}
 	if !contains(credential.Departments, in.Department) {
-		return entitlement.Entitlement{}, InvalidError{"department must be one of " + strings.Join(credential.Departments, ", ")}
+		return entitlement.New{}, InvalidError{"department must be one of " + strings.Join(credential.Departments, ", ")}
 	}
 	known, err := s.roles.Names(ctx)
 	if err != nil {
-		return entitlement.Entitlement{}, err
+		return entitlement.New{}, err
 	}
 	roles := []string{}
 	for _, r := range in.Roles {
 		if !contains(known, r) {
-			return entitlement.Entitlement{}, InvalidError{"roles must be among " + strings.Join(known, ", ")}
+			return entitlement.New{}, InvalidError{"roles must be among " + strings.Join(known, ", ")}
 		}
 		if !contains(roles, r) {
 			roles = append(roles, r)
@@ -151,8 +172,73 @@ func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitle
 		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "department": in.Department, "organisation": in.Organisation,
 		"roles": strings.Join(roles, ", "),
 	}
-	n := entitlement.New{Email: in.Email, Type: credential.Employee, Claims: claims}
-	return s.record(ctx, n)
+	return entitlement.New{Email: in.Email, Type: credential.Employee, Claims: claims}, nil
+}
+
+// NotFoundError is a credential that does not exist or is no longer there to revoke.
+type NotFoundError struct{}
+
+func (NotFoundError) Error() string { return "dit credential bestaat niet of is al ingetrokken" }
+
+// Replacement is the corrected data of a credential: the fields of its form. Only the ones its type has are read.
+type Replacement struct {
+	Name, Email, Department, Organisation, ValidUntil string
+	Roles                                             []string
+}
+
+// Active lists the credentials of the person that can be revoked: waiting to be fetched, or issued, and not ended.
+func (s *Service) Active(ctx context.Context, email string) ([]entitlement.Entitlement, error) {
+	if !emailPattern.MatchString(email) {
+		return nil, InvalidError{"email is not an email address"}
+	}
+	return s.store.FindActiveByEmail(ctx, email)
+}
+
+// Revoke withdraws a credential: a wallet that holds it is refused from the next status list on, and a QR code for it stops working.
+func (s *Service) Revoke(ctx context.Context, id string) error {
+	if _, err := s.store.Find(ctx, id); errors.Is(err, entitlement.ErrNotFound) {
+		return NotFoundError{}
+	} else if err != nil {
+		return err
+	}
+	ok, err := s.store.Revoke(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return NotFoundError{}
+	}
+	return nil
+}
+
+// Replace withdraws a credential and records a corrected one of the same type in the same step. The caller mails its QR code.
+func (s *Service) Replace(ctx context.Context, id string, r Replacement) (entitlement.Entitlement, error) {
+	old, err := s.store.Find(ctx, id)
+	if errors.Is(err, entitlement.ErrNotFound) {
+		return entitlement.Entitlement{}, NotFoundError{}
+	}
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	var n entitlement.New
+	if old.Type == credential.Employee {
+		n, err = s.employeeOf(ctx, EmployeeInput{Name: r.Name, Email: r.Email, Department: r.Department, Organisation: r.Organisation, Roles: r.Roles})
+	} else if d, ok := credential.DiplomaByType(old.Type); ok {
+		n, err = s.diplomaOf(d, DiplomaInput{Name: r.Name, Email: r.Email, ValidUntil: r.ValidUntil})
+	} else {
+		err = fmt.Errorf("unknown credential type %q", old.Type)
+	}
+	if err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	if err := s.stands(ctx, n, id); err != nil {
+		return entitlement.Entitlement{}, err
+	}
+	e, err := s.store.Replace(ctx, id, n)
+	if errors.Is(err, entitlement.ErrNotFound) {
+		return entitlement.Entitlement{}, NotFoundError{}
+	}
+	return e, err
 }
 
 // endOf reads the day a credential ends, which must be in the future: a wallet refuses an expired credential.
@@ -183,29 +269,38 @@ func contains(list []string, s string) bool {
 // record makes the entitlement. A person has one of each credential at a time (one of each credential type): the same data again gives the entitlement that is waiting (and its QR code is
 // mailed again), anything else is refused while one is waiting or issued and not ended.
 func (s *Service) record(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error) {
-	open, err := s.store.FindOpenByEmail(ctx, n.Email)
-	if err != nil {
+	if err := s.stands(ctx, n, ""); err != nil {
 		return entitlement.Entitlement{}, err
 	}
+	return s.store.Create(ctx, n)
+}
+
+// stands reports the credential of the person's that stands in the way of n: one of the same type that is issued, or waiting with other data.
+// The one with the id except does not count, and neither does one waiting with the same data, which Create gives back.
+func (s *Service) stands(ctx context.Context, n entitlement.New, except string) error {
+	open, err := s.store.FindOpenByEmail(ctx, n.Email)
+	if err != nil {
+		return err
+	}
 	for _, e := range open {
-		if e.Type != n.Type {
+		if e.Type != n.Type || e.ID == except {
 			continue
 		}
 		if maps.Equal(e.Claims, n.Claims) {
-			return e, nil
+			return nil
 		}
-		return entitlement.Entitlement{}, AlreadyWaitingError{}
+		return AlreadyWaitingError{}
 	}
 	issued, err := s.store.FindIssuedByEmail(ctx, n.Email)
 	if err != nil {
-		return entitlement.Entitlement{}, err
+		return err
 	}
 	for _, e := range issued {
-		if e.Type == n.Type {
-			return entitlement.Entitlement{}, AlreadyIssuedError{IssuedAt: *e.IssuedAt}
+		if e.Type == n.Type && e.ID != except {
+			return AlreadyIssuedError{IssuedAt: *e.IssuedAt}
 		}
 	}
-	return s.store.Create(ctx, n)
+	return nil
 }
 
 // MailQRCode mails the person of the entitlement a QR code that gives them the credential.

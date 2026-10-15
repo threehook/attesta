@@ -44,6 +44,8 @@ type Config struct {
 	PublicURL  string
 	IssuerName string
 	Identity   identity.Identity
+	// StatusURI is where the status list is published; every credential points to it.
+	StatusURI string
 	// Secret is what the one-time codes and nonces are derived from.
 	Secret []byte
 	// OfferLifetime is how long a QR code works.
@@ -322,7 +324,12 @@ func (s *Server) credential(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
+	if e.StatusIndex == nil {
+		serverError(w, errors.New("the claimed entitlement has no status index"))
+		return
+	}
 	content.HolderKey = holder
+	content.Status = &sdjwt.StatusReference{Index: int(*e.StatusIndex), URI: s.cfg.StatusURI}
 	issued, err := sdjwt.Issue(s.cfg.Identity.Key, content)
 	if err != nil {
 		serverError(w, err)
@@ -359,7 +366,7 @@ func (s *Server) claim(ctx context.Context, id string, now time.Time) (entitleme
 	if !claimed {
 		return entitlement.Entitlement{}, errNoEntitlement
 	}
-	return e, nil
+	return s.entitlements.Find(ctx, id) // claiming gave it its status index
 }
 
 var (

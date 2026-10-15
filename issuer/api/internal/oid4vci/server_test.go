@@ -77,7 +77,7 @@ func newEnv(t *testing.T, lease time.Duration) *env {
 	e.http = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { e.server.Handler().ServeHTTP(w, r) }))
 	t.Cleanup(e.http.Close)
 	e.cfg = oid4vci.Config{
-		PublicURL: e.http.URL, IssuerName: "Gemeente Vlierdam", Identity: e.issuer, Secret: e.secret,
+		PublicURL: e.http.URL, StatusURI: e.http.URL + "/status/1", IssuerName: "Gemeente Vlierdam", Identity: e.issuer, Secret: e.secret,
 		OfferLifetime: lifetime, RenewalCooldown: cooldown, Now: func() time.Time { return e.now },
 	}
 	e.server = oid4vci.New(e.cfg, e.sessions, e.store, func(ctx context.Context, ent entitlement.Entitlement) error {
@@ -580,5 +580,21 @@ func TestMarksAnEntitlementIssuedAfterARestartWhenTheIssuerStoppedBeforeItCould(
 
 	if e.status(ent.ID) != entitlement.Issued {
 		t.Fatalf("entitlement is %s", e.status(ent.ID))
+	}
+}
+
+func TestEveryCredentialPointsToItsOwnPlaceInTheStatusList(t *testing.T) {
+	e := newEnv(t, 0)
+	seen := map[int]bool{}
+	for range 3 {
+		h := newEd25519Holder()
+		v, err := e.show(t, e.receive(e.offer(e.entitle(nil)), h), h, "email")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Status == nil || v.Status.URI != e.http.URL+"/status/1" || seen[v.Status.Index] {
+			t.Fatalf("status %+v after %v", v.Status, seen)
+		}
+		seen[v.Status.Index] = true
 	}
 }

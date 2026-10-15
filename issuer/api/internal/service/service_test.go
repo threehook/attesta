@@ -395,3 +395,101 @@ func TestRefusesADiplomaWithoutAFutureEndDate(t *testing.T) {
 		}
 	}
 }
+
+func TestRevokesACredentialSoThePersonCanGetANewOne(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	in := employee()
+	first, _ := f.svc.RecordEmployee(ctx, in)
+	issue(t, f, first)
+
+	if err := f.svc.Revoke(ctx, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Revoke(ctx, first.ID); !errors.As(err, &service.NotFoundError{}) {
+		t.Fatalf("revoking twice: %v", err)
+	}
+	if err := f.svc.Revoke(ctx, uuid.NewString()); !errors.As(err, &service.NotFoundError{}) {
+		t.Fatalf("unknown id: %v", err)
+	}
+	if active, err := f.svc.Active(ctx, in.Email); err != nil || len(active) != 0 {
+		t.Fatal(active, err)
+	}
+	if _, err := f.svc.RecordEmployee(ctx, in); err != nil {
+		t.Fatalf("a new credential after revoking: %v", err)
+	}
+}
+
+func TestReplacesACredentialWithACorrectedOneInOneStep(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	in := employee()
+	old, _ := f.svc.RecordEmployee(ctx, in)
+	issue(t, f, old)
+
+	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{
+		Name: in.Name, Email: in.Email, Department: "secretariaat", Organisation: in.Organisation, Roles: in.Roles,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if corrected.ID == old.ID || corrected.Claims["department"] != "secretariaat" || corrected.Type != credential.Employee {
+		t.Fatalf("corrected %+v", corrected)
+	}
+	active, _ := f.svc.Active(ctx, in.Email)
+	if len(active) != 1 || active[0].ID != corrected.ID {
+		t.Fatalf("active %+v", active)
+	}
+	if gone, _ := f.store.Find(ctx, old.ID); gone.Status != entitlement.Revoked {
+		t.Fatalf("old is %s", gone.Status)
+	}
+}
+
+func TestReplacesADiplomaWithItsOwnFields(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	email := uuid.NewString() + "@example.com"
+	old, err := f.svc.RecordDiploma(ctx, credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: email, ValidUntil: "31-12-2099"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: "Jerry Smith", Email: email, ValidUntil: "31-12-2098"})
+	if err != nil || corrected.Type != credential.Diplomas[0].Type || corrected.Claims["name"] != "Jerry Smith" {
+		t.Fatal(corrected, err)
+	}
+}
+
+func TestReplaceChangesNothingWhenTheCorrectionIsRefused(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	in := employee()
+	old, _ := f.svc.RecordEmployee(ctx, in)
+	issue(t, f, old)
+
+	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: in.Name, Email: "nope", Department: "burgerzaken", Organisation: in.Organisation})
+	var invalid service.InvalidError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("err %v", err)
+	}
+	if kept, _ := f.store.Find(ctx, old.ID); kept.Status != entitlement.Issued {
+		t.Fatalf("the credential is %s", kept.Status)
+	}
+}
+
+func TestReplaceRefusesWhenTheNewPersonAlreadyHasOne(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	mine, other := employee(), employee()
+	old, _ := f.svc.RecordEmployee(ctx, mine)
+	issue(t, f, old)
+	taken, _ := f.svc.RecordEmployee(ctx, other)
+	issue(t, f, taken)
+
+	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: mine.Name, Email: other.Email, Department: "burgerzaken", Organisation: mine.Organisation})
+	if !errors.As(err, &service.AlreadyIssuedError{}) {
+		t.Fatalf("err %v", err)
+	}
+	if kept, _ := f.store.Find(ctx, old.ID); kept.Status != entitlement.Issued {
+		t.Fatalf("the credential is %s", kept.Status)
+	}
+}

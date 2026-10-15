@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 
 	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/service"
+	"attesta/issuer/internal/statuslist"
 )
 
 type Service interface {
@@ -18,6 +20,9 @@ type Service interface {
 	RecordEmployee(ctx context.Context, in service.EmployeeInput) (entitlement.Entitlement, error)
 	MailQRCode(ctx context.Context, e entitlement.Entitlement) error
 	Roles(ctx context.Context) ([]string, error)
+	Active(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	Revoke(ctx context.Context, id string) error
+	Replace(ctx context.Context, id string, r service.Replacement) (entitlement.Entitlement, error)
 }
 
 type Config struct {
@@ -26,6 +31,8 @@ type Config struct {
 	DID string
 	// Protocol serves the OpenID4VCI endpoints for wallets.
 	Protocol http.Handler
+	// Status serves the status list; nil leaves it out.
+	Status http.Handler
 	// Protect wraps what only staff may use; nil leaves it open.
 	Protect func(http.Handler) http.Handler
 }
@@ -34,6 +41,9 @@ type Config struct {
 func Handler(cfg Config, svc Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", cfg.Protocol)
+	if cfg.Status != nil {
+		mux.Handle(statuslist.Path, cfg.Status)
+	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	staff := http.NewServeMux()
 	protect := cfg.Protect
@@ -41,6 +51,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 		protect = func(h http.Handler) http.Handler { return h }
 	}
 	mux.Handle("/info", protect(staff))
+	mux.Handle("/entitlements", protect(staff))
 	mux.Handle("/entitlements/", protect(staff))
 	staff.HandleFunc("GET /info", func(w http.ResponseWriter, r *http.Request) {
 		roles, err := svc.Roles(r.Context())
@@ -51,7 +62,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 		}
 		diplomas := make([]map[string]string, len(credential.Diplomas))
 		for i, d := range credential.Diplomas {
-			diplomas[i] = map[string]string{"path": d.Path, "title": d.Title, "description": d.Description}
+			diplomas[i] = map[string]string{"type": d.Type, "path": d.Path, "title": d.Title, "description": d.Description}
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "roles": roles, "diplomas": diplomas,
@@ -85,7 +96,83 @@ func Handler(cfg Config, svc Service) http.Handler {
 		})
 		grant(w, r, svc, e, err)
 	})
+	staff.HandleFunc("GET /entitlements", func(w http.ResponseWriter, r *http.Request) {
+		active, err := svc.Active(r.Context(), r.URL.Query().Get("email"))
+		var invalid service.InvalidError
+		if errors.As(err, &invalid) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
+			return
+		}
+		if err != nil {
+			slog.Error("could not read the entitlements", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de credentials konden niet worden gelezen"})
+			return
+		}
+		out := make([]map[string]any, len(active))
+		for i, e := range active {
+			status := "waiting"
+			if e.Status == entitlement.Issued {
+				status = "issued"
+			}
+			out[i] = map[string]any{
+				"id": e.ID, "type": e.Type, "title": credential.Title(e.Type), "status": status, "claims": e.Claims,
+				"validUntil": e.ValidUntil, "createdAt": e.CreatedAt, "issuedAt": e.IssuedAt,
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"entitlements": out})
+	})
+	// Without a body this revokes; with the corrected data of the credential it revokes and records the corrected one, and mails its QR code.
+	staff.HandleFunc("POST /entitlements/revoke/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		var in struct {
+			Name, Email, Department, Organisation, ValidUntil string
+			Roles                                             []string
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		replace := true
+		if err := json.NewDecoder(r.Body).Decode(&in); errors.Is(err, io.EOF) {
+			replace = false
+		} else if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
+			return
+		}
+		if !replace {
+			if err := svc.Revoke(r.Context(), id); err != nil {
+				refuse(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"revoked": true})
+			return
+		}
+		e, err := svc.Replace(r.Context(), id, service.Replacement{
+			Name: in.Name, Email: in.Email, Department: in.Department, Organisation: in.Organisation, ValidUntil: in.ValidUntil, Roles: in.Roles,
+		})
+		if err != nil {
+			refuse(w, err)
+			return
+		}
+		grant(w, r, svc, e, nil)
+	})
 	return mux
+}
+
+// refuse answers a request to revoke that could not be done.
+func refuse(w http.ResponseWriter, err error) {
+	var invalid service.InvalidError
+	var missing service.NotFoundError
+	var issued service.AlreadyIssuedError
+	var waiting service.AlreadyWaitingError
+	switch {
+	case errors.As(err, &invalid):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
+	case errors.As(err, &missing):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case errors.As(err, &issued), errors.As(err, &waiting):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	default:
+		slog.Error("could not revoke the credential", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "het credential kon niet worden ingetrokken"})
+	}
 }
 
 // grant answers a request to record an entitlement: the person gets the mail with the QR code.

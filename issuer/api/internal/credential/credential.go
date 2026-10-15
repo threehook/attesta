@@ -46,7 +46,8 @@ func DiplomaByPath(path string) (Diploma, bool) {
 	return Diploma{}, false
 }
 
-func diplomaOfType(credType string) (Diploma, bool) {
+// DiplomaByType finds the diploma that is the credential type.
+func DiplomaByType(credType string) (Diploma, bool) {
 	for _, d := range Diplomas {
 		if d.Type == credType {
 			return d, true
@@ -57,7 +58,7 @@ func diplomaOfType(credType string) (Diploma, bool) {
 
 // Title is what the wallet calls a credential of the type. It is fixed by the type, so the holder always reads the same.
 func Title(credType string) string {
-	if d, ok := diplomaOfType(credType); ok {
+	if d, ok := DiplomaByType(credType); ok {
 		return d.Title
 	}
 	return employeeTitle
@@ -65,7 +66,7 @@ func Title(credType string) string {
 
 // Description tells the holder what the credential is for. It is fixed by the type.
 func Description(credType string) string {
-	if d, ok := diplomaOfType(credType); ok {
+	if d, ok := DiplomaByType(credType); ok {
 		return d.Description
 	}
 	return employeeDescription
@@ -89,7 +90,7 @@ func disclosableClaims(credType string) (names []string, ok bool) {
 	if credType == Employee {
 		return []string{"name", "email", "department", "organisation"}, true
 	}
-	if _, isDiploma := diplomaOfType(credType); isDiploma {
+	if _, isDiploma := DiplomaByType(credType); isDiploma {
 		return []string{"name", "email"}, true
 	}
 	return nil, false
