@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -338,5 +339,28 @@ func TestListsTheStatusIndexOfEveryRevokedCredential(t *testing.T) {
 	goneIndex := *must(f.store.Find(ctx, gone.ID)).StatusIndex
 	if len(revoked) != 1 || revoked[0] != goneIndex || size <= goneIndex || size <= *must(f.store.Find(ctx, kept.ID)).StatusIndex {
 		t.Fatalf("revoked %v size %d", revoked, size)
+	}
+}
+
+func TestListsEveryoneWhoseCredentialCanStillBeRevokedNewestFirst(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	past := time.Now().Add(-time.Hour)
+	f.create(t, func(n *entitlement.New) { n.ValidUntil = &past; n.Type = "Ended" })
+	revoked := f.create(t, func(n *entitlement.New) { n.Type = "Revoked" })
+	must(f.store.Revoke(ctx, revoked.ID))
+	first := f.create(t, nil)
+	second := f.create(t, func(n *entitlement.New) { n.Type = "Diploma" })
+	n := employee
+	n.Email = uuid.NewString() + "@example.com"
+	other := must(f.store.Create(ctx, n))
+
+	all := ids(must(f.store.FindActive(ctx)))
+	position := func(id string) int { return slices.Index(all, id) }
+	if position(first.ID) < 0 || position(second.ID) < 0 || position(other.ID) < 0 || position(revoked.ID) >= 0 {
+		t.Fatalf("active %v, want %s %s %s", all, first.ID, second.ID, other.ID)
+	}
+	if position(second.ID) > position(first.ID) {
+		t.Fatalf("the older credential comes first: %v", all)
 	}
 }

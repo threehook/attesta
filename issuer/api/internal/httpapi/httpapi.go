@@ -33,6 +33,7 @@ type Service interface {
 	UpdateType(ctx context.Context, id string, in credtype.Input) (credtype.Type, error)
 	DeleteType(ctx context.Context, id string) error
 	Active(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	AllActive(ctx context.Context) ([]entitlement.Entitlement, error)
 	Revoke(ctx context.Context, id string) error
 	Replace(ctx context.Context, id string, r service.Replacement) (entitlement.Entitlement, error)
 }
@@ -122,7 +123,14 @@ func Handler(cfg Config, svc Service) http.Handler {
 		grant(w, r, svc, e, err)
 	})
 	staff.HandleFunc("GET /entitlements", func(w http.ResponseWriter, r *http.Request) {
-		active, err := svc.Active(r.Context(), r.URL.Query().Get("email"))
+		// Without an email address this lists the credentials of everyone.
+		var active []entitlement.Entitlement
+		var err error
+		if r.URL.Query().Has("email") {
+			active, err = svc.Active(r.Context(), r.URL.Query().Get("email"))
+		} else {
+			active, err = svc.AllActive(r.Context())
+		}
 		var invalid service.InvalidError
 		if errors.As(err, &invalid) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})

@@ -488,21 +488,24 @@ func TestReplaceChangesNothingWhenTheCorrectionIsRefused(t *testing.T) {
 	}
 }
 
-func TestReplaceRefusesWhenTheNewPersonAlreadyHasOne(t *testing.T) {
+func TestReplaceRefusesAnotherEmailAddressAndKeepsTheCredential(t *testing.T) {
 	f := newFixture(t, nil)
 	ctx := context.Background()
-	mine, other := employee(), employee()
+	mine := employee()
 	old, _ := f.svc.RecordEmployee(ctx, mine)
 	issue(t, f, old)
-	taken, _ := f.svc.RecordEmployee(ctx, other)
-	issue(t, f, taken)
 
-	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"name": mine.Name, "email": other.Email, "department": "burgerzaken", "organisation": mine.Organisation}})
-	if !errors.As(err, &service.AlreadyIssuedError{}) {
+	var invalid service.InvalidError
+	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"name": mine.Name, "email": employee().Email, "department": "burgerzaken", "organisation": mine.Organisation}})
+	if !errors.As(err, &invalid) || !strings.Contains(invalid.Message, "e-mailadres") {
 		t.Fatalf("err %v", err)
 	}
 	if kept, _ := f.store.Find(ctx, old.ID); kept.Status != entitlement.Issued {
 		t.Fatalf("the credential is %s", kept.Status)
+	}
+	same, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"name": mine.Name, "email": strings.ToUpper(mine.Email), "department": "secretariaat", "organisation": mine.Organisation}})
+	if err != nil || same.Claims["department"] != "secretariaat" {
+		t.Fatalf("the same address in other case: %+v %v", same, err)
 	}
 }
 

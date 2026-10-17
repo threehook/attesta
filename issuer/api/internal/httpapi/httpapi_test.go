@@ -63,6 +63,10 @@ func (f *fake) Active(_ context.Context, email string) ([]entitlement.Entitlemen
 	return f.active, nil
 }
 
+func (f *fake) AllActive(context.Context) ([]entitlement.Entitlement, error) {
+	return append([]entitlement.Entitlement{{ID: "z", Type: "Employee", Status: entitlement.Issued}}, f.active...), nil
+}
+
 func (f *fake) Revoke(_ context.Context, id string) error {
 	f.revoked = append(f.revoked, id)
 	return f.revokeErr
@@ -343,6 +347,19 @@ func TestListsWhatAPersonCanHaveRevoked(t *testing.T) {
 	}
 	if code, _ := call(setup(f), "GET", "/entitlements?email=nope", ""); code != 400 {
 		t.Fatalf("a bad email gave %d", code)
+	}
+}
+
+func TestListsTheCredentialsOfEveryoneWithoutAnEmailAddress(t *testing.T) {
+	f := &fake{active: []entitlement.Entitlement{{ID: "b", Type: "Diploma Laadpalen Management", Status: entitlement.Claimed}}}
+	code, body := call(setup(f), "GET", "/entitlements", "")
+
+	list, _ := body["entitlements"].([]any)
+	if code != 200 || len(list) != 2 || list[0].(map[string]any)["id"] != "z" || list[1].(map[string]any)["status"] != "waiting" {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, _ := call(setup(f), "GET", "/entitlements?email=", ""); code != 400 {
+		t.Fatalf("an empty email gave %d", code)
 	}
 }
 

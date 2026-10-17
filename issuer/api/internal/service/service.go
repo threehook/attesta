@@ -28,6 +28,7 @@ type Store interface {
 	FindOpenByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
 	FindIssuedByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
 	FindActiveByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	FindActive(ctx context.Context) ([]entitlement.Entitlement, error)
 	Find(ctx context.Context, id string) (entitlement.Entitlement, error)
 	Revoke(ctx context.Context, id string) (bool, error)
 	Replace(ctx context.Context, id string, n entitlement.New) (entitlement.Entitlement, error)
@@ -241,6 +242,11 @@ func (s *Service) Active(ctx context.Context, email string) ([]entitlement.Entit
 	return s.store.FindActiveByEmail(ctx, email)
 }
 
+// AllActive lists the credentials of everyone that can be revoked, newest first.
+func (s *Service) AllActive(ctx context.Context) ([]entitlement.Entitlement, error) {
+	return s.store.FindActive(ctx)
+}
+
 // Revoke withdraws a credential: a wallet that holds it is refused from the next status list on, and a QR code for it stops working.
 func (s *Service) Revoke(ctx context.Context, id string) error {
 	if _, err := s.store.Find(ctx, id); errors.Is(err, entitlement.ErrNotFound) {
@@ -281,6 +287,10 @@ func (s *Service) Replace(ctx context.Context, id string, r Replacement) (entitl
 	}
 	if err != nil {
 		return entitlement.Entitlement{}, err
+	}
+	// The email address is the person: another address is a credential for someone else, which is revoked and recorded anew, not corrected.
+	if !strings.EqualFold(strings.TrimSpace(n.Email), old.Email) {
+		return entitlement.Entitlement{}, InvalidError{"het e-mailadres van een credential kan niet worden gewijzigd; trek het credential in en maak een nieuw credential aan"}
 	}
 	if err := s.stands(ctx, n, id); err != nil {
 		return entitlement.Entitlement{}, err

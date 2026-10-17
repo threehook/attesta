@@ -144,6 +144,15 @@ func (s *Store) FindActiveByEmail(ctx context.Context, email string) ([]Entitlem
 	return scanAll(rows)
 }
 
+// FindActive returns the entitlements of everyone that were not revoked and have not ended, issued or not, newest first.
+func (s *Store) FindActive(ctx context.Context) ([]Entitlement, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at DESC, id")
+	if err != nil {
+		return nil, err
+	}
+	return scanAll(rows)
+}
+
 // Claim takes an entitlement that can be claimed, so that no one else can take it while the credential is made, and gives it its status index if it has none.
 // It reports false when it cannot be claimed.
 func (s *Store) Claim(ctx context.Context, id string) (bool, error) {
