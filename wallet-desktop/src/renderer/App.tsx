@@ -121,7 +121,10 @@ export function App() {
     >
       {notice && (
         <p role="status" className={`notice ${notice.kind}`}>
-          {notice.text}
+          <span>{notice.text}</span>
+          <button type="button" className="close" aria-label="Melding sluiten" onClick={() => setNotice(null)}>
+            ×
+          </button>
         </p>
       )}
 

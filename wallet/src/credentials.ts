@@ -1,6 +1,7 @@
 import { CredoError, Kms, SdJwtVcRecord } from '@credo-ts/core'
 import type { OpenId4VciCredentialBindingResolver, OpenId4VciResolvedCredentialOffer } from '@credo-ts/openid4vc'
 import type { WalletAgent } from './agent.js'
+import { standingOf } from './status.js'
 
 export interface HeldCredential {
   id: string
@@ -29,6 +30,8 @@ export interface CredentialPreview {
   /** The credential types the issuer gives. */
   types: string[]
   resolved: OpenId4VciResolvedCredentialOffer
+  /** Credentials held of the same type from the same issuer that no longer count (revoked or ended); accepting the new one removes them. */
+  replaces: HeldCredential[]
 }
 
 /** Reads an `openid-credential-offer://` link (the text of a QR code from an issuer) without accepting what it gives. */
@@ -36,28 +39,40 @@ export async function previewCredential(agent: WalletAgent, link: string): Promi
   const resolved = await agent.openid4vc.holder.resolveCredentialOffer(link).catch((error: unknown) => {
     throw saidByIssuer(error) ?? error
   })
-  const preview = {
+  const preview: CredentialPreview = {
     issuer: resolved.credentialOfferPayload.credential_issuer,
     types: Object.values(resolved.offeredCredentialConfigurations).map((config) =>
       'vct' in config && typeof config.vct === 'string' ? config.vct : config.scope ?? config.format,
     ),
     resolved,
+    replaces: [],
   }
-  await assertNotHeld(agent, preview)
+  preview.replaces = await replacedBy(agent, preview)
   return preview
 }
 
-/** Refuses a credential of a type the wallet already holds from the same issuer, before the link is used. A held credential of unknown origin counts as the same issuer. */
-async function assertNotHeld(agent: WalletAgent, preview: CredentialPreview): Promise<void> {
+/**
+ * The held credentials of a type the preview gives, from the same issuer, that no longer count: revoked by the issuer or past their end. A held credential of
+ * unknown origin counts as the same issuer. One that still counts (or whose standing cannot be established) refuses the new credential, before the link is used.
+ */
+async function replacedBy(agent: WalletAgent, preview: CredentialPreview): Promise<HeldCredential[]> {
+  const replaces: HeldCredential[] = []
   for (const record of await agent.sdJwtVc.getAll()) {
     const held = describe(agent, record)
     const origin = record.metadata.get<{ url: string }>(ISSUER_URL)?.url
-    if (preview.types.includes(held.type) && (origin === undefined || origin === preview.issuer)) {
-      const title = typeof held.claims.title === 'string' && held.claims.title !== '' ? held.claims.title : held.type
-      throw new CredoError(`U heeft al een credential "${title}" van deze uitgever. Verwijder dat eerst om een nieuw credential toe te voegen.`)
+    if (!preview.types.includes(held.type) || (origin !== undefined && origin !== preview.issuer)) continue
+    const standing = await standingOf(agent.sdJwtVc.fromCompact(record.firstCredential.compact).payload)
+    if (standing === 'revoked' || standing === 'ended') {
+      replaces.push(held)
+      continue
     }
+    throw new CredoError(`U heeft al een credential "${titleOf(held)}" van deze uitgever. Verwijder dat eerst om een nieuw credential toe te voegen.`)
   }
+  return replaces
 }
+
+/** What the holder calls a credential: its title, or else its type. */
+export const titleOf = (held: HeldCredential): string => (typeof held.claims.title === 'string' && held.claims.title !== '' ? held.claims.title : held.type)
 
 /** Takes what a link gives (pre-authorized code flow) and stores the SD-JWT VCs it yields. */
 export async function acceptCredential(agent: WalletAgent, link: string): Promise<HeldCredential[]> {
@@ -66,7 +81,7 @@ export async function acceptCredential(agent: WalletAgent, link: string): Promis
 
 /** Takes the credential that was read with previewCredential. */
 export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPreview): Promise<HeldCredential[]> {
-  await assertNotHeld(agent, preview)
+  const replaces = await replacedBy(agent, preview)
   const holder = agent.openid4vc.holder
   const resolvedCredentialOffer = preview.resolved
   const token = await holder.requestToken({ resolvedCredentialOffer })
@@ -85,6 +100,7 @@ export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPre
     await agent.sdJwtVc.store({ record })
     held.push(describe(agent, record))
   }
+  for (const old of replaces) await agent.sdJwtVc.deleteById(old.id)
   return held
 }
 

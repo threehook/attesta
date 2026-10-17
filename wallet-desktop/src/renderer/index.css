@@ -358,6 +358,10 @@ form.card button {
 }
 
 .notice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  justify-content: space-between;
   max-width: 36rem;
   margin: 0 0 16px;
   padding: 10px 14px;
@@ -365,6 +369,16 @@ form.card button {
   border-left: 4px solid var(--ok);
   border-radius: 6px;
   background: var(--surface);
+}
+
+.notice button.close {
+  margin: -2px -6px 0 0;
+  padding: 0 8px;
+  font-size: 22px;
+  line-height: 1.2;
+  color: var(--muted);
+  background: none;
+  border: 0;
 }
 
 .notice.error {

@@ -224,7 +224,7 @@ describe("signing in", () => {
 
 const issuer = "https://issuer.example/oid4vci/diploma";
 const qrLink = "openid-credential-offer://?credential_offer_uri=x";
-const previewed = { issuer, types: ["Employee"], resolved: {} };
+const previewed = { issuer, types: ["Employee"], resolved: {}, replaces: [] };
 const image = new Uint8Array([1, 2, 3]);
 
 describe("WalletService, a QR code in an image", () => {
@@ -238,6 +238,13 @@ describe("WalletService, a QR code in an image", () => {
     expect(core.previewCredential).toHaveBeenCalledWith({}, qrLink);
     expect(prepared).toMatchObject({ kind: "credential", issuer, types: ["Employee"] });
     expect(core.acceptPreviewed).not.toHaveBeenCalled();
+  });
+
+  it("tells which revoked or ended credentials the new one replaces, by title", async () => {
+    core.readQrImage.mockReturnValue(qrLink);
+    core.previewCredential.mockResolvedValue({ ...previewed, replaces: [{ id: "1", type: "Employee", issuer: "did:key:z6", claims: { title: "Medewerker afdeling & rollen" } }] });
+
+    expect(await service().prepareImage(image)).toMatchObject({ kind: "credential", replaces: ["Medewerker afdeling & rollen"] });
   });
 
   it("adds nothing until the user agrees", async () => {

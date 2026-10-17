@@ -9,7 +9,14 @@ export interface HeldCredential {
 
 // Something that needs the user's decision before the wallet acts on it.
 export type Pending =
-  | { id: string; kind: "credential"; issuer: string; types: string[] }
+  | {
+      id: string;
+      kind: "credential";
+      issuer: string;
+      types: string[];
+      /** The titles of held credentials (revoked or ended) that adding this one replaces. */
+      replaces: string[];
+    }
   | {
       id: string;
       kind: "presentation";

@@ -7,6 +7,7 @@ import {
   removeCredential,
   resolvePresentationRequest,
   submitPresentation,
+  titleOf,
   type CredentialPreview,
   type PresentationRequest,
   type WalletAgent,
@@ -74,7 +75,7 @@ export class WalletService {
     if (trimmed.startsWith(CREDENTIAL_SCHEME)) {
       const credential = await previewCredential(this.agent, trimmed);
       this.waiting.set(id, { kind: "credential", credential, expires });
-      return { id, kind: "credential", issuer: credential.issuer, types: credential.types };
+      return { id, kind: "credential", issuer: credential.issuer, types: credential.types, replaces: credential.replaces.map(titleOf) };
     }
     if (trimmed.startsWith(PRESENTATION_SCHEME)) {
       const request = await resolvePresentationRequest(this.agent, trimmed);

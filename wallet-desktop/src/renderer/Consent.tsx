@@ -26,6 +26,11 @@ export function Consent({ pending, busy, onApprove, onDecline }: Props) {
                 <li key={type}>{type}</li>
               ))}
             </ul>
+            {pending.replaces.length > 0 && (
+              <p>
+                Dit vervangt uw credential {pending.replaces.map((title) => `"${title}"`).join(", ")}, dat is ingetrokken of verlopen. Het wordt uit de wallet verwijderd.
+              </p>
+            )}
           </>
         ) : signIn ? (
           <>

@@ -549,6 +549,9 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
 
     await expect(window.getByRole("status")).toContainText("U heeft al een credential \"Medewerker afdeling & rollen\"");
     await expect(window.getByRole("dialog")).toHaveCount(0);
+
+    await window.getByRole("button", { name: "Melding sluiten" }).click();
+    await expect(window.getByRole("status")).toHaveCount(0);
   });
 
   test("removes a credential after the user confirms, and then accepts the QR code that was refused", async () => {
@@ -583,5 +586,28 @@ test.describe.serial("desktop wallet, a QR code from a mail", () => {
     await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
     await goTo("Credentials");
     await expect(credentials()).toHaveCount(2);
+  });
+
+  test("replaces a credential the issuer revoked when the user adds the corrected one, and refuses one that still counts", async () => {
+    // The wallet holds the diploma of hopper@example.com from the test before.
+    await goTo("Credentials");
+    const held = await credentials().count();
+
+    await issuer.recordDiploma({ email: "byron@example.com", name: "Ada Byron" });
+    await uploadQr(window, await issuer.qrImageFor("byron@example.com"));
+    await expect(window.getByRole("status")).toContainText("U heeft al een credential");
+    await expect(window.getByRole("dialog")).toHaveCount(0);
+
+    const listed = (await (await fetch(`${issuer.url}/entitlements?email=hopper@example.com`)).json()) as { entitlements: { id: string }[] };
+    await issuer.revoke(listed.entitlements[0]!.id);
+    await issuer.recordDiploma({ email: "hopper@example.com", name: "Grace Brewster Hopper" });
+    await uploadQr(window, await issuer.qrImageFor("hopper@example.com"));
+    await expect(window.getByRole("dialog")).toContainText("Dit vervangt uw credential");
+    await window.getByRole("dialog").getByRole("button", { name: "Toevoegen" }).click();
+    await expect(window.getByRole("status")).toContainText("1 credential(s) toegevoegd");
+    await goTo("Credentials");
+    await expect(credentials()).toHaveCount(held);
+    await expect(credentials().filter({ hasText: "hopper@example.com" })).toHaveCount(1);
+    await expect(credentials().filter({ hasText: "hopper@example.com" })).toContainText("Grace Brewster Hopper");
   });
 });
