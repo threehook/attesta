@@ -80,7 +80,7 @@ export async function startGui(options: GuiOptions) {
     const i = await info(req)
     const type = i.types.find((t) => t.path === req.params.path)
     if (!type) {
-      res.status(404).type('text').send('Dit credential type bestaat niet.')
+      res.status(404).type('text').send('Dit credential form bestaat niet.')
       return
     }
     res.type('html').send(renderTypeForm(type, chromeOf(i)))
@@ -100,7 +100,7 @@ export async function startGui(options: GuiOptions) {
   app.post('/type/:path', async (req, res, next) => {
     const type = (await info(req)).types.find((t) => t.path === req.params.path)
     if (!type) {
-      res.status(404).type('text').send('Dit credential type bestaat niet.')
+      res.status(404).type('text').send('Dit credential form bestaat niet.')
       return
     }
     await create(`/entitlements/type/${type.path}`, { type })(req, res, next)
@@ -203,7 +203,7 @@ export async function startGui(options: GuiOptions) {
   app.get('/credential-types/:id/edit', async (req, res) => {
     const type = (await managed(req)).find((t) => t.id === req.params.id)
     if (!type) {
-      res.status(404).type('text').send('Dit credential type bestaat niet.')
+      res.status(404).type('text').send('Dit credential form bestaat niet.')
       return
     }
     res.type('html').send(renderTypeEditor(type, chromeOf(await info(req))))

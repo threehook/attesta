@@ -329,14 +329,20 @@ describe('issuer pages', () => {
     expect(await res.json()).toEqual({ error: 'de rol is in gebruik bij een medewerker' })
   })
 
-  it('offers Credential types under Beheer and lists them with the ones in use marked', async () => {
-    expect(await (await fetch(baseUrl)).text()).toContain('<h2>Credential types</h2>')
+  it('offers Credential forms under Beheer and lists them with the ones in use marked', async () => {
+    expect(await (await fetch(baseUrl)).text()).toContain('<h2>Credential forms</h2>')
     const html = await (await fetch(`${baseUrl}/credential-types`)).text()
 
     expect(html).toContain('<td>Diploma Laadpalen Management</td>')
     expect(html).toContain('href="/credential-types/t-2/edit"')
     expect(html).toContain('data-delete="t-1" data-title="Diploma Laadpalen Management" disabled')
     expect(html).toContain('data-delete="t-2" data-title="Badge &#60;b&#62;">')
+  })
+
+  it('puts Credential forms second under Beheer', async () => {
+    const html = await (await fetch(baseUrl)).text()
+
+    expect(html).toMatch(/<h2>Beheer<\/h2><ul><li><a href="\/revoke"[^>]*>Intrekken<\/a><\/li><li><a href="\/credential-types"[^>]*>Credential forms<\/a><\/li><li><a href="\/roles"/)
   })
 
   it('shows the editor for a new type with the email field in place, and for an existing one with its data', async () => {

@@ -26,7 +26,7 @@ the same across restarts and replicas; use another seed than the default outside
 | `api/` (Go, module `attesta/issuer`) | Holds the signing key, the entitlements (in Postgres), the roles, the status list, the mail, and the OpenID4VCI endpoints for wallets under `/oid4vci`. |
 | `gui/` (`@attesta/issuer-gui`) | The pages staff use. It has no key and no store; it only calls the API. |
 
-The pages: `/` (welcome), `/employee` and `/type/<path>` (forms), `/roles` (manage roles), `/credential-types` (define credential types: editor with preview, one menu item each), `/revoke` (search a person by email, revoke a credential, or revoke it and fill in the corrected data).
+The pages: `/` (welcome), `/employee` and `/type/<path>` (forms), `/roles` (manage roles), `/credential-types` (menu: Credential forms; define credential types with an editor and preview, one menu item each), `/revoke` (search a person by email, revoke a credential, or revoke it and fill in the corrected data).
 
 ## Credentials
 
