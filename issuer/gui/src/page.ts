@@ -1,5 +1,5 @@
 import { asFormDate, typeFields, type TypeInfo, type Values } from './fields.js'
-import { escape, renderPage, type Crumb, type MenuGroup, type MenuItem, type Page } from './layout.js'
+import { COLUMN_RESIZE, escape, renderPage, type Crumb, type MenuGroup, type MenuItem, type Page } from './layout.js'
 
 export type { TypeInfo } from './fields.js'
 
@@ -28,11 +28,11 @@ const EMPLOYEE: MenuItem = {
 
 const typeItem = (t: TypeInfo): MenuItem => ({ id: `type-${t.path}`, label: t.title, href: `/type/${t.path}`, description: t.description })
 
-const REVOKE: MenuItem = {
-  id: 'revoke',
-  label: 'Intrekken',
-  href: '/revoke',
-  description: 'Trek een credential in en maak er eventueel een gecorrigeerd credential voor in de plaats.',
+export const CREDENTIALS: MenuItem = {
+  id: 'credentials',
+  label: 'Credentials',
+  href: '/credentials',
+  description: 'Bekijk alle credentials en wijzig ze of trek ze in. Wijzigen trekt het credential in en maakt een gecorrigeerd credential voor in de plaats.',
 }
 
 const ROLES: MenuItem = {
@@ -51,7 +51,7 @@ export const CREDENTIAL_TYPES: MenuItem = {
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [REVOKE, CREDENTIAL_TYPES, ROLES] },
+  { label: 'Beheer', items: [CREDENTIALS, CREDENTIAL_TYPES, ROLES] },
 ]
 
 /** What a form or a page after it is for: the employee credential, or the type at this path. */
@@ -91,14 +91,14 @@ export function renderWelcome(chrome: Chrome): string {
 
 const attr = (name: string, value: string | undefined) => (value === undefined ? '' : ` ${name}="${escape(value)}"`)
 
-const employeeFields = (departments: string[], roles: string[], v: Values = {}) => {
+const employeeFields = (departments: string[], roles: string[], v: Values = {}, emailReadonly = false) => {
   const options = departments.map((d) => `<option value="${escape(d)}"${d === v.department ? ' selected' : ''}>${escape(titleCase(d))}</option>`).join('')
   const chosen = (v.roles ?? '').split(',').map((r) => r.trim()).filter(Boolean)
   const roleOptions = roles.map((r) => `<label><input type="checkbox" name="roles" value="${escape(r)}"${chosen.includes(r) ? ' checked' : ''}>${escape(r)}</label>`).join('')
   const none = 'Kies rol(len)'
   return `
   <label>Naam <input name="name"${attr('value', v.name)} required></label>
-  <label>E-mailadres <input name="email" type="email"${attr('value', v.email)} required></label>
+  <label>E-mailadres <input name="email" type="email"${attr('value', v.email)} required${emailReadonly ? ' readonly' : ''}></label>
   <label>Afdeling <select name="department">${options}</select></label>
   <label>Organisatie <input name="organisation" value="${escape(v.organisation ?? 'Gemeente Vlierdam')}" required></label>
   <div class="field"><span>Rol(len)</span>
@@ -143,101 +143,47 @@ export interface ActiveCredential {
   status: 'waiting' | 'issued'
   claims: Record<string, string>
   issuedAt: string | null
+  createdAt: string
 }
 
-const crumbsToRevoke: Crumb[] = [...home, { label: REVOKE.label, href: REVOKE.href }]
-
-const CLAIM_LABELS: [string, string][] = [
-  ['name', 'Naam'],
-  ['email', 'E-mailadres'],
-  ['department', 'Afdeling'],
-  ['organisation', 'Organisatie'],
-  ['roles', 'Rol(len)'],
-  ['validUntil', 'Geldig tot'],
-]
-
-const day = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Amsterdam', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)).replaceAll('/', '-')
-
-/** The claims of a credential that are shown, with their labels: the fixed ones of an Employee, the fields of the form of any other type. */
-function claimRows(c: ActiveCredential, chrome: Chrome): { key: string; label: string; date: boolean }[] {
-  const rows =
-    c.type === 'Employee'
-      ? CLAIM_LABELS.map(([key, label]) => ({ key, label, date: key === 'validUntil' }))
-      : (chrome.types.find((t) => t.type === c.type)?.fields ?? []).map((f) => ({ key: f.key, label: f.label, date: f.kind === 'date' }))
-  return rows.filter(({ key }) => c.claims[key])
-}
-
-/** Looks up the credentials of one person; `credentials` is undefined until an e-mail address was asked for. */
-export function renderRevoke(chrome: Chrome, email: string, credentials?: ActiveCredential[], problem?: string): string {
-  const items = (credentials ?? [])
-    .map((c) => {
-      const claims = claimRows(c, chrome)
-        .map(({ key, label, date }) => `<dt>${escape(label)}</dt><dd>${escape(date ? (asFormDate(c.claims[key]) ?? '') : c.claims[key])}</dd>`)
-        .join('')
-      const state = c.status === 'issued' && c.issuedAt ? `Uitgegeven op ${day(c.issuedAt)}` : 'Staat klaar om op te halen'
-      const id = encodeURIComponent(c.id)
-      return `<section class="item"><h2>${escape(c.title)}</h2><p class="meta">${state}</p><dl>${claims}</dl>
-<div class="actions">
-  <form method="post" action="/revoke/${id}" onsubmit="return confirm('Dit credential intrekken?')"><button class="danger" type="submit">Intrekken</button></form>
-  <a href="/revoke/${id}/correct?email=${encodeURIComponent(email)}">Intrekken en corrigeren</a>
-</div></section>`
-    })
-    .join('')
-  const result =
-    credentials === undefined
-      ? ''
-      : credentials.length === 0
-        ? `<p>Er is geen credential om in te trekken voor <strong>${escape(email)}</strong>.</p>`
-        : items
-  return shell(chrome, {
-    title: REVOKE.label,
-    crumbs: home,
-    active: REVOKE.id,
-    body: `<p class="intro">${escape(REVOKE.description)}</p>
-<form class="card" method="get" action="/revoke">
-  <label>E-mailadres <input name="email" type="email" value="${escape(email)}" required></label>
-  <button type="submit">Zoeken</button>
-</form>
-${problem ? `<p>${escape(problem)}</p>` : ''}<div style="margin-top:20px">${result}</div>`,
-  })
-}
+const crumbsToCredentials: Crumb[] = [...home, { label: CREDENTIALS.label, href: CREDENTIALS.href }]
 
 /** The form of a credential with its data filled in, to withdraw it and record the corrected one. */
-export function renderCorrection(c: ActiveCredential, email: string, departments: string[], roles: string[], chrome: Chrome): string {
+export function renderCorrection(c: ActiveCredential, departments: string[], roles: string[], chrome: Chrome): string {
   const employee = c.type === 'Employee'
   const fields = chrome.types.find((t) => t.type === c.type)?.fields ?? []
   const values: Values = { ...c.claims }
   for (const f of fields) if (f.kind === 'date') values[f.key] = asFormDate(c.claims[f.key]) ?? ''
   return shell(chrome, {
-    title: 'Intrekken en corrigeren',
-    crumbs: [...home, { label: REVOKE.label, href: `${REVOKE.href}?email=${encodeURIComponent(email)}` }],
-    active: REVOKE.id,
+    title: 'Credential wijzigen',
+    crumbs: crumbsToCredentials,
+    active: CREDENTIALS.id,
     body: `<p class="intro">${escape(c.title)}: het huidige credential wordt ingetrokken en de ontvanger krijgt een e-mail met een QR-code voor het gecorrigeerde credential.</p>
-<form class="card" method="post" action="/revoke/${encodeURIComponent(c.id)}/correct">${employee ? employeeFields(departments, roles, values) : typeFields(fields, values)}
-  <button type="submit">Intrekken en vervangen</button>
+<p class="intro">Het e-mailadres kan niet worden gewijzigd: het identificeert de persoon, dus een ander adres is een credential voor iemand anders. Is het adres fout? Trek dit credential dan in en maak een nieuw credential aan.</p>
+<form class="card" method="post" action="/credentials/${encodeURIComponent(c.id)}/correct">${employee ? employeeFields(departments, roles, values, true) : typeFields(fields, values, ['email'])}
+  <button type="submit">Wijzigen</button>
 </form>${employee ? `<script>${MULTI_SELECT}</script>` : ''}`,
   })
 }
 
-/** Shown after a credential was revoked; `replacedFor` is the address the corrected credential was mailed to. */
-export function renderRevoked(chrome: Chrome, replacedFor?: string): string {
+/** Shown after a credential was changed: the old one is revoked and the corrected one was mailed to `email`. */
+export function renderChanged(chrome: Chrome, email: string): string {
   return shell(chrome, {
-    title: 'Credential ingetrokken',
-    crumbs: crumbsToRevoke,
-    active: REVOKE.id,
-    body: replacedFor
-      ? `<p class="intro">Het credential is ingetrokken. Er is een e-mail met een QR-code voor het gecorrigeerde credential gestuurd naar <strong>${escape(replacedFor)}</strong>.</p>`
-      : `<p class="intro">Het credential is ingetrokken.</p>`,
+    title: 'Credential gewijzigd',
+    crumbs: crumbsToCredentials,
+    active: CREDENTIALS.id,
+    body: `<p class="intro">Het credential is ingetrokken. Er is een e-mail met een QR-code voor het gecorrigeerde credential gestuurd naar <strong>${escape(email)}</strong>.</p>
+<p><a href="${escape(CREDENTIALS.href)}">Terug naar de credentials</a></p>`,
   })
 }
 
-/** Shown when the issuer API refused to revoke; `back` is where the person can try again. */
-export function renderNotRevoked(message: string, chrome: Chrome, back: string): string {
+/** Shown when the issuer API refused to change a credential. */
+export function renderNotChanged(message: string, chrome: Chrome): string {
   return shell(chrome, {
-    title: 'Niet ingetrokken',
-    crumbs: crumbsToRevoke,
-    active: REVOKE.id,
-    body: `<p class="intro">${escape(message)}</p><p><a href="${escape(back)}">Terug</a></p>`,
+    title: 'Niet gewijzigd',
+    crumbs: crumbsToCredentials,
+    active: CREDENTIALS.id,
+    body: `<p class="intro">${escape(message)}</p><p><a href="${escape(CREDENTIALS.href)}">Terug naar de credentials</a></p>`,
   })
 }
 
@@ -368,6 +314,7 @@ export function renderRoles(chrome: Chrome): string {
   <button type="button" id="role-add">Rol aanmaken</button>
   <input id="roles-filter" type="search" placeholder="Filter op id of naam" aria-label="Filter">
 </div>
+<div class="tablebox">
 <table class="data">
   <thead><tr>
     <th data-key="id" aria-sort="none"><button type="button" class="sort">ID</button></th>
@@ -387,6 +334,7 @@ export function renderRoles(chrome: Chrome): string {
     <button type="button" id="roles-last" aria-label="Laatste pagina">&raquo;</button>
   </span>
 </div>
+</div>
 <dialog id="role-edit">
   <form id="role-edit-form">
     <h2 id="role-edit-title"></h2>
@@ -402,6 +350,7 @@ export function renderRoles(chrome: Chrome): string {
   <p class="error" id="role-delete-error" role="alert"></p>
   <div class="actions"><button type="button" class="danger" id="role-delete-yes">Ja, verwijderen</button><button type="button" class="secondary" id="role-delete-close" data-close>Annuleren</button></div>
 </dialog>
+<script>${COLUMN_RESIZE}</script>
 <script>${ROLES_SCRIPT}</script>`,
   })
 }

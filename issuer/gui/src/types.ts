@@ -1,5 +1,5 @@
 import { typeFields, type FieldInfo, type TypeInfo } from './fields.js'
-import { escape } from './layout.js'
+import { COLUMN_RESIZE, escape } from './layout.js'
 import { CREDENTIAL_TYPES, home, shell, type Chrome } from './page.js'
 
 /** A credential type as the API lists it for the management pages. */
@@ -43,16 +43,19 @@ export function renderTypes(types: ManagedType[], chrome: Chrome): string {
     active: CREDENTIAL_TYPES.id,
     body: `<p class="intro">${escape(CREDENTIAL_TYPES.description)}</p>
 <form class="toolbar" method="get" action="/credential-types/new"><button type="submit">Credential form aanmaken</button></form>
+<div class="tablebox">
 <table class="data">
   <thead><tr><th>Titel</th><th>Type</th><th>Velden</th><th>In gebruik</th><th>Wijzigen</th><th>Verwijderen</th></tr></thead>
   <tbody>${rows || '<tr><td colspan="6">Er zijn nog geen credential forms.</td></tr>'}</tbody>
 </table>
+</div>
 <dialog id="type-delete">
   <h2>Credential form verwijderen</h2>
   <p>Weet u zeker dat u <strong id="type-delete-name"></strong> wilt verwijderen? Het menu-item verdwijnt.</p>
   <p class="error" id="type-delete-error" role="alert"></p>
   <div class="actions"><button type="button" class="danger" id="type-delete-yes">Ja, verwijderen</button><button type="button" class="secondary" data-close>Annuleren</button></div>
 </dialog>
+<script>${COLUMN_RESIZE}</script>
 <script>${LIST_SCRIPT}</script>`,
   })
 }

@@ -25,9 +25,9 @@ let posted: { path: string; body: Record<string, string> }[]
 let refuse: string | undefined
 let changed: string[]
 const held = [
-  { id: 'e-1', type: 'Employee', title: 'Medewerker afdeling & rollen', status: 'issued', issuedAt: '2026-10-14T09:00:00Z',
+  { id: 'e-1', type: 'Employee', title: 'Medewerker afdeling & rollen', status: 'issued', issuedAt: '2026-10-14T09:00:00Z', createdAt: '2026-10-14T08:00:00Z',
     claims: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'secretariaat', organisation: 'Gemeente Utrecht', roles: 'laadpalen-aanvrager, reader' } },
-  { id: 'e-2', type: 'Diploma Laadpalen Management', title: 'Diploma Laadpalen Management', status: 'waiting', issuedAt: null,
+  { id: 'e-2', type: 'Diploma Laadpalen Management', title: 'Diploma Laadpalen Management', status: 'waiting', issuedAt: null, createdAt: '2026-10-15T08:00:00Z',
     claims: { name: 'Jerry Smith', email: 'jerry@example.com', validUntil: '2099-12-31' } },
 ]
 
@@ -44,10 +44,8 @@ beforeEach(async () => {
         res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], roles: ['laadpalen-aanvrager', 'reader'], types: [DIPLOMA, BADGE] }))
         return
       }
-      if (req.method === 'GET' && req.url?.startsWith('/entitlements?')) {
-        const email = new URL(req.url, 'http://x').searchParams.get('email')
-        res.statusCode = email === 'nope' ? 400 : 200
-        res.end(JSON.stringify(email === 'nope' ? { error: 'email is not an email address' } : { entitlements: email === 'jerry@example.com' ? held : [] }))
+      if (req.method === 'GET' && req.url === '/entitlements') {
+        res.end(JSON.stringify({ entitlements: held }))
         return
       }
       if (req.url?.startsWith('/credential-types')) {
@@ -221,70 +219,86 @@ describe('issuer pages', () => {
     }
   })
 
-  it('offers Intrekken in the menu and on the welcome page', async () => {
+  it('offers Credentials first under Beheer, and no Intrekken', async () => {
     const html = await (await fetch(baseUrl)).text()
 
-    expect(html).toContain('<h2>Beheer</h2>')
-    expect(html).toContain('<h2>Intrekken</h2>')
+    expect(html).toContain('<h2>Credentials</h2>')
+    expect(html).not.toContain('Intrekken</a>')
   })
 
-  it('lists what a person holds, with the date it was issued, and a button to revoke each', async () => {
-    const html = await (await fetch(`${baseUrl}/revoke?email=jerry%40example.com`)).text()
+  it('shows the credentials page with a table to filter, sort and page, and a popup to revoke, but nothing to add', async () => {
+    const html = await (await fetch(`${baseUrl}/credentials`)).text()
 
-    expect(html).toContain('Medewerker afdeling &#38; rollen')
-    expect(html).toContain('Uitgegeven op 14-10-2026')
-    expect(html).toContain('Staat klaar om op te halen')
-    expect(html).toContain('<dd>31-12-2099</dd>')
-    expect(html).toContain('action="/revoke/e-1"')
-    expect(html).toContain('href="/revoke/e-2/correct?email=jerry%40example.com"')
+    expect(html).toContain('id="credentials-filter"')
+    expect(html).toContain('<th data-key="id"')
+    expect(html).toContain('<th data-key="email"')
+    expect(html).toContain('<th data-key="issued"')
+    expect(html).toContain('id="credentials-size"')
+    expect(html).toContain('id="credentials-next"')
+    expect(html).toContain('<dialog id="credential-revoke">')
+    expect(html).not.toContain('aanmaken')
   })
 
-  it('says so when a person holds nothing, and why a search was refused', async () => {
-    expect(await (await fetch(`${baseUrl}/revoke?email=nobody%40example.com`)).text()).toContain('Er is geen credential om in te trekken')
-    const refused = await fetch(`${baseUrl}/revoke?email=nope`)
-    expect(refused.status).toBe(400)
-    expect(await refused.text()).toContain('email is not an email address')
+  it('lets the user drag the edge of a column header on every table', async () => {
+    for (const path of ['credentials', 'roles', 'credential-types']) {
+      expect(await (await fetch(`${baseUrl}/${path}`)).text()).toContain("className = 'grip'")
+    }
   })
 
-  it('revokes through the API without sending data', async () => {
-    const res = await fetch(`${baseUrl}/revoke/e-1`, { method: 'POST' })
+  it('gives the table every credential the API lists', async () => {
+    const res = await fetch(`${baseUrl}/credentials/data`)
+
+    expect(((await res.json()) as { entitlements: { id: string }[] }).entitlements.map((c) => c.id)).toEqual(['e-1', 'e-2'])
+  })
+
+  it('revokes through the API without sending data, and passes on why it was refused', async () => {
+    const res = await fetch(`${baseUrl}/credentials/e-1/revoke`, { method: 'POST' })
 
     expect(posted).toEqual([{ path: '/entitlements/revoke/e-1', body: {} }])
-    expect(await res.text()).toContain('Het credential is ingetrokken.')
-  })
+    expect(res.status).toBe(200)
 
-  it('passes on why a revocation was refused', async () => {
     refuse = 'dit credential bestaat niet of is al ingetrokken'
-
-    const res = await fetch(`${baseUrl}/revoke/e-1`, { method: 'POST' })
-
-    expect(res.status).toBe(400)
-    expect(await res.text()).toContain('dit credential bestaat niet of is al ingetrokken')
+    const refused = await fetch(`${baseUrl}/credentials/e-1/revoke`, { method: 'POST' })
+    expect(refused.status).toBe(400)
+    expect(await refused.json()).toEqual({ error: 'dit credential bestaat niet of is al ingetrokken' })
   })
 
   it('shows the form of the credential with its data filled in', async () => {
-    const employee = await (await fetch(`${baseUrl}/revoke/e-1/correct?email=jerry%40example.com`)).text()
+    const employee = await (await fetch(`${baseUrl}/credentials/e-1/correct`)).text()
 
     expect(employee).toContain('value="Jerry Smith"')
     expect(employee).toContain('<option value="secretariaat" selected>')
     expect(employee).toContain('value="laadpalen-aanvrager" checked')
     expect(employee).toContain('value="reader" checked')
     expect(employee).toContain('<summary>laadpalen-aanvrager, reader</summary>')
-    expect(employee).toContain('action="/revoke/e-1/correct"')
+    expect(employee).toContain('action="/credentials/e-1/correct"')
+    expect(employee).toContain('name="email" type="email" value="jerry@example.com" required readonly')
+    expect(employee).toContain('Het e-mailadres kan niet worden gewijzigd')
 
-    const diploma = await (await fetch(`${baseUrl}/revoke/e-2/correct?email=jerry%40example.com`)).text()
+    const diploma = await (await fetch(`${baseUrl}/credentials/e-2/correct`)).text()
     expect(diploma).toContain('name="validUntil"')
     expect(diploma).toContain('value="31-12-2099"')
-    expect((await fetch(`${baseUrl}/revoke/e-9/correct?email=jerry%40example.com`)).status).toBe(404)
+    expect(diploma).toContain('name="email" type="email" value="jerry@example.com" required readonly')
+    expect(diploma).not.toContain('name="name" value="Jerry Smith" required readonly')
+    expect((await fetch(`${baseUrl}/credentials/e-9/correct`)).status).toBe(404)
   })
 
-  it('revokes and replaces by posting the corrected data to the same endpoint', async () => {
-    const res = await fetch(`${baseUrl}/revoke/e-1/correct`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
+  it('changes a credential by posting the corrected data to the revoke endpoint of the API', async () => {
+    const res = await fetch(`${baseUrl}/credentials/e-1/correct`, form({ name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' }))
 
     expect(posted).toEqual([{ path: '/entitlements/revoke/e-1', body: { name: 'Jerry Smith', email: 'jerry@example.com', department: 'burgerzaken' } }])
     const html = await res.text()
     expect(html).toContain('Het credential is ingetrokken.')
     expect(html).toContain('<strong>jerry@example.com</strong>')
+  })
+
+  it('says why a credential could not be changed', async () => {
+    refuse = 'voor deze persoon staat al een credential van dit type klaar'
+
+    const res = await fetch(`${baseUrl}/credentials/e-1/correct`, form({ email: 'jerry@example.com' }))
+
+    expect(res.status).toBe(400)
+    expect(await res.text()).toContain('voor deze persoon staat al een credential van dit type klaar')
   })
 
   it('offers Rollen under Beheer', async () => {
@@ -342,7 +356,7 @@ describe('issuer pages', () => {
   it('puts Credential forms second under Beheer', async () => {
     const html = await (await fetch(baseUrl)).text()
 
-    expect(html).toMatch(/<h2>Beheer<\/h2><ul><li><a href="\/revoke"[^>]*>Intrekken<\/a><\/li><li><a href="\/credential-types"[^>]*>Credential forms<\/a><\/li><li><a href="\/roles"/)
+    expect(html).toMatch(/<h2>Beheer<\/h2><ul><li><a href="\/credentials"[^>]*>Credentials<\/a><\/li><li><a href="\/credential-types"[^>]*>Credential forms<\/a><\/li><li><a href="\/roles"/)
   })
 
   it('shows the editor for a new type with the email field in place, and for an existing one with its data', async () => {

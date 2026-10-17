@@ -4,13 +4,12 @@ import express from 'express'
 import type { Auth } from './auth.js'
 import { LOGO_SVG } from './logo.js'
 import {
+  renderChanged,
   renderCorrection,
   renderCreated,
   renderEmployeeForm,
-  renderNotRevoked,
+  renderNotChanged,
   renderRefused,
-  renderRevoke,
-  renderRevoked,
   renderRoles,
   renderTypeForm,
   renderWelcome,
@@ -19,6 +18,7 @@ import {
   type Kind,
   type TypeInfo,
 } from './page.js'
+import { renderCredentials } from './credentials.js'
 import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
 
 export interface GuiOptions {
@@ -106,60 +106,51 @@ export async function startGui(options: GuiOptions) {
     await create(`/entitlements/type/${type.path}`, { type })(req, res, next)
   })
 
-  // Revoking: look a person up, revoke what they hold, or revoke it and record the corrected data in its place.
-  const activeOf = async (req: express.Request, email: string): Promise<{ list?: ActiveCredential[]; error?: string }> => {
-    const answer = await fetch(`${api}/entitlements?email=${encodeURIComponent(email)}`, { headers: await asStaff(req) })
+  // Credentials: the table asks for everyone's credentials as JSON; revoking is passed on to the API. Changing one is a page: the form of its type filled in,
+  // which the API takes as a revocation with the corrected data.
+  const listed = async (req: express.Request): Promise<{ list?: ActiveCredential[]; error?: string }> => {
+    const answer = await fetch(`${api}/entitlements`, { headers: await asStaff(req) })
     const body = (await answer.json()) as { entitlements?: ActiveCredential[]; error?: string }
     return answer.ok ? { list: body.entitlements ?? [] } : { error: body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.' }
   }
-  const queryEmail = (req: express.Request) => (typeof req.query.email === 'string' ? req.query.email.trim() : '')
   const post = async (req: express.Request, path: string, body?: unknown) => {
     const answer = await fetch(`${api}${path}`, {
       method: 'POST',
       headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(await asStaff(req)) },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
-    return { ok: answer.ok, status: answer.status, body: (await answer.json()) as { error?: string; mailedTo?: string; entitlementId?: string } }
+    return { ok: answer.ok, status: answer.status, text: await answer.text() }
   }
 
-  app.get('/revoke', async (req, res) => {
-    const email = queryEmail(req)
-    const chrome = chromeOf(await info(req))
-    if (!email) {
-      res.type('html').send(renderRevoke(chrome, ''))
-      return
-    }
-    const { list, error } = await activeOf(req, email)
-    res.status(error ? 400 : 200).type('html').send(renderRevoke(chrome, email, list, error))
+  app.get('/credentials', async (req, res) => {
+    res.type('html').send(renderCredentials(chromeOf(await info(req))))
   })
-  app.post('/revoke/:id', async (req, res) => {
+  app.get('/credentials/data', async (req, res) => {
+    const answer = await fetch(`${api}/entitlements`, { headers: await asStaff(req) })
+    res.status(answer.status).type('json').send(await answer.text())
+  })
+  app.post('/credentials/:id/revoke', async (req, res) => {
     const answer = await post(req, `/entitlements/revoke/${encodeURIComponent(req.params.id)}`)
-    const chrome = chromeOf(await info(req))
-    if (!answer.ok) {
-      res.status(answer.status).type('html').send(renderNotRevoked(answer.body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.', chrome, '/revoke'))
-      return
-    }
-    res.type('html').send(renderRevoked(chrome))
+    res.status(answer.status).type('json').send(answer.text)
   })
-  app.get('/revoke/:id/correct', async (req, res) => {
-    const email = queryEmail(req)
-    const { list } = email ? await activeOf(req, email) : { list: undefined }
-    const credential = list?.find((c) => c.id === req.params.id)
+  app.get('/credentials/:id/correct', async (req, res) => {
+    const credential = (await listed(req)).list?.find((c) => c.id === req.params.id)
     if (!credential) {
       res.status(404).type('text').send('Dit credential bestaat niet of is al ingetrokken.')
       return
     }
     const i = await info(req)
-    res.type('html').send(renderCorrection(credential, email, i.departments, i.roles, chromeOf(i)))
+    res.type('html').send(renderCorrection(credential, i.departments, i.roles, chromeOf(i)))
   })
-  app.post('/revoke/:id/correct', async (req, res) => {
+  app.post('/credentials/:id/correct', async (req, res) => {
     const answer = await post(req, `/entitlements/revoke/${encodeURIComponent(req.params.id)}`, withRolesAsList(req.body ?? {}))
     const chrome = chromeOf(await info(req))
     if (!answer.ok) {
-      res.status(answer.status).type('html').send(renderNotRevoked(answer.body.error ?? 'De uitgever stuurde een onbruikbaar antwoord.', chrome, '/revoke'))
+      const message = (JSON.parse(answer.text) as { error?: string }).error ?? 'De uitgever stuurde een onbruikbaar antwoord.'
+      res.status(answer.status).type('html').send(renderNotChanged(message, chrome))
       return
     }
-    res.type('html').send(renderRevoked(chrome, String(req.body?.email ?? '')))
+    res.type('html').send(renderChanged(chrome, String(req.body?.email ?? '')))
   })
 
   // Roles: the table asks for the list and sends changes as JSON; the API refuses a role an employee holds, and the page shows why.

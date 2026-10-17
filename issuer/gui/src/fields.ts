@@ -33,10 +33,10 @@ const attr = (name: string, value: string | undefined) => (value === undefined ?
 export const asFormDate = (value: string | undefined) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('-') : value)
 
 /** The inputs of a type's form. The preview in the editor uses this too, so it looks like the real form. */
-export const typeFields = (fields: FieldInfo[], v: Values = {}): string =>
+export const typeFields = (fields: FieldInfo[], v: Values = {}, readonly: string[] = []): string =>
   fields
     .map((f) => {
-      const required = f.required ? ' required' : ''
+      const required = (f.required ? ' required' : '') + (readonly.includes(f.key) ? ' readonly' : '')
       const name = ` name="${escape(f.key)}"`
       const value = attr('value', v[f.key])
       if (f.kind === 'choice') {

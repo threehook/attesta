@@ -58,7 +58,7 @@ nav.menu{grid-area:menu;background:var(--surface);border-right:1px solid var(--b
 main{grid-area:main;padding:28px 32px;min-width:0}
 footer{grid-area:footer;background:var(--surface);border-top:1px solid var(--border);padding:6px 32px;font-size:12px;color:var(--muted);
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:30px}
-.intro{max-width:44rem;margin:0 0 20px;color:var(--muted)}
+.intro{max-width:88rem;margin:0 0 20px;color:var(--muted)}
 .blocks{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
 .block{display:block;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:18px;color:inherit;text-decoration:none}
 .block:hover{border-color:var(--accent)}
@@ -69,12 +69,13 @@ form.card{background:var(--surface);border:1px solid var(--border);border-radius
 label{display:block;margin:0 0 14px;font-weight:600;font-size:13px}
 input,select,textarea{display:block;width:100%;margin-top:4px;padding:8px 10px;font:inherit;font-weight:400;color:var(--text);background:var(--bg);
   border:1px solid var(--border);border-radius:6px}
+input[readonly]{color:var(--muted);background:var(--border);border-style:dashed;cursor:not-allowed}
 input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 button{padding:9px 16px;font:inherit;font-weight:600;color:var(--accent-text);background:var(--accent);border:0;border-radius:6px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
 code{word-break:break-all}
 button.danger{background:var(--danger);color:var(--danger-text)}
-.item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:44rem;margin:0 0 16px}
+.item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:88rem;margin:0 0 16px}
 .item h2{margin:0 0 2px;font-size:16px;font-weight:600}
 .item .meta{margin:0 0 10px;color:var(--muted)}
 .item dl{display:grid;grid-template-columns:max-content 1fr;gap:2px 16px;margin:0 0 14px}
@@ -83,7 +84,13 @@ button.danger{background:var(--danger);color:var(--danger-text)}
 .actions form{margin:0}
 .toolbar{display:flex;gap:16px;align-items:center;margin:0 0 16px}
 .toolbar input{margin:0;max-width:20rem}
-table.data{width:100%;max-width:56rem;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px}
+.tablebox{width:fit-content;max-width:112rem;overflow-x:auto}
+table.data th{position:relative}
+table.data.sized th,table.data.sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.grip{position:absolute;top:0;right:0;width:8px;height:100%;border-right:1px solid color-mix(in srgb,var(--border) 30%,transparent);cursor:col-resize;user-select:none;touch-action:none}
+th:last-child .grip{border-right-color:transparent}
+.grip:hover,.grip.active{background:var(--accent-soft)}
+table.data{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px}
 table.data th,table.data td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--border)}
 table.data th{font-size:13px}
 table.data td .mono,td.mono{font-family:ui-monospace,monospace;font-size:12px;color:var(--muted)}
@@ -92,7 +99,7 @@ table.data td button:disabled{opacity:.4;cursor:not-allowed}
 button.sort{padding:0;background:none;color:inherit;font-weight:600}
 th[aria-sort=ascending] button.sort::after{content:" \\25B2";font-size:10px}
 th[aria-sort=descending] button.sort::after{content:" \\25BC";font-size:10px}
-.pager{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;max-width:56rem;margin:12px 0 0;color:var(--muted)}
+.pager{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;margin:12px 0 0;color:var(--muted)}
 .pager label{display:flex;align-items:center;gap:8px;margin:0;font-weight:400}
 .pager select{width:auto;margin:0}
 .pager .nav{display:flex;gap:8px;align-items:center}
@@ -130,6 +137,41 @@ details.multi .options input{width:auto;margin:0}
   header .title,main,footer{padding-left:16px;padding-right:16px}
   header .app{right:16px}
 }`
+
+// Lets the user drag the right edge of a column header to widen or narrow that column. The first drag fixes the widths the table has by then.
+export const COLUMN_RESIZE = `document.querySelectorAll('table.data').forEach((table) => {
+  const heads = [...table.querySelectorAll('thead th')]
+  const total = () => heads.reduce((sum, h) => sum + parseFloat(h.style.width), 0)
+  for (const th of heads) {
+    const grip = document.createElement('span')
+    grip.className = 'grip'
+    grip.setAttribute('aria-hidden', 'true')
+    th.append(grip)
+    grip.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      grip.setPointerCapture(e.pointerId)
+      grip.classList.add('active')
+      if (!table.classList.contains('sized')) {
+        for (const h of heads) h.style.width = h.offsetWidth + 'px'
+        table.classList.add('sized')
+        table.style.tableLayout = 'fixed'
+        table.style.width = total() + 'px'
+      }
+      const start = e.clientX, base = parseFloat(th.style.width)
+      const move = (ev) => {
+        th.style.width = Math.max(48, base + ev.clientX - start) + 'px'
+        table.style.width = total() + 'px'
+      }
+      const stop = () => {
+        grip.classList.remove('active')
+        grip.removeEventListener('pointermove', move)
+        grip.removeEventListener('pointerup', stop)
+      }
+      grip.addEventListener('pointermove', move)
+      grip.addEventListener('pointerup', stop)
+    })
+  }
+})`
 
 export interface Page {
   /** The menu below the home item. */
