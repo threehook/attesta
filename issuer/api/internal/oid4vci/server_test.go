@@ -21,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	sdjwt "github.com/threehook/sdjwt-go"
 
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/identity"
 	"attesta/issuer/internal/oid4vci"
@@ -60,6 +61,7 @@ type env struct {
 	renewed  []string
 	cfg      oid4vci.Config
 	secret   []byte
+	types    *credtype.Store
 }
 
 type postgresPool interface{ Close() }
@@ -72,6 +74,7 @@ func newEnv(t *testing.T, lease time.Duration) *env {
 	}
 	t.Cleanup(pool.Close)
 	e := &env{t: t, now: start, issuer: identity.FromSeed("test"), secret: []byte("secret")}
+	e.types = credtype.NewStore(pool)
 	e.store = &forgetful{Store: entitlement.NewStore(pool, lease)}
 	e.sessions = oid4vci.NewSessions(pool, e.secret)
 	e.http = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { e.server.Handler().ServeHTTP(w, r) }))
@@ -80,7 +83,7 @@ func newEnv(t *testing.T, lease time.Duration) *env {
 		PublicURL: e.http.URL, StatusURI: e.http.URL + "/status/1", IssuerName: "Gemeente Vlierdam", Identity: e.issuer, Secret: e.secret,
 		OfferLifetime: lifetime, RenewalCooldown: cooldown, Now: func() time.Time { return e.now },
 	}
-	e.server = oid4vci.New(e.cfg, e.sessions, e.store, func(ctx context.Context, ent entitlement.Entitlement) error {
+	e.server = oid4vci.New(e.cfg, e.sessions, e.store, e.types, func(ctx context.Context, ent entitlement.Entitlement) error {
 		e.renewed = append(e.renewed, ent.ID)
 		_, err := e.server.Offer(ctx, ent)
 		return err
@@ -573,7 +576,7 @@ func TestMarksAnEntitlementIssuedAfterARestartWhenTheIssuerStoppedBeforeItCould(
 	}
 
 	e.store.forget.Store(false)
-	restarted := oid4vci.New(e.cfg, e.sessions, e.store, nil)
+	restarted := oid4vci.New(e.cfg, e.sessions, e.store, e.types, nil)
 	if err := restarted.Reconcile(context.Background()); err != nil {
 		t.Fatal(err)
 	}

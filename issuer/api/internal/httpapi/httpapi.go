@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
@@ -17,7 +18,7 @@ import (
 )
 
 type Service interface {
-	RecordDiploma(ctx context.Context, d credential.Diploma, in service.DiplomaInput) (entitlement.Entitlement, error)
+	RecordType(ctx context.Context, def credential.Type, values map[string]string) (entitlement.Entitlement, error)
 	RecordEmployee(ctx context.Context, in service.EmployeeInput) (entitlement.Entitlement, error)
 	MailQRCode(ctx context.Context, e entitlement.Entitlement) error
 	Roles(ctx context.Context) ([]string, error)
@@ -25,6 +26,12 @@ type Service interface {
 	CreateRole(ctx context.Context, name string) (role.Role, error)
 	RenameRole(ctx context.Context, id, name string) (role.Role, error)
 	DeleteRole(ctx context.Context, id string) error
+	Types(ctx context.Context) ([]credtype.Type, error)
+	TypeByPath(ctx context.Context, path string) (credtype.Type, error)
+	TypeTitle(ctx context.Context, typeName string) string
+	CreateType(ctx context.Context, in credtype.Input) (credtype.Type, error)
+	UpdateType(ctx context.Context, id string, in credtype.Input) (credtype.Type, error)
+	DeleteType(ctx context.Context, id string) error
 	Active(ctx context.Context, email string) ([]entitlement.Entitlement, error)
 	Revoke(ctx context.Context, id string) error
 	Replace(ctx context.Context, id string, r service.Replacement) (entitlement.Entitlement, error)
@@ -60,6 +67,8 @@ func Handler(cfg Config, svc Service) http.Handler {
 	mux.Handle("/entitlements/", protect(staff))
 	mux.Handle("/roles", protect(staff))
 	mux.Handle("/roles/", protect(staff))
+	mux.Handle("/credential-types", protect(staff))
+	mux.Handle("/credential-types/", protect(staff))
 	staff.HandleFunc("GET /info", func(w http.ResponseWriter, r *http.Request) {
 		roles, err := svc.Roles(r.Context())
 		if err != nil {
@@ -67,27 +76,36 @@ func Handler(cfg Config, svc Service) http.Handler {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rollen konden niet worden gelezen"})
 			return
 		}
-		diplomas := make([]map[string]string, len(credential.Diplomas))
-		for i, d := range credential.Diplomas {
-			diplomas[i] = map[string]string{"type": d.Type, "path": d.Path, "title": d.Title, "description": d.Description}
-		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "roles": roles, "diplomas": diplomas,
-		})
-	})
-	staff.HandleFunc("POST /entitlements/diploma/{path}", func(w http.ResponseWriter, r *http.Request) {
-		diploma, ok := credential.DiplomaByPath(r.PathValue("path"))
-		if !ok {
-			writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekend diploma"})
+		types, err := svc.Types(r.Context())
+		if err != nil {
+			slog.Error("could not read the credential types", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de credentialtypes konden niet worden gelezen"})
 			return
 		}
-		var in struct {
-			Name, Email, ValidUntil string
+		list := make([]map[string]any, len(types))
+		for i, t := range types {
+			list[i] = map[string]any{"type": t.Type.Type, "path": t.Path, "title": t.Title, "description": t.Description, "fields": t.Fields}
 		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "roles": roles, "types": list,
+		})
+	})
+	staff.HandleFunc("POST /entitlements/type/{path}", func(w http.ResponseWriter, r *http.Request) {
+		def, err := svc.TypeByPath(r.Context(), r.PathValue("path"))
+		if errors.Is(err, credtype.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekend credentialtype"})
+			return
+		}
+		if err != nil {
+			slog.Error("could not read the credential type", "error", err)
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "het credentialtype kon niet worden gelezen"})
+			return
+		}
+		var in map[string]string
 		if !decode(w, r, &in) {
 			return
 		}
-		e, err := svc.RecordDiploma(r.Context(), diploma, service.DiplomaInput{Name: in.Name, Email: in.Email, ValidUntil: in.ValidUntil})
+		e, err := svc.RecordType(r.Context(), def.Type, in)
 		grant(w, r, svc, e, err)
 	})
 	staff.HandleFunc("POST /entitlements/employee", func(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +140,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 				status = "issued"
 			}
 			out[i] = map[string]any{
-				"id": e.ID, "type": e.Type, "title": credential.Title(e.Type), "status": status, "claims": e.Claims,
+				"id": e.ID, "type": e.Type, "title": svc.TypeTitle(r.Context(), e.Type), "status": status, "claims": e.Claims,
 				"validUntil": e.ValidUntil, "createdAt": e.CreatedAt, "issuedAt": e.IssuedAt,
 			}
 		}
@@ -172,16 +190,66 @@ func Handler(cfg Config, svc Service) http.Handler {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	typeInput := func(w http.ResponseWriter, r *http.Request) (credtype.Input, bool) {
+		var in struct {
+			Title, Description string
+			Fields             []credential.Field
+		}
+		if !decode(w, r, &in) {
+			return credtype.Input{}, false
+		}
+		return credtype.Input{Title: in.Title, Description: in.Description, Fields: in.Fields}, true
+	}
+	staff.HandleFunc("GET /credential-types", func(w http.ResponseWriter, r *http.Request) {
+		types, err := svc.Types(r.Context())
+		if err != nil {
+			refuseType(w, err)
+			return
+		}
+		out := make([]map[string]any, len(types))
+		for i, t := range types {
+			out[i] = typeJSON(t)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"types": out})
+	})
+	staff.HandleFunc("POST /credential-types", func(w http.ResponseWriter, r *http.Request) {
+		in, ok := typeInput(w, r)
+		if !ok {
+			return
+		}
+		t, err := svc.CreateType(r.Context(), in)
+		if err != nil {
+			refuseType(w, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, typeJSON(t))
+	})
+	staff.HandleFunc("PUT /credential-types/{id}", func(w http.ResponseWriter, r *http.Request) {
+		in, ok := typeInput(w, r)
+		if !ok {
+			return
+		}
+		t, err := svc.UpdateType(r.Context(), r.PathValue("id"), in)
+		if err != nil {
+			refuseType(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, typeJSON(t))
+	})
+	staff.HandleFunc("DELETE /credential-types/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := svc.DeleteType(r.Context(), r.PathValue("id")); err != nil {
+			refuseType(w, err)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
 	// Without a body this revokes; with the corrected data of the credential it revokes and records the corrected one, and mails its QR code.
 	staff.HandleFunc("POST /entitlements/revoke/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		var in struct {
-			Name, Email, Department, Organisation, ValidUntil string
-			Roles                                             []string
-		}
+		var raw map[string]any
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		replace := true
-		if err := json.NewDecoder(r.Body).Decode(&in); errors.Is(err, io.EOF) {
+		if err := json.NewDecoder(r.Body).Decode(&raw); errors.Is(err, io.EOF) {
 			replace = false
 		} else if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
@@ -195,9 +263,12 @@ func Handler(cfg Config, svc Service) http.Handler {
 			writeJSON(w, http.StatusOK, map[string]any{"revoked": true})
 			return
 		}
-		e, err := svc.Replace(r.Context(), id, service.Replacement{
-			Name: in.Name, Email: in.Email, Department: in.Department, Organisation: in.Organisation, ValidUntil: in.ValidUntil, Roles: in.Roles,
-		})
+		replacement, ok := replacementOf(raw)
+		if !ok {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
+			return
+		}
+		e, err := svc.Replace(r.Context(), id, replacement)
 		if err != nil {
 			refuse(w, err)
 			return
@@ -205,6 +276,54 @@ func Handler(cfg Config, svc Service) http.Handler {
 		grant(w, r, svc, e, nil)
 	})
 	return mux
+}
+
+// replacementOf reads the corrected data: text per field and, for an Employee, a list of roles.
+func replacementOf(raw map[string]any) (service.Replacement, bool) {
+	r := service.Replacement{Values: map[string]string{}}
+	for k, v := range raw {
+		switch v := v.(type) {
+		case string:
+			r.Values[k] = v
+		case []any:
+			if k != "roles" {
+				return r, false
+			}
+			for _, item := range v {
+				name, ok := item.(string)
+				if !ok {
+					return r, false
+				}
+				r.Roles = append(r.Roles, name)
+			}
+		default:
+			return r, false
+		}
+	}
+	return r, true
+}
+
+func typeJSON(t credtype.Type) map[string]any {
+	return map[string]any{
+		"id": t.ID, "type": t.Type.Type, "path": t.Path, "title": t.Title, "description": t.Description, "fields": t.Fields, "inUse": t.InUse,
+		"createdAt": t.CreatedAt, "updatedAt": t.UpdatedAt,
+	}
+}
+
+// refuseType answers a request to change a credential type that could not be done.
+func refuseType(w http.ResponseWriter, err error) {
+	var invalid credtype.InvalidError
+	switch {
+	case errors.As(err, &invalid):
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
+	case errors.Is(err, credtype.ErrNotFound):
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case errors.Is(err, credtype.ErrExists), errors.Is(err, credtype.ErrInUse):
+		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+	default:
+		slog.Error("could not change the credential type", "error", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "het credentialtype kon niet worden gewijzigd"})
+	}
 }
 
 func roleJSON(r role.Role) map[string]any {

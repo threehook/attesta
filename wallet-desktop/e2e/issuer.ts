@@ -121,7 +121,7 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
   execFileSync("docker", ["exec", env("ATTESTA_E2E_POSTGRES"), "psql", "-U", "postgres", "-d", database, "-c", `ALTER SEQUENCE status_index_seq RESTART WITH ${n * 100}`]);
 
   const record = async (path: string, claims: DiplomaClaims | EmployeeClaims): Promise<string> => {
-    const body_ = path.includes("/diploma/") ? { validUntil: "31-12-2099", ...claims } : claims;
+    const body_ = path.includes("/type/") ? { validUntil: "31-12-2099", ...claims } : claims;
     const response = await fetch(`${url}${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body_) });
     const body = (await response.json()) as { entitlementId?: string; error?: string };
     if (!response.ok || !body.entitlementId) throw new Error(`recording ${claims.email} failed: ${response.status} ${body.error}`);
@@ -149,7 +149,7 @@ export async function startTestIssuer(options: TestIssuerOptions = {}): Promise<
   return {
     url,
     did,
-    recordDiploma: (claims) => record("/entitlements/diploma/laadpalen-management", claims),
+    recordDiploma: (claims) => record("/entitlements/type/laadpalen-management", claims),
     recordEmployee: (claims) => record("/entitlements/employee", claims),
     async revoke(entitlementId) {
       const response = await fetch(`${url}/entitlements/revoke/${entitlementId}`, { method: "POST" });

@@ -36,6 +36,14 @@ type Entitlements interface {
 	MarkIssued(ctx context.Context, id string) (bool, error)
 }
 
+// Types is where the credential types are defined.
+type Types interface {
+	// Find finds a type by the name verifiers know it by.
+	Find(ctx context.Context, typeName string) (credential.Type, error)
+	// Names lists the types a wallet can get.
+	Names(ctx context.Context) ([]string, error)
+}
+
 // Renew sends the person of an entitlement a new QR code.
 type Renew func(ctx context.Context, e entitlement.Entitlement) error
 
@@ -62,16 +70,17 @@ type Server struct {
 	nonceKey     []byte
 	sessions     *Sessions
 	entitlements Entitlements
+	types        Types
 	renew        Renew
 }
 
-func New(cfg Config, sessions *Sessions, entitlements Entitlements, renew Renew) *Server {
+func New(cfg Config, sessions *Sessions, entitlements Entitlements, types Types, renew Renew) *Server {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	return &Server{
 		cfg: cfg, base: strings.TrimSuffix(cfg.PublicURL, "/") + Path, nonceKey: derive(cfg.Secret, "nonce"),
-		sessions: sessions, entitlements: entitlements, renew: renew,
+		sessions: sessions, entitlements: entitlements, types: types, renew: renew,
 	}
 }
 
@@ -127,11 +136,12 @@ func writeError(w http.ResponseWriter, status int, code, description string) {
 	writeJSON(w, status, map[string]string{"error": code, "error_description": description})
 }
 
-func (s *Server) issuerMetadata(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) issuerMetadata(w http.ResponseWriter, r *http.Request) {
 	configurations := map[string]any{}
-	types := []string{credential.Employee}
-	for _, d := range credential.Diplomas {
-		types = append(types, d.Type)
+	types, err := s.types.Names(r.Context())
+	if err != nil {
+		serverError(w, err)
+		return
 	}
 	for _, t := range types {
 		configurations[t] = map[string]any{
@@ -319,7 +329,12 @@ func (s *Server) credential(w http.ResponseWriter, r *http.Request) {
 		serverError(w, err)
 		return
 	}
-	content, err := credential.Content(e.Type, e.Claims, s.cfg.IssuerName)
+	def, err := s.types.Find(r.Context(), e.Type)
+	if err != nil {
+		serverError(w, err)
+		return
+	}
+	content, err := credential.Content(def, e.Claims, s.cfg.IssuerName)
 	if err != nil {
 		serverError(w, err)
 		return

@@ -26,17 +26,19 @@ the same across restarts and replicas; use another seed than the default outside
 | `api/` (Go, module `attesta/issuer`) | Holds the signing key, the entitlements (in Postgres), the roles, the status list, the mail, and the OpenID4VCI endpoints for wallets under `/oid4vci`. |
 | `gui/` (`@attesta/issuer-gui`) | The pages staff use. It has no key and no store; it only calls the API. |
 
-The pages: `/` (welcome), `/employee` and `/diploma/<path>` (forms), `/roles` (manage roles), `/revoke` (search a person by email, revoke a credential, or revoke it and fill in the corrected data).
+The pages: `/` (welcome), `/employee` and `/type/<path>` (forms), `/roles` (manage roles), `/credential-types` (define credential types: editor with preview, one menu item each), `/revoke` (search a person by email, revoke a credential, or revoke it and fill in the corrected data).
 
 ## Credentials
 
-Two kinds, each with a fixed title and description (never asked in a form; the title is a plain, always visible claim):
+Two kinds, each with a title and description (never asked in a form; the title is a plain, always visible claim):
 
 - **Employee** (`POST /entitlements/employee`): name, email, `department` (`burgerzaken` or `secretariaat`), organisation, and `roles`, a list of names from the table `roles`.
   Titled "Medewerker afdeling & rollen". It has no end date; it ends by being revoked.
-- **Diploma**: one credential type and one form per diploma. One is `Diploma Laadpalen Management` (`POST /entitlements/diploma/laadpalen-management`): name, email and the required
-  `validUntil`. It holds no course claim; the type is the course. It expires at the end of `validUntil`, and a date in the past is refused.
-  Another diploma is one more entry in `credential.Diplomas` (type, path, title, description); its form and menu item appear by themselves, and the policy that needs it names its type.
+- **Credential types** defined by staff, one credential type and one form each; `Diploma Laadpalen Management` (`POST /entitlements/type/laadpalen-management`) is there from the start:
+  name, email and the required `validUntil`. The type is the course, so it holds no course claim. A date field named `validUntil` ends the credential at the end of that day, and a date in the past is refused.
+  A type is a row of the table `credential_types`: title, description and fields (key, label, kind `text`, `email`, `date` or `choice`, required, options). The field `email` is required and
+  identifies the person. The credential type verifiers ask for is the title at creation and, like the path, does not change; the fields of a type that has a credential not revoked cannot change, and it cannot be deleted.
+  `GET/POST /credential-types` and `PUT/DELETE /credential-types/{id}` manage them.
 
 Both answer `{ "entitlementId": ..., "mailedTo": ... }`. A verifier that needs an Employee and a diploma asks for both in one request.
 

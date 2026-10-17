@@ -13,10 +13,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/makiuchi-d/gozxing"
 	zxqrcode "github.com/makiuchi-d/gozxing/qrcode"
 
 	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/mail"
 	"attesta/issuer/internal/postgres"
@@ -53,6 +55,7 @@ type fixture struct {
 	store  *entitlement.Store
 	mailer *mailer
 	logged *strings.Builder
+	pool   *pgxpool.Pool
 }
 
 func newFixture(t *testing.T, edit func(*service.Config)) fixture {
@@ -76,7 +79,20 @@ func newFixture(t *testing.T, edit func(*service.Config)) fixture {
 	if edit != nil {
 		edit(&cfg)
 	}
-	return fixture{svc: service.New(cfg, store, role.NewStore(pool), &offers{}, m), store: store, mailer: m, logged: logged}
+	return fixture{svc: service.New(cfg, store, role.NewStore(pool), credtype.NewStore(pool), &offers{}, m), store: store, mailer: m, logged: logged, pool: pool}
+}
+
+var laadpalen = credential.Type{
+	Type: "Diploma Laadpalen Management", Path: "laadpalen-management", Title: "Diploma Laadpalen Management",
+	Fields: []credential.Field{
+		{Key: "name", Label: "Naam", Kind: "text", Required: true},
+		{Key: "email", Label: "E-mailadres", Kind: "email", Required: true},
+		{Key: "validUntil", Label: "Geldig tot", Kind: "date", Required: true},
+	},
+}
+
+func diplomaAnswers(name, email, validUntil string) map[string]string {
+	return map[string]string{"name": name, "email": email, "validUntil": validUntil}
 }
 
 func employee() service.EmployeeInput {
@@ -208,13 +224,13 @@ func TestRecordsAnEmployeeWithTheClaimsOnFile(t *testing.T) {
 
 func TestAcceptsBothDateFormatsForADiploma(t *testing.T) {
 	f := newFixture(t, nil)
-	a := service.DiplomaInput{Name: "Jim", Email: "jim-a@example.com", ValidUntil: "31-12-2099"}
-	b := service.DiplomaInput{Name: "Jim", Email: "jim-b@example.com", ValidUntil: "2099-12-31"}
-	ea, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], a)
+	a := diplomaAnswers("Jim", "jim-a@example.com", "31-12-2099")
+	b := diplomaAnswers("Jim", "jim-b@example.com", "2099-12-31")
+	ea, err := f.svc.RecordType(context.Background(), laadpalen, a)
 	if err != nil {
 		t.Fatal(err)
 	}
-	eb, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], b)
+	eb, err := f.svc.RecordType(context.Background(), laadpalen, b)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +255,7 @@ func TestMakesOneEntitlementForTheSamePersonAndCredentialAndRefusesOtherDataWhil
 	if !errors.As(err, &service.AlreadyWaitingError{}) {
 		t.Fatalf("error %v", err)
 	}
-	diploma, err := f.svc.RecordDiploma(ctx, credential.Diplomas[0], service.DiplomaInput{Name: in.Name, Email: in.Email, ValidUntil: "31-12-2099"})
+	diploma, err := f.svc.RecordType(ctx, laadpalen, diplomaAnswers(in.Name, in.Email, "31-12-2099"))
 	if err != nil || diploma.ID == first.ID {
 		t.Fatalf("another type was refused: %v", err)
 	}
@@ -247,7 +263,7 @@ func TestMakesOneEntitlementForTheSamePersonAndCredentialAndRefusesOtherDataWhil
 
 func TestRecordsADiploma(t *testing.T) {
 	f := newFixture(t, nil)
-	e, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: "J@Example.com", ValidUntil: "31-12-2099"})
+	e, err := f.svc.RecordType(context.Background(), laadpalen, diplomaAnswers("Jerry", "J@Example.com", "31-12-2099"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -275,10 +291,10 @@ func TestRefusesWhatCannotBeRecorded(t *testing.T) {
 			t.Errorf("%s: err %v", name, err)
 		}
 	}
-	if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: "j@example.com"}); err == nil {
+	if _, err := f.svc.RecordType(context.Background(), laadpalen, diplomaAnswers("Jerry", "j@example.com", "")); err == nil {
 		t.Error("a diploma without an end was recorded")
 	}
-	if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], service.DiplomaInput{Name: "J", Email: "x", ValidUntil: "31-12-2099"}); err == nil {
+	if _, err := f.svc.RecordType(context.Background(), laadpalen, diplomaAnswers("J", "x", "31-12-2099")); err == nil {
 		t.Error("a diploma with a bad email was recorded")
 	}
 }
@@ -336,26 +352,24 @@ func TestAllowsACredentialOnceTheOldOneHasEnded(t *testing.T) {
 func TestAPersonCanHoldSeveralDiplomasButOnlyOneOfEach(t *testing.T) {
 	f := newFixture(t, nil)
 	ctx := context.Background()
-	laadpalen := credential.Diplomas[0]
-	cows := credential.Diploma{Type: "DiplomaKoeienMelken", Path: "koeien-melken", Title: "Diploma Koeien Melken"}
-	in := service.DiplomaInput{Name: "Jim", Email: "jim@example.com", ValidUntil: "31-12-2099"}
-	first, err := f.svc.RecordDiploma(ctx, laadpalen, in)
+	cows := credential.Type{Type: "DiplomaKoeienMelken", Path: "koeien-melken", Title: "Diploma Koeien Melken", Fields: laadpalen.Fields}
+	in := diplomaAnswers("Jim", "jim@example.com", "31-12-2099")
+	first, err := f.svc.RecordType(ctx, laadpalen, in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	issue(t, f, first)
 
-	other, err := f.svc.RecordDiploma(ctx, cows, in)
+	other, err := f.svc.RecordType(ctx, cows, in)
 	if err != nil || other.Type != "DiplomaKoeienMelken" {
 		t.Fatalf("a second diploma was refused or wrong: %v %+v", err, other)
 	}
 	var issued service.AlreadyIssuedError
-	if _, err := f.svc.RecordDiploma(ctx, laadpalen, in); !errors.As(err, &issued) {
+	if _, err := f.svc.RecordType(ctx, laadpalen, in); !errors.As(err, &issued) {
 		t.Fatalf("the same diploma again: %v", err)
 	}
-	later := in
-	later.ValidUntil = "31-12-2100"
-	if _, err := f.svc.RecordDiploma(ctx, laadpalen, later); !errors.As(err, &issued) {
+	later := diplomaAnswers("Jim", "jim@example.com", "31-12-2100")
+	if _, err := f.svc.RecordType(ctx, laadpalen, later); !errors.As(err, &issued) {
 		t.Fatalf("the same diploma with another end: %v", err)
 	}
 }
@@ -386,11 +400,9 @@ func TestRecordsTheRolesOfAnEmployeeFromTheOnesThatExistWithoutDuplicates(t *tes
 
 func TestRefusesADiplomaWithoutAFutureEndDate(t *testing.T) {
 	f := newFixture(t, nil)
-	base := service.DiplomaInput{Name: "J", Email: "j@example.com"}
 	for name, day := range map[string]string{"none": "", "not a date": "soon", "past": "01-01-2020"} {
-		in := base
-		in.ValidUntil = day
-		if _, err := f.svc.RecordDiploma(context.Background(), credential.Diplomas[0], in); err == nil {
+		in := diplomaAnswers("J", "j@example.com", day)
+		if _, err := f.svc.RecordType(context.Background(), laadpalen, in); err == nil {
 			t.Errorf("%s: no error", name)
 		}
 	}
@@ -428,7 +440,7 @@ func TestReplacesACredentialWithACorrectedOneInOneStep(t *testing.T) {
 	issue(t, f, old)
 
 	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{
-		Name: in.Name, Email: in.Email, Department: "secretariaat", Organisation: in.Organisation, Roles: in.Roles,
+		Values: map[string]string{"name": in.Name, "email": in.Email, "department": "secretariaat", "organisation": in.Organisation}, Roles: in.Roles,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -449,12 +461,12 @@ func TestReplacesADiplomaWithItsOwnFields(t *testing.T) {
 	f := newFixture(t, nil)
 	ctx := context.Background()
 	email := uuid.NewString() + "@example.com"
-	old, err := f.svc.RecordDiploma(ctx, credential.Diplomas[0], service.DiplomaInput{Name: "Jerry", Email: email, ValidUntil: "31-12-2099"})
+	old, err := f.svc.RecordType(ctx, laadpalen, diplomaAnswers("Jerry", email, "31-12-2099"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: "Jerry Smith", Email: email, ValidUntil: "31-12-2098"})
-	if err != nil || corrected.Type != credential.Diplomas[0].Type || corrected.Claims["name"] != "Jerry Smith" {
+	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: diplomaAnswers("Jerry Smith", email, "31-12-2098")})
+	if err != nil || corrected.Type != laadpalen.Type || corrected.Claims["name"] != "Jerry Smith" {
 		t.Fatal(corrected, err)
 	}
 }
@@ -466,7 +478,7 @@ func TestReplaceChangesNothingWhenTheCorrectionIsRefused(t *testing.T) {
 	old, _ := f.svc.RecordEmployee(ctx, in)
 	issue(t, f, old)
 
-	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: in.Name, Email: "nope", Department: "burgerzaken", Organisation: in.Organisation})
+	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"name": in.Name, "email": "nope", "department": "burgerzaken", "organisation": in.Organisation}})
 	var invalid service.InvalidError
 	if !errors.As(err, &invalid) {
 		t.Fatalf("err %v", err)
@@ -485,11 +497,81 @@ func TestReplaceRefusesWhenTheNewPersonAlreadyHasOne(t *testing.T) {
 	taken, _ := f.svc.RecordEmployee(ctx, other)
 	issue(t, f, taken)
 
-	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Name: mine.Name, Email: other.Email, Department: "burgerzaken", Organisation: mine.Organisation})
+	_, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"name": mine.Name, "email": other.Email, "department": "burgerzaken", "organisation": mine.Organisation}})
 	if !errors.As(err, &service.AlreadyIssuedError{}) {
 		t.Fatalf("err %v", err)
 	}
 	if kept, _ := f.store.Find(ctx, old.ID); kept.Status != entitlement.Issued {
 		t.Fatalf("the credential is %s", kept.Status)
+	}
+}
+
+var badge = credential.Type{
+	Type: "Badge", Path: "badge", Title: "Badge",
+	Fields: []credential.Field{
+		{Key: "email", Label: "E-mailadres", Kind: "email", Required: true},
+		{Key: "colour", Label: "Kleur", Kind: "choice", Required: true, Options: []string{"red", "blue"}},
+		{Key: "floor", Label: "Verdieping", Kind: "text"},
+		{Key: "since", Label: "Sinds", Kind: "date"},
+	},
+}
+
+func TestRecordsAnyTypeFromItsFieldsAndLeavesOutWhatIsNotAField(t *testing.T) {
+	f := newFixture(t, nil)
+	e, err := f.svc.RecordType(context.Background(), badge, map[string]string{
+		"email": " Pat@Example.com ", "colour": "red", "since": "01-02-2020", "floor": " ", "extra": "x",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{"email": "pat@example.com", "colour": "red", "since": "2020-02-01"}
+	if e.Type != "Badge" || e.Email != "pat@example.com" || e.ValidUntil != nil || len(e.Claims) != 3 || e.Claims["email"] != want["email"] || e.Claims["colour"] != "red" || e.Claims["since"] != want["since"] {
+		t.Fatalf("%+v", e)
+	}
+}
+
+func TestRefusesAnswersThatDoNotFitTheFields(t *testing.T) {
+	f := newFixture(t, nil)
+	good := map[string]string{"email": "pat@example.com", "colour": "red"}
+	with := func(k, v string) map[string]string {
+		m := map[string]string{}
+		for key, val := range good {
+			m[key] = val
+		}
+		m[k] = v
+		return m
+	}
+	cases := map[string]map[string]string{
+		"email missing":  with("email", ""),
+		"not an email":   with("email", "pat"),
+		"colour missing": with("colour", ""),
+		"unknown colour": with("colour", "green"),
+		"not a date":     with("since", "soon"),
+		"text too long":  with("floor", strings.Repeat("x", credential.MaxValueSize+1)),
+	}
+	for name, values := range cases {
+		var invalid service.InvalidError
+		if _, err := f.svc.RecordType(context.Background(), badge, values); !errors.As(err, &invalid) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}
+
+func TestCorrectsACredentialOfATypeStaffDefined(t *testing.T) {
+	f := newFixture(t, nil)
+	ctx := context.Background()
+	title := "Pas " + uuid.NewString()
+	def, err := credtype.NewStore(f.pool).Create(ctx, credtype.Input{Title: title, Fields: badge.Fields})
+	if err != nil {
+		t.Fatal(err)
+	}
+	old, err := f.svc.RecordType(ctx, def.Type, map[string]string{"email": "pat@example.com", "colour": "red"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	corrected, err := f.svc.Replace(ctx, old.ID, service.Replacement{Values: map[string]string{"email": "pat@example.com", "colour": "blue"}})
+	if err != nil || corrected.Type != title || corrected.Claims["colour"] != "blue" {
+		t.Fatalf("%+v %v", corrected, err)
 	}
 }

@@ -16,6 +16,7 @@ import (
 
 	"attesta/issuer/internal/auth"
 	"attesta/issuer/internal/config"
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/httpapi"
 	"attesta/issuer/internal/identity"
@@ -51,13 +52,14 @@ func run() error {
 	me := identity.FromSeed(cfg.Seed)
 	secret := sha256.Sum256([]byte("attesta-issuer:" + cfg.Seed))
 	store := entitlement.NewStore(pool, 0)
+	types := credtype.NewStore(pool)
 
 	status := statuslist.New(me, store, strings.TrimSuffix(cfg.PublicURL, "/"), nil)
 	var svc *service.Service
 	protocol := oid4vci.New(oid4vci.Config{
 		PublicURL: cfg.PublicURL, StatusURI: status.URI(), IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
-	}, oid4vci.NewSessions(pool, secret[:]), store, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
-	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, role.NewStore(pool), protocol, mail.NewSMTP(cfg.SMTP))
+	}, oid4vci.NewSessions(pool, secret[:]), store, types, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
+	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, role.NewStore(pool), types, protocol, mail.NewSMTP(cfg.SMTP))
 
 	// A credential made just before the issuer stopped may not have been marked issued; its session still names the entitlement.
 	if err := protocol.Reconcile(ctx); err != nil {

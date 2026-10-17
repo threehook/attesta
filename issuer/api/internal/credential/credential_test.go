@@ -16,13 +16,22 @@ import (
 	"attesta/issuer/internal/identity"
 )
 
+var diploma = credential.Type{
+	Type: "Diploma Laadpalen Management", Path: "laadpalen-management", Title: "Diploma Laadpalen Management", Description: "Bewijs",
+	Fields: []credential.Field{
+		{Key: "name", Label: "Naam", Kind: "text", Required: true},
+		{Key: "email", Label: "E-mailadres", Kind: "email", Required: true},
+		{Key: "validUntil", Label: "Geldig tot", Kind: "date", Required: true},
+	},
+}
+
 var employee = map[string]string{
 	"name": "Jerry Smith", "email": "jerry@example.com", "department": "burgerzaken", "organisation": "Gemeente Vlierdam",
 	"roles": "laadpalen-aanvrager",
 }
 
 func TestEmployeeHoldsDepartmentAndRolesAndNothingAboutCourses(t *testing.T) {
-	c, err := credential.Content(credential.Employee, employee, "Gemeente Vlierdam")
+	c, err := credential.Content(credential.EmployeeType, employee, "Gemeente Vlierdam")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,8 +51,7 @@ func TestEmployeeHoldsDepartmentAndRolesAndNothingAboutCourses(t *testing.T) {
 }
 
 func TestDiplomaEndsAtTheEndOfItsLastDayAndHoldsNoCourse(t *testing.T) {
-	diploma := credential.Diplomas[0]
-	c, err := credential.Content(diploma.Type, map[string]string{
+	c, err := credential.Content(diploma, map[string]string{
 		"name": "Jerry", "email": "j@example.com", "validUntil": "2099-06-30",
 	}, "")
 	if err != nil {
@@ -60,22 +68,6 @@ func TestDiplomaEndsAtTheEndOfItsLastDayAndHoldsNoCourse(t *testing.T) {
 	}
 }
 
-func TestEachDiplomaIsATypeAndAPathOfItsOwn(t *testing.T) {
-	types, paths := map[string]bool{}, map[string]bool{}
-	for _, d := range credential.Diplomas {
-		if d.Type == "" || d.Path == "" || d.Title == "" || types[d.Type] || paths[d.Path] {
-			t.Fatalf("diploma %+v", d)
-		}
-		types[d.Type], paths[d.Path] = true, true
-		if found, ok := credential.DiplomaByPath(d.Path); !ok || found.Type != d.Type {
-			t.Fatalf("path %s finds %+v", d.Path, found)
-		}
-	}
-	if _, ok := credential.DiplomaByPath("koeien-melken"); ok {
-		t.Fatal("a diploma that is not offered was found")
-	}
-}
-
 func TestRejectsWhatItCannotBuild(t *testing.T) {
 	without := func(name string) map[string]string {
 		m := map[string]string{}
@@ -86,13 +78,10 @@ func TestRejectsWhatItCannotBuild(t *testing.T) {
 		}
 		return m
 	}
-	if _, err := credential.Content("Passport", employee, ""); err == nil {
-		t.Error("unknown type accepted")
-	}
-	if _, err := credential.Content(credential.Employee, without("department"), ""); err == nil {
+	if _, err := credential.Content(credential.EmployeeType, without("department"), ""); err == nil {
 		t.Error("missing department accepted")
 	}
-	if _, err := credential.Content(credential.Employee, without("roles"), ""); err != nil {
+	if _, err := credential.Content(credential.EmployeeType, without("roles"), ""); err != nil {
 		t.Errorf("an Employee without the roles claim was refused: %v", err)
 	}
 }
@@ -115,7 +104,7 @@ func TestParsesBothDateFormats(t *testing.T) {
 func TestAnIssuedEmployeeCredentialVerifies(t *testing.T) {
 	issuer := identity.FromSeed("test")
 	_, holder, _ := ed25519.GenerateKey(rand.Reader)
-	c, err := credential.Content(credential.Employee, employee, "Gemeente Vlierdam")
+	c, err := credential.Content(credential.EmployeeType, employee, "Gemeente Vlierdam")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,14 +149,14 @@ func sdHash(presentation string) string {
 
 func TestTitleAndDescriptionAreFixedByTheTypeWhateverTheEntitlementSays(t *testing.T) {
 	claims := map[string]string{"name": "n", "email": "e", "department": "burgerzaken", "organisation": "o", "title": "Eigen titel", "description": "Eigen tekst"}
-	c, err := credential.Content(credential.Employee, claims, "Gemeente")
+	c, err := credential.Content(credential.EmployeeType, claims, "Gemeente")
 	if err != nil || c.Claims["title"] != "Medewerker afdeling & rollen" || c.Disclosable["title"] != nil {
 		t.Fatalf("%v %v", c, err)
 	}
 	if want := "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt en welke rollen je hebt"; c.Disclosable["description"] != want {
 		t.Fatalf("description %v", c.Disclosable["description"])
 	}
-	d, err := credential.Content(credential.Diplomas[0].Type, map[string]string{"name": "n", "email": "e", "validUntil": "2099-01-01"}, "")
+	d, err := credential.Content(diploma, map[string]string{"name": "n", "email": "e", "validUntil": "2099-01-01"}, "")
 	if err != nil || d.Claims["title"] != "Diploma Laadpalen Management" || d.Disclosable["description"] == "" {
 		t.Fatalf("%v %v", d, err)
 	}
@@ -175,25 +164,81 @@ func TestTitleAndDescriptionAreFixedByTheTypeWhateverTheEntitlementSays(t *testi
 
 func TestGivesAnEmployeeItsRolesAsAListEvenWhenThereAreNone(t *testing.T) {
 	employee := map[string]string{"description": "d", "name": "n", "email": "e", "department": "burgerzaken", "organisation": "o", "roles": "a, b,a"}
-	c, err := credential.Content(credential.Employee, employee, "Gemeente")
+	c, err := credential.Content(credential.EmployeeType, employee, "Gemeente")
 	roles, _ := c.Disclosable["roles"].([]string)
 	if err != nil || len(roles) != 2 || roles[0] != "a" || roles[1] != "b" {
 		t.Fatalf("%v %v", c.Disclosable, err)
 	}
 	delete(employee, "roles")
-	none, _ := credential.Content(credential.Employee, employee, "Gemeente")
+	none, _ := credential.Content(credential.EmployeeType, employee, "Gemeente")
 	if list, ok := none.Disclosable["roles"].([]string); !ok || len(list) != 0 {
 		t.Fatalf("roles %v, want an empty list", none.Disclosable["roles"])
 	}
 }
 
-func TestEachCredentialTypeHasATitleAndADescription(t *testing.T) {
-	for _, credType := range []string{credential.Employee, credential.Diplomas[0].Type} {
-		if credential.Title(credType) == "" || credential.Description(credType) == "" {
-			t.Errorf("%s has no title or description", credType)
+func TestAnOptionalFieldWithoutAnAnswerIsLeftOutAndARequiredOneIsNot(t *testing.T) {
+	def := credential.Type{Type: "Badge", Title: "Badge", Fields: []credential.Field{
+		{Key: "email", Label: "E-mail", Kind: "email", Required: true},
+		{Key: "floor", Label: "Verdieping", Kind: "text"},
+		{Key: "colour", Label: "Kleur", Kind: "choice", Required: true, Options: []string{"red", "blue"}},
+	}}
+	c, err := credential.Content(def, map[string]string{"email": "e@example.com", "colour": "red"}, "")
+	if err != nil || c.Disclosable["colour"] != "red" || c.Disclosable["email"] != "e@example.com" || !c.ExpiresAt.IsZero() {
+		t.Fatalf("%+v %v", c, err)
+	}
+	if _, ok := c.Disclosable["floor"]; ok {
+		t.Fatal("an unanswered optional field was written")
+	}
+	if _, err := credential.Content(def, map[string]string{"email": "e@example.com"}, ""); err == nil {
+		t.Fatal("a missing required field was accepted")
+	}
+}
+
+func fields(edit func(*[]credential.Field)) credential.Type {
+	f := []credential.Field{{Key: "email", Label: "E-mail", Kind: "email", Required: true}, {Key: "name", Label: "Naam", Kind: "text"}}
+	if edit != nil {
+		edit(&f)
+	}
+	return credential.Type{Title: "Badge", Fields: f}
+}
+
+func TestChecksTheFormOfACredentialType(t *testing.T) {
+	if err := fields(nil).Check(); err != nil {
+		t.Fatal(err)
+	}
+	bad := map[string]func(*[]credential.Field){
+		"no email":       func(f *[]credential.Field) { (*f)[0].Key = "mail" },
+		"optional email": func(f *[]credential.Field) { (*f)[0].Required = false },
+		"a second email": func(f *[]credential.Field) {
+			*f = append(*f, credential.Field{Key: "other", Label: "x", Kind: "email"})
+		},
+		"duplicate key":     func(f *[]credential.Field) { (*f)[1].Key = "email" },
+		"reserved key":      func(f *[]credential.Field) { (*f)[1].Key = "title" },
+		"bad key":           func(f *[]credential.Field) { (*f)[1].Key = "Naam" },
+		"no label":          func(f *[]credential.Field) { (*f)[1].Label = " " },
+		"unknown kind":      func(f *[]credential.Field) { (*f)[1].Kind = "number" },
+		"choice no options": func(f *[]credential.Field) { (*f)[1].Kind = "choice" },
+		"options on text":   func(f *[]credential.Field) { (*f)[1].Options = []string{"a"} },
+		"duplicate options": func(f *[]credential.Field) { (*f)[1].Kind, (*f)[1].Options = "choice", []string{"a", "a"} },
+		"validUntil text": func(f *[]credential.Field) {
+			*f = append(*f, credential.Field{Key: "validUntil", Label: "x", Kind: "text"})
+		},
+		"no fields": func(f *[]credential.Field) { *f = nil },
+	}
+	for name, edit := range bad {
+		if err := fields(edit).Check(); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
-	if got := credential.Title(credential.Employee); got != "Medewerker afdeling & rollen" {
-		t.Fatalf("title %q", got)
+	if err := (credential.Type{Title: " ", Fields: fields(nil).Fields}).Check(); err == nil {
+		t.Error("a blank title was accepted")
+	}
+}
+
+func TestSlugKeepsLettersAndDigitsAndSeparatesWithHyphens(t *testing.T) {
+	for in, want := range map[string]string{"Diploma Laadpalen Management": "diploma-laadpalen-management", "  Bedrijfs-pas #2! ": "bedrijfs-pas-2", "???": ""} {
+		if got := credential.Slug(in); got != want {
+			t.Errorf("%q: %q, want %q", in, got, want)
+		}
 	}
 }

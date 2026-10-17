@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/mail"
 	"attesta/issuer/internal/qr"
@@ -41,6 +42,16 @@ type RoleStore interface {
 	Delete(ctx context.Context, id string) error
 }
 
+// TypeStore keeps the credential types staff define besides Employee.
+type TypeStore interface {
+	List(ctx context.Context) ([]credtype.Type, error)
+	Find(ctx context.Context, typeName string) (credential.Type, error)
+	FindByPath(ctx context.Context, path string) (credtype.Type, error)
+	Create(ctx context.Context, in credtype.Input) (credtype.Type, error)
+	Update(ctx context.Context, id string, in credtype.Input) (credtype.Type, error)
+	Delete(ctx context.Context, id string) error
+}
+
 // Offerer makes the link a QR code holds, with a one-time code of its own.
 type Offerer interface {
 	Offer(ctx context.Context, e entitlement.Entitlement) (string, error)
@@ -61,18 +72,19 @@ type Service struct {
 	cfg    Config
 	store  Store
 	roles  RoleStore
+	types  TypeStore
 	offers Offerer
 	mailer mail.Mailer
 }
 
-func New(cfg Config, store Store, roles RoleStore, offers Offerer, mailer mail.Mailer) *Service {
+func New(cfg Config, store Store, roles RoleStore, types TypeStore, offers Offerer, mailer mail.Mailer) *Service {
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
-	return &Service{cfg: cfg, store: store, roles: roles, offers: offers, mailer: mailer}
+	return &Service{cfg: cfg, store: store, roles: roles, types: types, offers: offers, mailer: mailer}
 }
 
 // InvalidError is a request that cannot be recorded; its message says why.
@@ -94,12 +106,6 @@ func (AlreadyWaitingError) Error() string {
 	return "voor deze persoon staat al een credential van dit type klaar met andere gegevens; dat moet eerst worden ingetrokken"
 }
 
-type DiplomaInput struct {
-	Name, Email string
-	// ValidUntil is dd-mm-yyyy or YYYY-MM-DD; the credential ends at the end of that day.
-	ValidUntil string
-}
-
 type EmployeeInput struct {
 	Name, Email, Department, Organisation string
 	// Roles are the employee's roles, each one of credential.Roles; they may be none.
@@ -117,8 +123,9 @@ func blank(values ...string) bool {
 	return false
 }
 
-func (s *Service) RecordDiploma(ctx context.Context, d credential.Diploma, in DiplomaInput) (entitlement.Entitlement, error) {
-	n, err := s.diplomaOf(d, in)
+// RecordType records an entitlement to a credential of a type staff defined; values are the answers to its form, by field key.
+func (s *Service) RecordType(ctx context.Context, def credential.Type, values map[string]string) (entitlement.Entitlement, error) {
+	n, err := s.typeOf(def, values)
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
@@ -133,21 +140,49 @@ func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitle
 	return s.record(ctx, n)
 }
 
-func (s *Service) diplomaOf(d credential.Diploma, in DiplomaInput) (entitlement.New, error) {
-	if blank(in.Name, in.Email, in.ValidUntil) {
-		return entitlement.New{}, InvalidError{"name, email and validUntil are required"}
+// typeOf checks the answers to the form of a type. A date field named validUntil ends the credential and must lie in the future.
+func (s *Service) typeOf(def credential.Type, values map[string]string) (entitlement.New, error) {
+	claims := map[string]string{}
+	var end *time.Time
+	for _, f := range def.Fields {
+		v := strings.TrimSpace(values[f.Key])
+		if v == "" {
+			if f.Required {
+				return entitlement.New{}, InvalidError{f.Key + " is required"}
+			}
+			continue
+		}
+		if len([]rune(v)) > credential.MaxValueSize {
+			return entitlement.New{}, InvalidError{f.Key + " is too long"}
+		}
+		switch f.Kind {
+		case credential.KindEmail:
+			if !emailPattern.MatchString(v) {
+				return entitlement.New{}, InvalidError{f.Key + " is not an email address"}
+			}
+			v = strings.ToLower(v)
+		case credential.KindDate:
+			if f.Key == credential.ValidUntilKey {
+				e, day, err := s.endOf(v, f.Key)
+				if err != nil {
+					return entitlement.New{}, err
+				}
+				end, v = &e, day
+			} else {
+				d, err := credential.ParseDate(v)
+				if err != nil {
+					return entitlement.New{}, InvalidError{f.Key + " must be a date, dd-mm-yyyy or YYYY-MM-DD"}
+				}
+				v = d.Format(time.DateOnly)
+			}
+		case credential.KindChoice:
+			if !contains(f.Options, v) {
+				return entitlement.New{}, InvalidError{f.Key + " must be one of " + strings.Join(f.Options, ", ")}
+			}
+		}
+		claims[f.Key] = v
 	}
-	if !emailPattern.MatchString(in.Email) {
-		return entitlement.New{}, InvalidError{"email is not an email address"}
-	}
-	end, day, err := s.endOf(in.ValidUntil, "validUntil")
-	if err != nil {
-		return entitlement.New{}, err
-	}
-	claims := map[string]string{
-		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "validUntil": day,
-	}
-	return entitlement.New{Email: in.Email, Type: d.Type, Claims: claims, ValidUntil: &end}, nil
+	return entitlement.New{Email: claims["email"], Type: def.Type, Claims: claims, ValidUntil: end}, nil
 }
 
 func (s *Service) employeeOf(ctx context.Context, in EmployeeInput) (entitlement.New, error) {
@@ -185,10 +220,11 @@ type NotFoundError struct{}
 
 func (NotFoundError) Error() string { return "dit credential bestaat niet of is al ingetrokken" }
 
-// Replacement is the corrected data of a credential: the fields of its form. Only the ones its type has are read.
+// Replacement is the corrected data of a credential: the answers to the fields of its form, by key. Only the ones its type has are read.
+// Roles are the roles of an Employee.
 type Replacement struct {
-	Name, Email, Department, Organisation, ValidUntil string
-	Roles                                             []string
+	Values map[string]string
+	Roles  []string
 }
 
 // Active lists the credentials of the person that can be revoked: waiting to be fetched, or issued, and not ended.
@@ -227,11 +263,15 @@ func (s *Service) Replace(ctx context.Context, id string, r Replacement) (entitl
 	}
 	var n entitlement.New
 	if old.Type == credential.Employee {
-		n, err = s.employeeOf(ctx, EmployeeInput{Name: r.Name, Email: r.Email, Department: r.Department, Organisation: r.Organisation, Roles: r.Roles})
-	} else if d, ok := credential.DiplomaByType(old.Type); ok {
-		n, err = s.diplomaOf(d, DiplomaInput{Name: r.Name, Email: r.Email, ValidUntil: r.ValidUntil})
+		v := r.Values
+		n, err = s.employeeOf(ctx, EmployeeInput{Name: v["name"], Email: v["email"], Department: v["department"], Organisation: v["organisation"], Roles: r.Roles})
 	} else {
-		err = fmt.Errorf("unknown credential type %q", old.Type)
+		var def credential.Type
+		if def, err = s.types.Find(ctx, old.Type); errors.Is(err, credtype.ErrNotFound) {
+			err = fmt.Errorf("unknown credential type %q", old.Type)
+		} else if err == nil {
+			n, err = s.typeOf(def, r.Values)
+		}
 	}
 	if err != nil {
 		return entitlement.Entitlement{}, err
@@ -275,6 +315,34 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (role.Role, e
 }
 
 func (s *Service) DeleteRole(ctx context.Context, id string) error { return s.roles.Delete(ctx, id) }
+
+// Types lists the credential types staff defined.
+func (s *Service) Types(ctx context.Context) ([]credtype.Type, error) { return s.types.List(ctx) }
+
+// TypeByPath finds the type whose form and entitlements live at the path (credtype.ErrNotFound).
+func (s *Service) TypeByPath(ctx context.Context, path string) (credtype.Type, error) {
+	return s.types.FindByPath(ctx, path)
+}
+
+// TypeTitle is what the wallet calls a credential of the type; the name of the type itself when it is unknown.
+func (s *Service) TypeTitle(ctx context.Context, typeName string) string {
+	if def, err := s.types.Find(ctx, typeName); err == nil {
+		return def.Title
+	}
+	return typeName
+}
+
+func (s *Service) CreateType(ctx context.Context, in credtype.Input) (credtype.Type, error) {
+	return s.types.Create(ctx, in)
+}
+
+// UpdateType refuses new fields for a type in use (credtype.ErrInUse).
+func (s *Service) UpdateType(ctx context.Context, id string, in credtype.Input) (credtype.Type, error) {
+	return s.types.Update(ctx, id, in)
+}
+
+// DeleteType refuses a type in use (credtype.ErrInUse).
+func (s *Service) DeleteType(ctx context.Context, id string) error { return s.types.Delete(ctx, id) }
 
 func contains(list []string, s string) bool {
 	for _, v := range list {

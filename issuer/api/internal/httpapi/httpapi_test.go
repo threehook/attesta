@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/httpapi"
 	"attesta/issuer/internal/role"
@@ -19,8 +20,10 @@ import (
 )
 
 type fake struct {
-	diploma            service.DiplomaInput
-	diplomaType        string
+	recorded           map[string]string
+	recordedType       string
+	typeCalls          []string
+	typeErr            error
 	rolesErr           error
 	employee           service.EmployeeInput
 	mailed             []string
@@ -67,12 +70,53 @@ func (f *fake) Revoke(_ context.Context, id string) error {
 
 func (f *fake) Replace(_ context.Context, id string, r service.Replacement) (entitlement.Entitlement, error) {
 	f.replaced, f.replacement = id, r
-	return entitlement.Entitlement{ID: "id-3", Email: strings.ToLower(r.Email)}, f.revokeErr
+	return entitlement.Entitlement{ID: "id-3", Email: strings.ToLower(r.Values["email"])}, f.revokeErr
 }
 
-func (f *fake) RecordDiploma(_ context.Context, d credential.Diploma, in service.DiplomaInput) (entitlement.Entitlement, error) {
-	f.diploma, f.diplomaType = in, d.Type
-	return entitlement.Entitlement{ID: "id-1", Email: strings.ToLower(in.Email)}, f.recordErr
+var laadpalen = credtype.Type{
+	ID: "t1", InUse: true,
+	Type: credential.Type{
+		Type: "Diploma Laadpalen Management", Path: "laadpalen-management", Title: "Diploma Laadpalen Management", Description: "Bewijs",
+		Fields: []credential.Field{{Key: "email", Label: "E-mailadres", Kind: "email", Required: true}},
+	},
+}
+
+func (f *fake) RecordType(_ context.Context, d credential.Type, in map[string]string) (entitlement.Entitlement, error) {
+	f.recorded, f.recordedType = in, d.Type
+	return entitlement.Entitlement{ID: "id-1", Email: strings.ToLower(in["email"])}, f.recordErr
+}
+
+func (f *fake) Types(context.Context) ([]credtype.Type, error) {
+	return []credtype.Type{laadpalen}, f.typeErr
+}
+
+func (f *fake) TypeByPath(_ context.Context, path string) (credtype.Type, error) {
+	if path != laadpalen.Path {
+		return credtype.Type{}, credtype.ErrNotFound
+	}
+	return laadpalen, f.typeErr
+}
+
+func (f *fake) TypeTitle(_ context.Context, typeName string) string {
+	if typeName == "Employee" {
+		return "Medewerker afdeling & rollen"
+	}
+	return typeName
+}
+
+func (f *fake) CreateType(_ context.Context, in credtype.Input) (credtype.Type, error) {
+	f.typeCalls = append(f.typeCalls, "create "+in.Title+" "+fmt.Sprint(len(in.Fields)))
+	return credtype.Type{ID: "t2", Type: credential.Type{Title: in.Title}}, f.typeErr
+}
+
+func (f *fake) UpdateType(_ context.Context, id string, in credtype.Input) (credtype.Type, error) {
+	f.typeCalls = append(f.typeCalls, "update "+id+" "+in.Title)
+	return credtype.Type{ID: id, Type: credential.Type{Title: in.Title}}, f.typeErr
+}
+
+func (f *fake) DeleteType(_ context.Context, id string) error {
+	f.typeCalls = append(f.typeCalls, "delete "+id)
+	return f.typeErr
 }
 
 func (f *fake) RecordEmployee(_ context.Context, in service.EmployeeInput) (entitlement.Entitlement, error) {
@@ -108,7 +152,7 @@ func TestTellsThePagesWhichIssuerItIsAndWhatTheFormsOffer(t *testing.T) {
 
 	departments, _ := body["departments"].([]any)
 	roles, _ := body["roles"].([]any)
-	diplomas, _ := body["diplomas"].([]any)
+	diplomas, _ := body["types"].([]any)
 	if code != 200 || body["issuerName"] != "Gemeente Utrecht" || body["did"] != "did:key:z6Mk" || len(departments) != 2 || len(roles) != 2 || len(diplomas) != 1 {
 		t.Fatalf("%d %v", code, body)
 	}
@@ -133,16 +177,16 @@ func TestRecordsAnEntitlementAndMailsItsQRCode(t *testing.T) {
 
 func TestRecordsADiplomaToo(t *testing.T) {
 	f := &fake{}
-	code, body := call(setup(f), "POST", "/entitlements/diploma/laadpalen-management", `{"name":"Jerry","email":"j@example.com","validUntil":"31-12-2099"}`)
+	code, body := call(setup(f), "POST", "/entitlements/type/laadpalen-management", `{"name":"Jerry","email":"j@example.com","validUntil":"31-12-2099"}`)
 
-	if code != 200 || body["entitlementId"] != "id-1" || f.diplomaType != "Diploma Laadpalen Management" || f.diploma.ValidUntil != "31-12-2099" {
-		t.Fatalf("%d %v %+v", code, body, f.diploma)
+	if code != 200 || body["entitlementId"] != "id-1" || f.recordedType != "Diploma Laadpalen Management" || f.recorded["validUntil"] != "31-12-2099" {
+		t.Fatalf("%d %v %+v", code, body, f.recorded)
 	}
 }
 
 func TestSaysWhyARequestWasRefusedAndMailsNothing(t *testing.T) {
 	f := &fake{recordErr: service.InvalidError{Message: "email is not an email address"}}
-	code, body := call(setup(f), "POST", "/entitlements/diploma/laadpalen-management", `{"email":"x"}`)
+	code, body := call(setup(f), "POST", "/entitlements/type/laadpalen-management", `{"email":"x"}`)
 
 	if code != 400 || body["error"] != "email is not an email address" || len(f.mailed) != 0 {
 		t.Fatalf("%d %v mailed %v", code, body, f.mailed)
@@ -151,7 +195,7 @@ func TestSaysWhyARequestWasRefusedAndMailsNothing(t *testing.T) {
 
 func TestRefusesABodyThatIsNotJSON(t *testing.T) {
 	f := &fake{}
-	for _, path := range []string{"/entitlements/diploma/laadpalen-management", "/entitlements/employee"} {
+	for _, path := range []string{"/entitlements/type/laadpalen-management", "/entitlements/employee"} {
 		if code, _ := call(setup(f), "POST", path, "name=x"); code != 400 {
 			t.Errorf("%s: %d", path, code)
 		}
@@ -163,7 +207,7 @@ func TestRefusesABodyThatIsNotJSON(t *testing.T) {
 
 func TestKeepsTheEntitlementAndSaysSoWhenTheMailCannotBeSent(t *testing.T) {
 	f := &fake{mailErr: errors.New("connection refused")}
-	code, body := call(setup(f), "POST", "/entitlements/diploma/laadpalen-management", `{"name":"J","email":"j@example.com","validUntil":"31-12-2099"}`)
+	code, body := call(setup(f), "POST", "/entitlements/type/laadpalen-management", `{"name":"J","email":"j@example.com","validUntil":"31-12-2099"}`)
 
 	if code != 502 || body["entitlementId"] != "id-1" || !strings.Contains(body["error"].(string), "vastgelegd") {
 		t.Fatalf("%d %v", code, body)
@@ -171,7 +215,7 @@ func TestKeepsTheEntitlementAndSaysSoWhenTheMailCannotBeSent(t *testing.T) {
 }
 
 func TestAStorageErrorIsNotShownToThePages(t *testing.T) {
-	code, body := call(setup(&fake{recordErr: errors.New("password authentication failed")}), "POST", "/entitlements/diploma/laadpalen-management", `{}`)
+	code, body := call(setup(&fake{recordErr: errors.New("password authentication failed")}), "POST", "/entitlements/type/laadpalen-management", `{}`)
 
 	if code != 500 || strings.Contains(body["error"].(string), "password") {
 		t.Fatalf("%d %v", code, body)
@@ -188,7 +232,7 @@ func TestServesTheWalletEndpointsNextToTheAPI(t *testing.T) {
 }
 
 func TestHasNoEndpointThatMakesALink(t *testing.T) {
-	for _, path := range []string{"/offers/diploma", "/offers/employee", "/entitlements/diploma/laadpalen-management/offer", "/login"} {
+	for _, path := range []string{"/offers/diploma", "/offers/employee", "/entitlements/type/laadpalen-management/offer", "/login"} {
 		if code, _ := call(setup(&fake{}), "POST", path, "{}"); code != http.StatusNotFound && code != http.StatusMethodNotAllowed {
 			t.Errorf("%s: %d", path, code)
 		}
@@ -206,7 +250,7 @@ func TestOnlyStaffUseTheFormsEndpointsButWalletsAndProbesNeedNoSignIn(t *testing
 		},
 	}, f)
 
-	for _, c := range []struct{ method, path string }{{"GET", "/info"}, {"POST", "/entitlements/employee"}, {"POST", "/entitlements/diploma/laadpalen-management"}} {
+	for _, c := range []struct{ method, path string }{{"GET", "/info"}, {"POST", "/entitlements/employee"}, {"POST", "/entitlements/type/laadpalen-management"}} {
 		if code, _ := call(h, c.method, c.path, "{}"); code != http.StatusUnauthorized {
 			t.Errorf("%s %s: %d", c.method, c.path, code)
 		}
@@ -229,11 +273,49 @@ func TestSaysConflictAndMailsNothingWhenThePersonAlreadyHasTheCredential(t *test
 
 func TestKnowsOnlyTheDiplomasItOffers(t *testing.T) {
 	f := &fake{}
-	if code, _ := call(setup(f), "POST", "/entitlements/diploma/koeien-melken", `{"name":"J","email":"j@example.com","validUntil":"31-12-2099"}`); code != 404 {
+	if code, _ := call(setup(f), "POST", "/entitlements/type/koeien-melken", `{"name":"J","email":"j@example.com","validUntil":"31-12-2099"}`); code != 404 {
 		t.Fatalf("an unknown diploma: %d", code)
 	}
-	if f.diplomaType != "" {
+	if f.recordedType != "" {
 		t.Fatal("an unknown diploma was recorded")
+	}
+}
+
+func TestListsCreatesChangesAndDeletesCredentialTypes(t *testing.T) {
+	f := &fake{}
+	h := setup(f)
+	code, body := call(h, "GET", "/credential-types", "")
+	types, _ := body["types"].([]any)
+	first, _ := types[0].(map[string]any)
+	fields, _ := first["fields"].([]any)
+	if code != 200 || len(types) != 1 || first["path"] != "laadpalen-management" || first["inUse"] != true || len(fields) != 1 {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, body = call(h, "POST", "/credential-types", `{"title":"Badge","description":"d","fields":[{"key":"email","label":"E","kind":"email","required":true}]}`); code != 201 || body["id"] != "t2" {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, body = call(h, "PUT", "/credential-types/t2", `{"title":"Badges","fields":[]}`); code != 200 || body["title"] != "Badges" {
+		t.Fatalf("%d %v", code, body)
+	}
+	if code, _ = call(h, "DELETE", "/credential-types/t2", ""); code != 204 {
+		t.Fatalf("%d", code)
+	}
+	if got := strings.Join(f.typeCalls, "|"); got != "create Badge 1|update t2 Badges|delete t2" {
+		t.Fatalf("calls %s", got)
+	}
+}
+
+func TestAnswersWhyACredentialTypeCouldNotBeChanged(t *testing.T) {
+	for err, want := range map[error]int{
+		credtype.InvalidError{Message: "x"}: 400, credtype.ErrNotFound: 404, credtype.ErrExists: 409, credtype.ErrInUse: 409, errors.New("db down"): 500,
+	} {
+		code, body := call(setup(&fake{typeErr: err}), "DELETE", "/credential-types/t1", "")
+		if code != want || strings.Contains(fmt.Sprint(body["error"]), "db down") {
+			t.Errorf("%v: %d %v", err, code, body)
+		}
+	}
+	if code, _ := call(setup(&fake{}), "POST", "/credential-types", "title=x"); code != 400 {
+		t.Errorf("not JSON: %d", code)
 	}
 }
 
@@ -280,7 +362,7 @@ func TestRevokesAndMailsTheCorrectedCredentialWhenGivenItsData(t *testing.T) {
 	if code != 200 || body["entitlementId"] != "id-3" || body["mailedTo"] != "jerry@example.com" || f.replaced != "abc" || len(f.revoked) != 0 || len(f.mailed) != 1 {
 		t.Fatalf("%d %v %+v", code, body, f)
 	}
-	if f.replacement.Department != "secretariaat" || strings.Join(f.replacement.Roles, ",") != "reader" {
+	if f.replacement.Values["department"] != "secretariaat" || strings.Join(f.replacement.Roles, ",") != "reader" {
 		t.Fatalf("replacement %+v", f.replacement)
 	}
 }

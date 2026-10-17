@@ -22,8 +22,8 @@ func TestCreatesTheDatabaseAndMigratesOnlyOnce(t *testing.T) {
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrated); err != nil {
 			t.Fatal(err)
 		}
-		if migrated != 7 {
-			t.Fatalf("%d migrations recorded, want 7", migrated)
+		if migrated != 8 {
+			t.Fatalf("%d migrations recorded, want 8", migrated)
 		}
 		pool.Close()
 	}
