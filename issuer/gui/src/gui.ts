@@ -6,19 +6,20 @@ import { LOGO_SVG } from './logo.js'
 import {
   renderCorrection,
   renderCreated,
-  renderDiplomaForm,
   renderEmployeeForm,
   renderNotRevoked,
   renderRefused,
   renderRevoke,
   renderRevoked,
   renderRoles,
+  renderTypeForm,
   renderWelcome,
   type ActiveCredential,
   type Chrome,
-  type DiplomaInfo,
   type Kind,
+  type TypeInfo,
 } from './page.js'
+import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
 
 export interface GuiOptions {
   port: number
@@ -34,7 +35,7 @@ interface Info {
   did: string
   departments: string[]
   roles: string[]
-  diplomas: DiplomaInfo[]
+  types: TypeInfo[]
 }
 
 // A form sends one chosen role as text and several as a list; the API takes a list, and none when nothing was chosen.
@@ -58,7 +59,7 @@ export async function startGui(options: GuiOptions) {
     if (!res.ok) throw new Error(`the issuer API answered ${res.status}`)
     return (await res.json()) as Info
   }
-  const chromeOf = ({ issuerName, did, diplomas }: Info): Chrome => ({ issuerName, did, diplomas, signOut: !!options.auth })
+  const chromeOf = ({ issuerName, did, types }: Info): Chrome => ({ issuerName, did, types, signOut: !!options.auth })
 
   // Express 5 passes a rejected handler to the error handler below. The logo stays open: the login page and the probes use it.
   app.get('/logo.svg', (_req, res) => {
@@ -75,14 +76,14 @@ export async function startGui(options: GuiOptions) {
     const i = await info(req)
     res.type('html').send(renderEmployeeForm(i.departments, i.roles, chromeOf(i)))
   })
-  app.get('/diploma/:path', async (req, res) => {
+  app.get('/type/:path', async (req, res) => {
     const i = await info(req)
-    const diploma = i.diplomas.find((d) => d.path === req.params.path)
-    if (!diploma) {
-      res.status(404).type('text').send('Dit diploma bestaat niet.')
+    const type = i.types.find((t) => t.path === req.params.path)
+    if (!type) {
+      res.status(404).type('text').send('Dit credential type bestaat niet.')
       return
     }
-    res.type('html').send(renderDiplomaForm(diploma, chromeOf(i)))
+    res.type('html').send(renderTypeForm(type, chromeOf(i)))
   })
 
   // The form goes to the API as JSON; its answer is either that the entitlement is recorded or the reason it was refused.
@@ -96,13 +97,13 @@ export async function startGui(options: GuiOptions) {
     res.type('html').send(renderCreated(String(req.body?.email ?? ''), chromeOf(await info(req)), kind))
   }
   app.post('/employee', create('/entitlements/employee', { employee: true }))
-  app.post('/diploma/:path', async (req, res, next) => {
-    const diploma = (await info(req)).diplomas.find((d) => d.path === req.params.path)
-    if (!diploma) {
-      res.status(404).type('text').send('Dit diploma bestaat niet.')
+  app.post('/type/:path', async (req, res, next) => {
+    const type = (await info(req)).types.find((t) => t.path === req.params.path)
+    if (!type) {
+      res.status(404).type('text').send('Dit credential type bestaat niet.')
       return
     }
-    await create(`/entitlements/diploma/${diploma.path}`, { diploma })(req, res, next)
+    await create(`/entitlements/type/${type.path}`, { type })(req, res, next)
   })
 
   // Revoking: look a person up, revoke what they hold, or revoke it and record the corrected data in its place.
@@ -177,6 +178,43 @@ export async function startGui(options: GuiOptions) {
   app.post('/roles', passOn('POST', '/roles'))
   app.put('/roles/:id', passOn('PUT', '/roles/:id'))
   app.delete('/roles/:id', passOn('DELETE', '/roles/:id'))
+
+  // Credential types: the list and the editor are pages; the editor saves as JSON, which the GUI passes on to the API, and asks for the preview.
+  const managed = async (req: express.Request): Promise<ManagedType[]> => {
+    const answer = await fetch(`${api}/credential-types`, { headers: await asStaff(req) })
+    if (!answer.ok) throw new Error(`the issuer API answered ${answer.status}`)
+    return ((await answer.json()) as { types: ManagedType[] }).types
+  }
+  const forward = (method: string, path: string): express.RequestHandler => async (req, res) => {
+    const withBody = method === 'POST' || method === 'PUT'
+    const answer = await fetch(`${api}${path.replace(':id', encodeURIComponent(req.params.id as string))}`, {
+      method,
+      headers: { ...(withBody ? { 'content-type': 'application/json' } : {}), ...(await asStaff(req)) },
+      body: withBody ? JSON.stringify(req.body ?? {}) : undefined,
+    })
+    res.status(answer.status).type('json').send(await answer.text())
+  }
+  app.get('/credential-types', async (req, res) => {
+    res.type('html').send(renderTypes(await managed(req), chromeOf(await info(req))))
+  })
+  app.get('/credential-types/new', async (req, res) => {
+    res.type('html').send(renderTypeEditor(undefined, chromeOf(await info(req))))
+  })
+  app.get('/credential-types/:id/edit', async (req, res) => {
+    const type = (await managed(req)).find((t) => t.id === req.params.id)
+    if (!type) {
+      res.status(404).type('text').send('Dit credential type bestaat niet.')
+      return
+    }
+    res.type('html').send(renderTypeEditor(type, chromeOf(await info(req))))
+  })
+  app.post('/credential-types/preview', (req, res) => {
+    const fields = Array.isArray(req.body?.fields) ? req.body.fields : []
+    res.type('html').send(renderPreview(fields))
+  })
+  app.post('/credential-types', forward('POST', '/credential-types'))
+  app.put('/credential-types/:id', forward('PUT', '/credential-types/:id'))
+  app.delete('/credential-types/:id', forward('DELETE', '/credential-types/:id'))
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)

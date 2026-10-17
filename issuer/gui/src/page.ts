@@ -1,11 +1,14 @@
+import { asFormDate, typeFields, type TypeInfo, type Values } from './fields.js'
 import { escape, renderPage, type Crumb, type MenuGroup, type MenuItem, type Page } from './layout.js'
+
+export type { TypeInfo } from './fields.js'
 
 /** What the footer shows: the issuer the credentials are issued as. */
 export interface Chrome {
   issuerName?: string
   did: string
-  /** The diplomas the issuer gives; each has a form and a menu item of its own. */
-  diplomas: DiplomaInfo[]
+  /** The credential types the issuer gives besides Employee; each has a form and a menu item of its own. */
+  types: TypeInfo[]
   /** Whether the pages offer a way to sign out. */
   signOut?: boolean
 }
@@ -16,14 +19,6 @@ const logoOf = ({ issuerName }: Chrome) => ({ src: '/logo.svg', alt: issuerName 
 
 const footerOf = ({ issuerName, did }: Chrome) => `Uitgever: ${issuerName ? `${issuerName} · ` : ''}${did}`
 
-/** A diploma the issuer gives, as the API describes it. */
-export interface DiplomaInfo {
-  type: string
-  path: string
-  title: string
-  description: string
-}
-
 const EMPLOYEE: MenuItem = {
   id: 'employee',
   label: 'Medewerker',
@@ -31,7 +26,7 @@ const EMPLOYEE: MenuItem = {
   description: 'Geef een medewerker een verifiable credential met afdeling en rollen.',
 }
 
-const diplomaItem = (d: DiplomaInfo): MenuItem => ({ id: `diploma-${d.path}`, label: d.title, href: `/diploma/${d.path}`, description: d.description })
+const typeItem = (t: TypeInfo): MenuItem => ({ id: `type-${t.path}`, label: t.title, href: `/type/${t.path}`, description: t.description })
 
 const REVOKE: MenuItem = {
   id: 'revoke',
@@ -47,18 +42,25 @@ const ROLES: MenuItem = {
   description: 'Maak rollen aan, wijzig ze en verwijder ze. Een rol die een medewerker heeft, kan niet worden verwijderd.',
 }
 
+export const CREDENTIAL_TYPES: MenuItem = {
+  id: 'credential-types',
+  label: 'Credential types',
+  href: '/credential-types',
+  description: 'Maak eigen credential types met een eigen formulier. Elk type krijgt een menu-item onder Verifiable Credentials.',
+}
+
 const menuOf = (chrome: Chrome): MenuGroup[] => [
-  { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.diplomas.map(diplomaItem)] },
-  { label: 'Beheer', items: [REVOKE, ROLES] },
+  { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
+  { label: 'Beheer', items: [REVOKE, ROLES, CREDENTIAL_TYPES] },
 ]
 
-/** What a form or a page after it is for: the employee credential, or the diploma at this path. */
-export type Kind = { employee: true } | { diploma: DiplomaInfo }
-const itemOf = (kind: Kind): MenuItem => ('employee' in kind ? EMPLOYEE : diplomaItem(kind.diploma))
-const home: Crumb[] = [{ label: 'Home', href: '/' }]
+/** What a form or a page after it is for: the employee credential, or the type at this path. */
+export type Kind = { employee: true } | { type: TypeInfo }
+const itemOf = (kind: Kind): MenuItem => ('employee' in kind ? EMPLOYEE : typeItem(kind.type))
+export const home: Crumb[] = [{ label: 'Home', href: '/' }]
 
 // What every page shares: the menu, the logo, the footer and the way to sign out.
-const shell = (chrome: Chrome, page: Pick<Page, 'title' | 'crumbs' | 'active' | 'body'>): string =>
+export const shell = (chrome: Chrome, page: Pick<Page, 'title' | 'crumbs' | 'active' | 'body'>): string =>
   renderPage({ ...page, menu: menuOf(chrome), footer: footerOf(chrome), logo: logoOf(chrome), signOut: signOutOf(chrome) })
 
 // Lets a drop-down with check boxes show what is chosen, and close when the page is clicked elsewhere.
@@ -70,8 +72,6 @@ const MULTI_SELECT = `document.querySelectorAll('details.multi').forEach((d) => 
   })
   document.addEventListener('click', (e) => { if (!d.contains(e.target)) d.open = false })
 })`
-
-const datePattern = '\\d{2}-\\d{2}-\\d{4}'
 
 export function renderWelcome(chrome: Chrome): string {
   const blocks = menuOf(chrome)
@@ -89,15 +89,7 @@ export function renderWelcome(chrome: Chrome): string {
   })
 }
 
-/** What a form starts with: nothing for a new credential, the recorded data for a correction. */
-type Values = Record<string, string>
-
 const attr = (name: string, value: string | undefined) => (value === undefined ? '' : ` ${name}="${escape(value)}"`)
-
-const diplomaFields = (v: Values = {}) => `
-  <label>Naam <input name="name"${attr('value', v.name)} required></label>
-  <label>E-mailadres <input name="email" type="email"${attr('value', v.email)} required></label>
-  <label>Geldig tot <input name="validUntil" placeholder="dd-mm-jjjj" pattern="${datePattern}" title="dd-mm-jjjj" inputmode="numeric"${attr('value', v.validUntil)} required></label>`
 
 const employeeFields = (departments: string[], roles: string[], v: Values = {}) => {
   const options = departments.map((d) => `<option value="${escape(d)}"${d === v.department ? ' selected' : ''}>${escape(titleCase(d))}</option>`).join('')
@@ -115,15 +107,15 @@ const employeeFields = (departments: string[], roles: string[], v: Values = {}) 
 
 const titleCase = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 
-/** The form for one diploma: the person, and the day the diploma stops counting. */
-export function renderDiplomaForm(diploma: DiplomaInfo, chrome: Chrome): string {
-  const item = diplomaItem(diploma)
+/** The form for one credential type, made from its fields. */
+export function renderTypeForm(type: TypeInfo, chrome: Chrome): string {
+  const item = typeItem(type)
   return shell(chrome, {
     title: item.label,
     crumbs: home,
     active: item.id,
     body: `<p class="intro">${escape(item.description)}.</p>
-<form class="card" method="post" action="${escape(item.href)}">${diplomaFields()}
+<form class="card" method="post" action="${escape(item.href)}">${typeFields(type.fields)}
   <button type="submit">Credential aanmaken</button>
 </form>`,
   })
@@ -166,15 +158,21 @@ const CLAIM_LABELS: [string, string][] = [
 
 const day = (iso: string) => new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Amsterdam', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(iso)).replaceAll('/', '-')
 
-/** yyyy-mm-dd, as the issuer stores a date, as the dd-mm-jjjj the forms take. */
-const asFormDate = (value: string | undefined) => (value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value.split('-').reverse().join('-') : value)
+/** The claims of a credential that are shown, with their labels: the fixed ones of an Employee, the fields of the form of any other type. */
+function claimRows(c: ActiveCredential, chrome: Chrome): { key: string; label: string; date: boolean }[] {
+  const rows =
+    c.type === 'Employee'
+      ? CLAIM_LABELS.map(([key, label]) => ({ key, label, date: key === 'validUntil' }))
+      : (chrome.types.find((t) => t.type === c.type)?.fields ?? []).map((f) => ({ key: f.key, label: f.label, date: f.kind === 'date' }))
+  return rows.filter(({ key }) => c.claims[key])
+}
 
 /** Looks up the credentials of one person; `credentials` is undefined until an e-mail address was asked for. */
 export function renderRevoke(chrome: Chrome, email: string, credentials?: ActiveCredential[], problem?: string): string {
   const items = (credentials ?? [])
     .map((c) => {
-      const claims = CLAIM_LABELS.filter(([key]) => c.claims[key])
-        .map(([key, label]) => `<dt>${label}</dt><dd>${escape(key === 'validUntil' ? (asFormDate(c.claims[key]) ?? '') : c.claims[key])}</dd>`)
+      const claims = claimRows(c, chrome)
+        .map(({ key, label, date }) => `<dt>${escape(label)}</dt><dd>${escape(date ? (asFormDate(c.claims[key]) ?? '') : c.claims[key])}</dd>`)
         .join('')
       const state = c.status === 'issued' && c.issuedAt ? `Uitgegeven op ${day(c.issuedAt)}` : 'Staat klaar om op te halen'
       const id = encodeURIComponent(c.id)
@@ -207,13 +205,15 @@ ${problem ? `<p>${escape(problem)}</p>` : ''}<div style="margin-top:20px">${resu
 /** The form of a credential with its data filled in, to withdraw it and record the corrected one. */
 export function renderCorrection(c: ActiveCredential, email: string, departments: string[], roles: string[], chrome: Chrome): string {
   const employee = c.type === 'Employee'
-  const values: Values = { ...c.claims, validUntil: asFormDate(c.claims.validUntil) ?? '' }
+  const fields = chrome.types.find((t) => t.type === c.type)?.fields ?? []
+  const values: Values = { ...c.claims }
+  for (const f of fields) if (f.kind === 'date') values[f.key] = asFormDate(c.claims[f.key]) ?? ''
   return shell(chrome, {
     title: 'Intrekken en corrigeren',
     crumbs: [...home, { label: REVOKE.label, href: `${REVOKE.href}?email=${encodeURIComponent(email)}` }],
     active: REVOKE.id,
     body: `<p class="intro">${escape(c.title)}: het huidige credential wordt ingetrokken en de ontvanger krijgt een e-mail met een QR-code voor het gecorrigeerde credential.</p>
-<form class="card" method="post" action="/revoke/${encodeURIComponent(c.id)}/correct">${employee ? employeeFields(departments, roles, values) : diplomaFields(values)}
+<form class="card" method="post" action="/revoke/${encodeURIComponent(c.id)}/correct">${employee ? employeeFields(departments, roles, values) : typeFields(fields, values)}
   <button type="submit">Intrekken en vervangen</button>
 </form>${employee ? `<script>${MULTI_SELECT}</script>` : ''}`,
   })

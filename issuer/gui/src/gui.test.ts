@@ -3,7 +3,19 @@ import type { AddressInfo } from 'node:net'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startGui } from './gui.js'
 
-const DIPLOMA = { type: 'Diploma Laadpalen Management', path: 'laadpalen-management', title: 'Diploma Laadpalen Management', description: 'Bewijs dat de opleiding Laadpalen Management is afgerond' }
+const DIPLOMA = { type: 'Diploma Laadpalen Management', path: 'laadpalen-management', title: 'Diploma Laadpalen Management', description: 'Bewijs dat de opleiding Laadpalen Management is afgerond',
+  fields: [
+    { key: 'name', label: 'Naam', kind: 'text', required: true },
+    { key: 'email', label: 'E-mailadres', kind: 'email', required: true },
+    { key: 'validUntil', label: 'Geldig tot', kind: 'date', required: true },
+  ] }
+const BADGE = {
+  type: 'Badge <b>', path: 'badge', title: 'Badge <b>', description: 'Toegang',
+  fields: [
+    { key: 'email', label: 'E-mailadres', kind: 'email', required: true },
+    { key: 'colour', label: 'Kleur', kind: 'choice', required: true, options: ['red', 'blue'] },
+  ],
+}
 const DID = 'did:key:z6MkTest'
 
 // A stand-in for the issuer API: it answers /info and records what the pages post.
@@ -29,13 +41,23 @@ beforeEach(async () => {
     req.on('end', () => {
       res.setHeader('content-type', 'application/json')
       if (req.method === 'GET' && req.url === '/info') {
-        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], roles: ['laadpalen-aanvrager', 'reader'], diplomas: [DIPLOMA] }))
+        res.end(JSON.stringify({ issuerName: 'Gemeente Utrecht', did: DID, departments: ['burgerzaken', 'secretariaat'], roles: ['laadpalen-aanvrager', 'reader'], types: [DIPLOMA, BADGE] }))
         return
       }
       if (req.method === 'GET' && req.url?.startsWith('/entitlements?')) {
         const email = new URL(req.url, 'http://x').searchParams.get('email')
         res.statusCode = email === 'nope' ? 400 : 200
         res.end(JSON.stringify(email === 'nope' ? { error: 'email is not an email address' } : { entitlements: email === 'jerry@example.com' ? held : [] }))
+        return
+      }
+      if (req.url?.startsWith('/credential-types')) {
+        if (req.method === 'GET') {
+          res.end(JSON.stringify({ types: [{ ...DIPLOMA, id: 't-1', inUse: true }, { ...BADGE, id: 't-2', inUse: false }] }))
+          return
+        }
+        changed.push(`${req.method} ${req.url} ${raw}`.trim())
+        res.statusCode = refuse ? 409 : req.method === 'DELETE' ? 204 : 200
+        res.end(refuse ? JSON.stringify({ error: refuse }) : req.method === 'DELETE' ? undefined : '{}')
         return
       }
       if (req.url?.startsWith('/roles')) {
@@ -111,7 +133,7 @@ describe('issuer pages', () => {
   })
 
   it('has no fields for the title or the description: they are fixed by the credential', async () => {
-    for (const path of ['employee', 'diploma/laadpalen-management']) {
+    for (const path of ['employee', 'type/laadpalen-management']) {
       const html = await (await fetch(`${baseUrl}/${path}`)).text()
       expect(html).not.toContain('name="title"')
       expect(html).not.toContain('name="description"')
@@ -119,7 +141,7 @@ describe('issuer pages', () => {
   })
 
   it('accepts a date in the form with the way it asks for one', async () => {
-    const html = await (await fetch(`${baseUrl}/diploma/laadpalen-management`)).text()
+    const html = await (await fetch(`${baseUrl}/type/laadpalen-management`)).text()
 
     const pattern = new RegExp(`^(?:${/name="validUntil"[^>]*pattern="([^"]+)"/.exec(html)![1]})$`)
 
@@ -163,28 +185,28 @@ describe('issuer pages', () => {
   })
 
   it('has a form and a menu item of its own for each diploma, with its title and an end date, and no course to type', async () => {
-    const html = await (await fetch(`${baseUrl}/diploma/laadpalen-management`)).text()
+    const html = await (await fetch(`${baseUrl}/type/laadpalen-management`)).text()
 
     expect(html).toContain('name="validUntil"')
-    expect(html).toContain('action="/diploma/laadpalen-management"')
-    expect(html).toContain('<a href="/diploma/laadpalen-management" aria-current="page">Diploma Laadpalen Management</a>')
+    expect(html).toContain('action="/type/laadpalen-management"')
+    expect(html).toContain('<a href="/type/laadpalen-management" aria-current="page">Diploma Laadpalen Management</a>')
     expect(html).not.toContain('name="course"')
-    expect((await fetch(`${baseUrl}/diploma/koeien-melken`)).status).toBe(404)
+    expect((await fetch(`${baseUrl}/type/koeien-melken`)).status).toBe(404)
   })
 
   it('posts a diploma form to the API path of that diploma', async () => {
-    const res = await fetch(`${baseUrl}/diploma/laadpalen-management`, form({ name: 'Jim', email: 'jim@example.com', validUntil: '31-12-2099' }))
+    const res = await fetch(`${baseUrl}/type/laadpalen-management`, form({ name: 'Jim', email: 'jim@example.com', validUntil: '31-12-2099' }))
 
-    expect(posted).toEqual([{ path: '/entitlements/diploma/laadpalen-management', body: { name: 'Jim', email: 'jim@example.com', validUntil: '31-12-2099' } }])
+    expect(posted).toEqual([{ path: '/entitlements/type/laadpalen-management', body: { name: 'Jim', email: 'jim@example.com', validUntil: '31-12-2099' } }])
     expect(await res.text()).toContain('<strong>jim@example.com</strong>')
-    expect((await fetch(`${baseUrl}/diploma/koeien-melken`, form({ name: 'Jim' }))).status).toBe(404)
+    expect((await fetch(`${baseUrl}/type/koeien-melken`, form({ name: 'Jim' }))).status).toBe(404)
     expect(posted).toHaveLength(1)
   })
 
   it('passes on why the API refused a form', async () => {
     refuse = 'email is not an email address'
 
-    const res = await fetch(`${baseUrl}/diploma/laadpalen-management`, form({ name: 'A', email: 'nope', validUntil: '31-12-2099' }))
+    const res = await fetch(`${baseUrl}/type/laadpalen-management`, form({ name: 'A', email: 'nope', validUntil: '31-12-2099' }))
 
     expect(res.status).toBe(400)
     expect(await res.text()).toContain('email is not an email address')
@@ -305,5 +327,63 @@ describe('issuer pages', () => {
 
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ error: 'de rol is in gebruik bij een medewerker' })
+  })
+
+  it('offers Credential types under Beheer and lists them with the ones in use marked', async () => {
+    expect(await (await fetch(baseUrl)).text()).toContain('<h2>Credential types</h2>')
+    const html = await (await fetch(`${baseUrl}/credential-types`)).text()
+
+    expect(html).toContain('<td>Diploma Laadpalen Management</td>')
+    expect(html).toContain('href="/credential-types/t-2/edit"')
+    expect(html).toContain('data-delete="t-1" data-title="Diploma Laadpalen Management" disabled')
+    expect(html).toContain('data-delete="t-2" data-title="Badge &#60;b&#62;">')
+  })
+
+  it('shows the editor for a new type with the email field in place, and for an existing one with its data', async () => {
+    const fresh = await (await fetch(`${baseUrl}/credential-types/new`)).text()
+    expect(fresh).toContain('id="type-preview"')
+    expect(fresh).toContain('"fields":[{"key":"email"')
+    expect(fresh).toContain('id="type-expires"')
+    expect(fresh).not.toContain('"key":"validUntil"')
+
+    const existing = await (await fetch(`${baseUrl}/credential-types/t-2/edit`)).text()
+    expect(existing).toContain('"id":"t-2"')
+    expect(existing).toContain('"options":["red","blue"]')
+    expect(existing).not.toContain('<b>')
+    expect((await fetch(`${baseUrl}/credential-types/t-9/edit`)).status).toBe(404)
+  })
+
+  it('previews a form with the code of the real form, escaped and impossible to send', async () => {
+    const res = await fetch(`${baseUrl}/credential-types/preview`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: BADGE.fields.concat([{ key: 'x', label: '<i>', kind: 'date', required: false }] as never) }),
+    })
+    const html = await res.text()
+
+    expect(html).toContain('<select name="colour" required><option value=""></option><option value="red">red</option>')
+    expect(html).toContain('type="email"')
+    expect(html).toContain('placeholder="dd-mm-jjjj"')
+    expect(html).toContain('&#60;i&#62;')
+    expect(html).toContain('<button type="submit" disabled>')
+    expect(html).not.toContain('<i>')
+  })
+
+  it('passes a saved, changed or deleted type on to the API and says why it was refused', async () => {
+    const json = (method: string, body?: object) => ({ method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
+    await fetch(`${baseUrl}/credential-types`, json('POST', { title: 'Pas', fields: [] }))
+    await fetch(`${baseUrl}/credential-types/t-2`, json('PUT', { title: 'Pas 2', fields: [] }))
+    await fetch(`${baseUrl}/credential-types/t-2`, json('DELETE'))
+    expect(changed).toEqual([
+      'POST /credential-types {"title":"Pas","fields":[]}', 'PUT /credential-types/t-2 {"title":"Pas 2","fields":[]}', 'DELETE /credential-types/t-2',
+    ])
+
+    refuse = 'het credentialtype is in gebruik'
+    const res = await fetch(`${baseUrl}/credential-types/t-1`, json('DELETE'))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'het credentialtype is in gebruik' })
+  })
+
+  it('makes the form of a type from its fields, a choice as a list with an empty first option', async () => {
+    expect(await (await fetch(`${baseUrl}/type/laadpalen-management`)).text()).toContain('<label>Geldig tot <input name="validUntil"')
+    expect(await (await fetch(`${baseUrl}/type/badge`)).text()).toContain('<label>Kleur <select name="colour" required><option value=""></option>')
   })
 })

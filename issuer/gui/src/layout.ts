@@ -35,6 +35,7 @@ const theme = `
   --brand:#0e2242;--brand-text:#f2f5fa;--brand-muted:#9db0d1;--accent:#5b92e5;--accent-text:#0b1220;--accent-soft:#22304a;--focus:#5b92e5;--label-bg:#2f3f5c;--label-text:#c3d3f0;--danger:#e0605a;--danger-text:#1b0a09;
 }}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{height:100%}
 body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
   display:grid;grid-template-columns:var(--menu-w) 1fr;grid-template-rows:auto 1fr auto;grid-template-areas:"header header" "menu main" "footer footer"}
@@ -66,9 +67,9 @@ footer{grid-area:footer;background:var(--surface);border-top:1px solid var(--bor
 .block p{margin:0;color:var(--muted)}
 form.card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px;max-width:36rem}
 label{display:block;margin:0 0 14px;font-weight:600;font-size:13px}
-input,select{display:block;width:100%;margin-top:4px;padding:8px 10px;font:inherit;font-weight:400;color:var(--text);background:var(--bg);
+input,select,textarea{display:block;width:100%;margin-top:4px;padding:8px 10px;font:inherit;font-weight:400;color:var(--text);background:var(--bg);
   border:1px solid var(--border);border-radius:6px}
-input:focus,select:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+input:focus,select:focus,textarea:focus,button:focus-visible,a:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 button{padding:9px 16px;font:inherit;font-weight:600;color:var(--accent-text);background:var(--accent);border:0;border-radius:6px;cursor:pointer}
 button:hover{filter:brightness(1.08)}
 code{word-break:break-all}
@@ -103,6 +104,12 @@ dialog::backdrop{background:rgba(0,0,0,.4)}
 dialog h2{margin:0 0 12px;font-size:16px}
 .error{color:var(--danger);min-height:1.2em;margin:0 0 10px}
 .field{margin:0 0 14px}
+.editor{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:24px;align-items:start}
+.editor h2{margin:0 0 8px;font-size:16px}
+.editor form.card{max-width:none}
+.editor .item{max-width:none}
+.editor .item .actions{margin-top:4px}
+.editor input[type=checkbox]{display:inline-block;width:auto;margin:0 4px 0 0}
 .field>span{display:block;font-weight:600;font-size:13px}
 details.multi{margin-top:4px;position:relative}
 details.multi summary{list-style:none;cursor:pointer;padding:8px 32px 8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);
@@ -116,6 +123,7 @@ details.multi .options label{display:flex;align-items:center;gap:8px;margin:0;pa
 details.multi .options label:hover{background:var(--accent-soft)}
 details.multi .options input{width:auto;margin:0}
 @media (max-width:720px){
+  .editor{grid-template-columns:1fr}
   body{grid-template-columns:1fr;grid-template-areas:"header" "menu" "main" "footer"}
   nav.menu{border-right:0;border-bottom:1px solid var(--border)}
   :root{--menu-w:120px}
