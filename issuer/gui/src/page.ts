@@ -44,14 +44,14 @@ const ROLES: MenuItem = {
 
 export const CREDENTIAL_TYPES: MenuItem = {
   id: 'credential-types',
-  label: 'Credential forms',
+  label: 'Credential Forms',
   href: '/credential-types',
   description: 'Maak eigen credential forms. Elk formulier krijgt een menu-item onder Verifiable Credentials.',
 }
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [CREDENTIALS, CREDENTIAL_TYPES, ROLES] },
+  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES] },
 ]
 
 /** What a form or a page after it is for: the employee credential, or the type at this path. */
