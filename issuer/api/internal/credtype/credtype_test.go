@@ -3,6 +3,7 @@ package credtype_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 
@@ -167,5 +168,32 @@ func TestDeletesATypeSoftlyUnlessACredentialOfItIsNotRevoked(t *testing.T) {
 	again, err := store.Create(ctx, input(title))
 	if err != nil || again.ID == created.ID {
 		t.Fatalf("the name of a deleted type cannot be used again: %+v %v", again, err)
+	}
+}
+
+func TestKeepsTheBoundsOfANumberAndDropsThemFromOtherFields(t *testing.T) {
+	ctx := context.Background()
+	store, _ := open(t)
+	in := input("Prijs " + uuid.NewString())
+	in.Fields = append(in.Fields,
+		credential.Field{Key: "price", Label: "Prijs", Kind: "number", Decimals: 2, Min: " 0,5 ", Max: "99"},
+		credential.Field{Key: "note", Label: "Notitie", Kind: "text", Min: "1", Decimals: 3})
+
+	created, err := store.Create(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	price, note := created.Fields[2], created.Fields[3]
+	if price.Min != "0.5" || price.Max != "99" || price.Decimals != 2 || note.Min != "" || note.Decimals != 0 {
+		t.Fatalf("%+v %+v", price, note)
+	}
+	found, _ := store.FindByPath(ctx, created.Path)
+	if !reflect.DeepEqual(found.Fields[2], price) {
+		t.Fatalf("not kept: %+v", found.Fields[2])
+	}
+	in.Fields[2].Max = "0.1"
+	var invalid credtype.InvalidError
+	if _, err := store.Update(ctx, created.ID, in); !errors.As(err, &invalid) {
+		t.Fatalf("min above max: %v", err)
 	}
 }

@@ -67,6 +67,10 @@ func clean(in Input) (Input, error) {
 	fields := make([]credential.Field, len(in.Fields))
 	for i, f := range in.Fields {
 		f.Key, f.Label = strings.TrimSpace(f.Key), strings.TrimSpace(f.Label)
+		f.Min, f.Max = strings.ReplaceAll(strings.TrimSpace(f.Min), ",", "."), strings.ReplaceAll(strings.TrimSpace(f.Max), ",", ".")
+		if f.Kind != credential.KindNumber {
+			f.Min, f.Max, f.Decimals = "", "", 0
+		}
 		if f.Kind != credential.KindChoice {
 			f.Options = nil
 		}

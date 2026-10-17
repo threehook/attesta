@@ -175,6 +175,12 @@ func (s *Service) typeOf(def credential.Type, values map[string]string) (entitle
 				}
 				v = d.Format(time.DateOnly)
 			}
+		case credential.KindNumber:
+			n, err := credential.NormalizeNumber(f, v)
+			if err != nil {
+				return entitlement.New{}, InvalidError{err.Error()}
+			}
+			v = n
 		case credential.KindChoice:
 			if !contains(f.Options, v) {
 				return entitlement.New{}, InvalidError{f.Key + " must be one of " + strings.Join(f.Options, ", ")}

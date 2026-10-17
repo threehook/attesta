@@ -36,8 +36,9 @@ Two kinds, each with a title and description (never asked in a form; the title i
   Titled "Medewerker afdeling & rollen". It has no end date; it ends by being revoked.
 - **Credential types** defined by staff, one credential type and one form each; `Diploma Laadpalen Management` (`POST /entitlements/type/laadpalen-management`) is there from the start:
   name, email and the required `validUntil`. The type is the course, so it holds no course claim. A date field named `validUntil` ends the credential at the end of that day, and a date in the past is refused.
-  A type is a row of the table `credential_types`: title, description and fields (key, label, kind `text`, `email`, `date` or `choice`, required, options). The field `email` is required and
+  A type is a row of the table `credential_types`: title, description and fields (key, label, kind `text`, `email`, `date`, `choice` or `number`, required, options). The field `email` is required and
   identifies the person. The credential type verifiers ask for is the title at creation and, like the path, does not change; the fields of a type that has a credential not revoked cannot change, and it cannot be deleted.
+  A `number` has an optional `min` and `max` (decimal texts) and `decimals` (0 to 6); the claim is the number as text with a point and exactly those decimals, and a comma is accepted as input.
   `GET/POST /credential-types` and `PUT/DELETE /credential-types/{id}` manage them.
 
 Both answer `{ "entitlementId": ..., "mailedTo": ... }`. A verifier that needs an Employee and a diploma asks for both in one request.

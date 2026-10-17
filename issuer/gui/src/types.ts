@@ -70,7 +70,7 @@ const EDITOR_SCRIPT = `(() => {
   const initial = JSON.parse($('type-data').textContent)
   const state = { title: initial.title, description: initial.description, fields: initial.fields.map((f) => ({ ...f, touched: !!f.key })) }
   const locked = initial.inUse
-  const KINDS = { text: 'Tekst', email: 'E-mailadres', date: 'Datum', choice: 'Keuzelijst' }
+  const KINDS = { text: 'Tekst', email: 'E-mailadres', date: 'Datum', choice: 'Keuzelijst', number: 'Getal' }
 
   const key = (label) => {
     const words = label.normalize('NFD').replace(/[^A-Za-z0-9 ]/g, '').split(' ').filter(Boolean)
@@ -99,13 +99,21 @@ const EDITOR_SCRIPT = `(() => {
       const options = el('textarea', { value: (f.options || []).join('\\n'), rows: 3, disabled: locked })
       const optionsBox = labelled('Opties (een per regel)', options)
       optionsBox.hidden = f.kind !== 'choice'
+      const bound = (value) => el('input', { value: value || '', inputMode: 'decimal', disabled: locked })
+      const min = bound(f.min), max = bound(f.max)
+      const decimals = el('input', { type: 'number', min: 0, max: 6, step: 1, value: f.decimals || 0, disabled: locked })
+      const numberBox = el('div', { className: 'actions' }, labelled('Minimum', min), labelled('Maximum', max), labelled('Decimalen', decimals))
+      numberBox.hidden = f.kind !== 'number'
+      min.addEventListener('input', () => { f.min = min.value; preview() })
+      max.addEventListener('input', () => { f.max = max.value; preview() })
+      decimals.addEventListener('input', () => { f.decimals = Number(decimals.value) || 0; preview() })
       label.addEventListener('input', () => {
         f.label = label.value
         if (!f.touched && !fixed) { f.key = key(f.label); name.value = f.key }
         preview()
       })
       name.addEventListener('input', () => { f.touched = true; f.key = name.value; preview() })
-      kind.addEventListener('change', () => { f.kind = kind.value; optionsBox.hidden = f.kind !== 'choice'; preview() })
+      kind.addEventListener('change', () => { f.kind = kind.value; optionsBox.hidden = f.kind !== 'choice'; numberBox.hidden = f.kind !== 'number'; preview() })
       required.addEventListener('change', () => { f.required = required.checked; preview() })
       options.addEventListener('input', () => { f.options = options.value.split('\\n').map((o) => o.trim()).filter(Boolean); preview() })
       const move = (by) => el('button', { type: 'button', className: 'secondary', textContent: by < 0 ? '↑' : '↓', disabled: locked, ariaLabel: by < 0 ? 'Omhoog' : 'Omlaag' })
@@ -116,7 +124,7 @@ const EDITOR_SCRIPT = `(() => {
       remove.addEventListener('click', () => { state.fields.splice(i, 1); rows(); preview() })
       list.append(el('section', { className: 'item' },
         labelled('Label', label), labelled('Naam van het veld', name), labelled('Soort', kind),
-        el('label', {}, required, ' Verplicht'), optionsBox,
+        el('label', {}, required, ' Verplicht'), optionsBox, numberBox,
         el('div', { className: 'actions' }, up, down, remove)))
     })
   }
@@ -135,7 +143,9 @@ const EDITOR_SCRIPT = `(() => {
   $('type-add').addEventListener('click', () => { state.fields.push({ key: '', label: '', kind: 'text', required: false, options: [] }); rows(); preview() })
   $('type-form').addEventListener('submit', async (e) => {
     e.preventDefault()
-    const fields = state.fields.map(({ key, label, kind, required, options }) => ({ key, label, kind, required, options: kind === 'choice' ? options : [] }))
+    const fields = state.fields.map(({ key, label, kind, required, options, min, max, decimals }) => ({
+      key, label, kind, required, options: kind === 'choice' ? options : [], ...(kind === 'number' ? { min: min || '', max: max || '', decimals: decimals || 0 } : {}),
+    }))
     const url = initial.id ? '/credential-types/' + encodeURIComponent(initial.id) : '/credential-types'
     const res = await fetch(url, { method: initial.id ? 'PUT' : 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: state.title, description: state.description, fields }) })
     if (res.ok) { location.href = '/credential-types'; return }

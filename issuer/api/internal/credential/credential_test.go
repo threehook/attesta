@@ -216,7 +216,7 @@ func TestChecksTheFormOfACredentialType(t *testing.T) {
 		"reserved key":      func(f *[]credential.Field) { (*f)[1].Key = "title" },
 		"bad key":           func(f *[]credential.Field) { (*f)[1].Key = "Naam" },
 		"no label":          func(f *[]credential.Field) { (*f)[1].Label = " " },
-		"unknown kind":      func(f *[]credential.Field) { (*f)[1].Kind = "number" },
+		"unknown kind":      func(f *[]credential.Field) { (*f)[1].Kind = "colour" },
 		"choice no options": func(f *[]credential.Field) { (*f)[1].Kind = "choice" },
 		"options on text":   func(f *[]credential.Field) { (*f)[1].Options = []string{"a"} },
 		"duplicate options": func(f *[]credential.Field) { (*f)[1].Kind, (*f)[1].Options = "choice", []string{"a", "a"} },
@@ -239,6 +239,53 @@ func TestSlugKeepsLettersAndDigitsAndSeparatesWithHyphens(t *testing.T) {
 	for in, want := range map[string]string{"Diploma Laadpalen Management": "diploma-laadpalen-management", "  Bedrijfs-pas #2! ": "bedrijfs-pas-2", "???": ""} {
 		if got := credential.Slug(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestNormalizesANumberToTheDecimalsOfItsFieldAndHoldsItToItsBounds(t *testing.T) {
+	price := credential.Field{Key: "price", Kind: "number", Decimals: 2, Min: "0", Max: "99.5"}
+	for in, want := range map[string]string{"12": "12.00", "12,5": "12.50", " 0.1 ": "0.10", "99.50": "99.50", "-0": "0.00"} {
+		if got, err := credential.NormalizeNumber(price, in); err != nil || got != want {
+			t.Errorf("%q: %q %v, want %q", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "x", "1.234", "-0.01", "99.51", "1e3", "1,000.5", "--1"} {
+		if got, err := credential.NormalizeNumber(price, in); err == nil {
+			t.Errorf("%q accepted as %q", in, got)
+		}
+	}
+	whole := credential.Field{Key: "floor", Kind: "number"}
+	if got, err := credential.NormalizeNumber(whole, "-3"); err != nil || got != "-3" {
+		t.Errorf("whole: %q %v", got, err)
+	}
+	if _, err := credential.NormalizeNumber(whole, "3.0"); err == nil {
+		t.Error("a decimal was accepted for a whole number")
+	}
+}
+
+func TestChecksTheBoundsOfANumberField(t *testing.T) {
+	number := func(edit func(*credential.Field)) credential.Type {
+		return fields(func(f *[]credential.Field) {
+			n := credential.Field{Key: "price", Label: "Prijs", Kind: "number", Decimals: 2, Min: "0", Max: "10"}
+			edit(&n)
+			*f = append(*f, n)
+		})
+	}
+	if err := number(func(*credential.Field) {}).Check(); err != nil {
+		t.Fatal(err)
+	}
+	bad := map[string]func(*credential.Field){
+		"min above max":      func(f *credential.Field) { f.Min = "11" },
+		"min not a number":   func(f *credential.Field) { f.Min = "low" },
+		"too many decimals":  func(f *credential.Field) { f.Decimals = 7 },
+		"negative decimals":  func(f *credential.Field) { f.Decimals = -1 },
+		"bounds on text":     func(f *credential.Field) { f.Kind = "text" },
+		"decimals on a date": func(f *credential.Field) { f.Kind, f.Min, f.Max = "date", "", "" },
+	}
+	for name, edit := range bad {
+		if err := number(edit).Check(); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }

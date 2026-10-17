@@ -4,6 +4,7 @@ package credential
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"regexp"
 	"slices"
 	"strings"
@@ -28,6 +29,7 @@ const (
 	KindEmail  = "email"
 	KindDate   = "date"
 	KindChoice = "choice"
+	KindNumber = "number"
 )
 
 // Field is one claim of a credential type and the input of its form.
@@ -38,6 +40,11 @@ type Field struct {
 	Kind     string   `json:"kind"`
 	Required bool     `json:"required"`
 	Options  []string `json:"options,omitempty"`
+	// Min, Max and Decimals bound a number. Min and Max are decimal texts, so they are exact; either may be empty. Decimals is how many places
+	// the number has: 0 for a whole number.
+	Min      string `json:"min,omitempty"`
+	Max      string `json:"max,omitempty"`
+	Decimals int    `json:"decimals,omitempty"`
 }
 
 // Type is a credential type the issuer gives out, with a form of its own, so a verifier asks for exactly the type it needs.
@@ -65,6 +72,7 @@ var (
 )
 
 const (
+	maxDecimals  = 6
 	maxFields    = 30
 	maxTitle     = 100
 	maxDesc      = 500
@@ -96,7 +104,7 @@ func (t Type) Check() error {
 		if n := len([]rune(strings.TrimSpace(f.Label))); n == 0 || n > maxLabel {
 			return fmt.Errorf("het veld %q heeft een label van 1 tot %d tekens", f.Key, maxLabel)
 		}
-		if !slices.Contains([]string{KindText, KindEmail, KindDate, KindChoice}, f.Kind) {
+		if !slices.Contains([]string{KindText, KindEmail, KindDate, KindChoice, KindNumber}, f.Kind) {
 			return fmt.Errorf("het veld %q heeft een onbekend soort %q", f.Key, f.Kind)
 		}
 		if (f.Kind == KindChoice) != (len(f.Options) > 0) {
@@ -108,6 +116,9 @@ func (t Type) Check() error {
 				return fmt.Errorf("een optie van het veld %q is leeg, heeft spaties aan de rand, is te lang of komt twee keer voor", f.Key)
 			}
 			seen[o] = true
+		}
+		if err := f.checkNumber(); err != nil {
+			return err
 		}
 		if f.Key == "email" {
 			if f.Kind != KindEmail || !f.Required {
@@ -126,6 +137,87 @@ func (t Type) Check() error {
 		return errors.New("het formulier heeft een veld email: het identificeert de persoon")
 	}
 	return nil
+}
+
+var numberPattern = regexp.MustCompile(`^-?\d{1,30}(\.\d{1,30})?$`)
+
+// parseNumber reads a number with a point or a comma as decimal separator, exactly.
+func parseNumber(s string) (*big.Rat, int, bool) {
+	s = strings.ReplaceAll(strings.TrimSpace(s), ",", ".")
+	if !numberPattern.MatchString(s) {
+		return nil, 0, false
+	}
+	r, ok := new(big.Rat).SetString(s)
+	if !ok {
+		return nil, 0, false
+	}
+	places := 0
+	if i := strings.IndexByte(s, '.'); i >= 0 {
+		places = len(s) - i - 1
+	}
+	return r, places, true
+}
+
+// checkNumber reports why the bounds of a field cannot be used; only a number has any.
+func (f Field) checkNumber() error {
+	if f.Kind != KindNumber {
+		if f.Min != "" || f.Max != "" || f.Decimals != 0 {
+			return fmt.Errorf("alleen een getal heeft een minimum, een maximum en decimalen (veld %q)", f.Key)
+		}
+		return nil
+	}
+	if f.Decimals < 0 || f.Decimals > maxDecimals {
+		return fmt.Errorf("het veld %q heeft 0 tot %d decimalen", f.Key, maxDecimals)
+	}
+	var low, high *big.Rat
+	for _, b := range []struct {
+		text string
+		into **big.Rat
+	}{{f.Min, &low}, {f.Max, &high}} {
+		if b.text == "" {
+			continue
+		}
+		r, _, ok := parseNumber(b.text)
+		if !ok {
+			return fmt.Errorf("het minimum en maximum van het veld %q zijn getallen", f.Key)
+		}
+		*b.into = r
+	}
+	if low != nil && high != nil && low.Cmp(high) > 0 {
+		return fmt.Errorf("het minimum van het veld %q is groter dan het maximum", f.Key)
+	}
+	return nil
+}
+
+// NormalizeNumber checks the answer to a number field against its decimals, minimum and maximum, and writes it with a point and exactly the
+// decimals of the field, so the same number is always the same text.
+func NormalizeNumber(f Field, answer string) (string, error) {
+	r, places, ok := parseNumber(answer)
+	if !ok {
+		return "", fmt.Errorf("%s must be a number", f.Key)
+	}
+	if places > f.Decimals {
+		if f.Decimals == 0 {
+			return "", fmt.Errorf("%s must be a whole number", f.Key)
+		}
+		return "", fmt.Errorf("%s has at most %d decimals", f.Key, f.Decimals)
+	}
+	for _, b := range []struct {
+		text  string
+		above bool
+	}{{f.Min, false}, {f.Max, true}} {
+		if b.text == "" {
+			continue
+		}
+		bound, _, _ := parseNumber(b.text)
+		if c := r.Cmp(bound); (b.above && c > 0) || (!b.above && c < 0) {
+			if b.above {
+				return "", fmt.Errorf("%s is at most %s", f.Key, bound.FloatString(f.Decimals))
+			}
+			return "", fmt.Errorf("%s is at least %s", f.Key, bound.FloatString(f.Decimals))
+		}
+	}
+	return r.FloatString(f.Decimals), nil
 }
 
 // Slug turns a title into a path: lowercase letters and digits separated by hyphens.

@@ -355,7 +355,7 @@ describe('issuer pages', () => {
 
   it('previews a form with the code of the real form, escaped and impossible to send', async () => {
     const res = await fetch(`${baseUrl}/credential-types/preview`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: BADGE.fields.concat([{ key: 'x', label: '<i>', kind: 'date', required: false }] as never) }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fields: BADGE.fields.concat([{ key: 'x', label: '<i>', kind: 'date', required: false }, { key: 'price', label: 'Prijs', kind: 'number', required: true, min: '0', max: '9,5', decimals: 2 }] as never) }),
     })
     const html = await res.text()
 
@@ -363,6 +363,7 @@ describe('issuer pages', () => {
     expect(html).toContain('type="email"')
     expect(html).toContain('placeholder="dd-mm-jjjj"')
     expect(html).toContain('&#60;i&#62;')
+    expect(html).toContain('<input name="price" type="number" step="0.01" min="0" max="9.5" required>')
     expect(html).toContain('<button type="submit" disabled>')
     expect(html).not.toContain('<i>')
   })

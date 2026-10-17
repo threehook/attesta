@@ -4,9 +4,13 @@ import { escape } from './layout.js'
 export interface FieldInfo {
   key: string
   label: string
-  kind: 'text' | 'email' | 'date' | 'choice'
+  kind: 'text' | 'email' | 'date' | 'choice' | 'number'
   required: boolean
   options?: string[]
+  /** For a number: bounds as decimal texts, and how many decimals it has (0 or none for a whole number). */
+  min?: string
+  max?: string
+  decimals?: number
 }
 
 /** A credential type the issuer gives besides Employee, as the API describes it. */
@@ -38,6 +42,11 @@ export const typeFields = (fields: FieldInfo[], v: Values = {}): string =>
       if (f.kind === 'choice') {
         const options = (f.options ?? []).map((o) => `<option value="${escape(o)}"${o === v[f.key] ? ' selected' : ''}>${escape(o)}</option>`).join('')
         return `\n  <label>${escape(f.label)} <select${name}${required}><option value=""></option>${options}</select></label>`
+      }
+      if (f.kind === 'number') {
+        const places = Math.max(0, Math.min(6, Math.trunc(f.decimals ?? 0)))
+        const step = places === 0 ? '1' : `0.${'0'.repeat(places - 1)}1`
+        return `\n  <label>${escape(f.label)} <input${name} type="number" step="${step}"${attr('min', f.min?.replace(',', '.') || undefined)}${attr('max', f.max?.replace(',', '.') || undefined)}${value}${required}></label>`
       }
       if (f.kind === 'date') {
         return `\n  <label>${escape(f.label)} <input${name} placeholder="dd-mm-jjjj" pattern="${datePattern}" title="dd-mm-jjjj" inputmode="numeric"${value}${required}></label>`

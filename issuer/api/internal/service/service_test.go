@@ -513,19 +513,20 @@ var badge = credential.Type{
 		{Key: "colour", Label: "Kleur", Kind: "choice", Required: true, Options: []string{"red", "blue"}},
 		{Key: "floor", Label: "Verdieping", Kind: "text"},
 		{Key: "since", Label: "Sinds", Kind: "date"},
+		{Key: "price", Label: "Prijs", Kind: "number", Decimals: 2, Min: "0", Max: "100"},
 	},
 }
 
 func TestRecordsAnyTypeFromItsFieldsAndLeavesOutWhatIsNotAField(t *testing.T) {
 	f := newFixture(t, nil)
 	e, err := f.svc.RecordType(context.Background(), badge, map[string]string{
-		"email": " Pat@Example.com ", "colour": "red", "since": "01-02-2020", "floor": " ", "extra": "x",
+		"email": " Pat@Example.com ", "colour": "red", "since": "01-02-2020", "floor": " ", "extra": "x", "price": "12,5",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := map[string]string{"email": "pat@example.com", "colour": "red", "since": "2020-02-01"}
-	if e.Type != "Badge" || e.Email != "pat@example.com" || e.ValidUntil != nil || len(e.Claims) != 3 || e.Claims["email"] != want["email"] || e.Claims["colour"] != "red" || e.Claims["since"] != want["since"] {
+	if e.Type != "Badge" || e.Email != "pat@example.com" || e.ValidUntil != nil || len(e.Claims) != 4 || e.Claims["price"] != "12.50" || e.Claims["email"] != want["email"] || e.Claims["colour"] != "red" || e.Claims["since"] != want["since"] {
 		t.Fatalf("%+v", e)
 	}
 }
