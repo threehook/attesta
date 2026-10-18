@@ -1,5 +1,5 @@
-// Package scripts holds the raw Gno source of authorization policies, loaded from disk at startup and/or hot-deployed later via the admin API. It
-// knows nothing about gnovm — that's internal/authz's job; this package only stores source text and validates it through a caller-supplied validator
+// Package scripts holds the raw Rego source of authorization policies, loaded from disk at startup and/or hot-deployed later via the admin API. It
+// knows nothing about OPA — that's internal/authz's job; this package only stores source text and validates it through a caller-supplied validator
 // before accepting it.
 package scripts
 
@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// Validator checks that policy source is well-formed before it's stored. internal/authz.GnoVM satisfies this via its Validate method.
+// Validator checks that policy source is well-formed before it's stored. internal/authz.OPA satisfies this via its Validate method.
 type Validator interface {
 	Validate(source string) error
 }
@@ -28,7 +28,7 @@ type Store struct {
 	syncMu sync.Mutex
 
 	mu       sync.RWMutex
-	policies map[string]string // policy ID -> .gno source
+	policies map[string]string // policy ID -> .rego source
 	// fromDir holds the policies whose current version came from the policy directory. Only those are removed when their file disappears: a policy
 	// deployed with Put (the admin API) leaves this set, so the directory never takes it away.
 	fromDir map[string]bool
@@ -41,7 +41,7 @@ func NewStore(validator Validator) *Store {
 	return &Store{validator: validator, policies: make(map[string]string), fromDir: make(map[string]bool), seen: make(map[string]string)}
 }
 
-// LoadDir loads every *.gno file in dir, using the filename (without extension) as the policy ID. It fails fast on the first invalid file — this runs
+// LoadDir loads every *.rego file in dir, using the filename (without extension) as the policy ID. It fails fast on the first invalid file — this runs
 // at startup, where surfacing a bad policy immediately is preferable to starting with a partially loaded policy set. Sync keeps the store up to date
 // afterwards.
 func (s *Store) LoadDir(dir string) error {
@@ -156,7 +156,7 @@ type policyFile struct {
 	err              error // the file could not be read
 }
 
-// readDir reads every *.gno file in dir, sorted by policy ID.
+// readDir reads every *.rego file in dir, sorted by policy ID.
 func readDir(dir string) ([]policyFile, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -164,11 +164,11 @@ func readDir(dir string) ([]policyFile, error) {
 	}
 	var files []policyFile
 	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".gno") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rego") {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		f := policyFile{id: strings.TrimSuffix(entry.Name(), ".gno")}
+		f := policyFile{id: strings.TrimSuffix(entry.Name(), ".rego")}
 		source, err := os.ReadFile(path)
 		if err != nil {
 			f.err = fmt.Errorf("read policy %q: %w", path, err)

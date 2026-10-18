@@ -122,7 +122,7 @@ func TestACredentialThatDidNotVerifyIsADenialByAttesta(t *testing.T) {
 
 func TestAFailedEvaluationIsAnErrorRecordWithoutResponse(t *testing.T) {
 	d := allowed()
-	d.Err = errors.New("gno policy error: boom")
+	d.Err = errors.New("policy error: boom")
 	rec := logged(t, d)
 
 	if rec["status"] != "Error" {
@@ -131,7 +131,7 @@ func TestAFailedEvaluationIsAnErrorRecordWithoutResponse(t *testing.T) {
 	if _, has := at(t, rec, "body").(map[string]any)["adl.core.response"]; has {
 		t.Error("an Error record carries no response")
 	}
-	if at(t, rec, "attributes", "error") != "gno policy error: boom" {
+	if at(t, rec, "attributes", "error") != "policy error: boom" {
 		t.Errorf("attributes = %v", rec["attributes"])
 	}
 }

@@ -1,4 +1,4 @@
-// The whole flow through the real app and the real backend: issuer -> wallet -> backend -> Gno policy. Needs a running backend whose
+// The whole flow through the real app and the real backend: issuer -> wallet -> backend -> policy. Needs a running backend whose
 // ATTESTA_PUBLIC_URL is ATTESTA_BACKEND_URL (and ATTESTA_ADMIN_TOKEN for it); skipped otherwise.
 import { mkdtempSync, readFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -28,12 +28,9 @@ for (const trusted of [true, false]) {
         id: policyId,
         source: `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
-	if issuer != "${trustedDid}" {
-		return "Deny", "issuer not trusted: " + issuer, nil, nil
-	}
-	return "Permit", "credential accepted for resource " + resource, nil, nil
-}
+decision := {"decision": "Deny", "reason": concat("", ["issuer not trusted: ", input.issuer])} if {
+	input.issuer != "${trustedDid}"
+} else := {"decision": "Permit", "reason": concat("", ["credential accepted for resource ", input.resource])}
 `,
       },
       { "X-Admin-Token": adminToken },
@@ -97,9 +94,7 @@ test("denies a credential after the issuer revoked it, and allows it before", as
   const test_ = await startTestIssuer();
   const trustAnyone = `package policy
 
-func Authorize(resource string, credType string, issuer string, claims map[string]string, roles []string) (string, string, []map[string]string, []map[string]string) {
-	return "Permit", "credential accepted for resource " + resource, nil, nil
-}
+decision := {"decision": "Permit", "reason": concat("", ["credential accepted for resource ", input.resource])}
 `;
   expect((await post("/admin/policies", { id: "desktop_e2e_revocation", source: trustAnyone }, { "X-Admin-Token": adminToken })).status).toBe(200);
 
@@ -142,7 +137,7 @@ func Authorize(resource string, credType string, issuer string, claims map[strin
 });
 
 // The laadpalen policy as it ships decides on two credentials of one person: an Employee (department, roles) and the diploma Laadpalen Management.
-const laadpaalPolicy = readFileSync(join(import.meta.dirname, "../../examples/laadpalen/policies/request_laadpaal.gno"), "utf8");
+const laadpaalPolicy = readFileSync(join(import.meta.dirname, "../../examples/laadpalen/policies/request_laadpaal.rego"), "utf8");
 
 const laadpaalCases = [
   { name: "an employee of Burgerzaken with the role and the diploma", roles: ["laadpalen-aanvrager"], department: "burgerzaken", decision: "Permit", reason: "Geautoriseerd" },

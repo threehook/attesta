@@ -11,7 +11,7 @@ type putPolicyRequest struct {
 }
 
 // handlePutPolicy installs or replaces a policy without restarting the server — the manual deploy path described in the README, gated by
-// requireAdmin. The source is validated (it must compile as Gno) before it's accepted; an invalid policy never reaches the store.
+// requireAdmin. The source is validated (it must compile as Rego) before it's accepted; an invalid policy never reaches the store.
 func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 	var req putPolicyRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

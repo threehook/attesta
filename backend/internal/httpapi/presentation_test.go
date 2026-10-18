@@ -389,7 +389,7 @@ func TestAnAnswerToAnUnknownOrAnsweredRequestIsNotADecision(t *testing.T) {
 func TestAFailedEvaluationIsLoggedAsAnError(t *testing.T) {
 	p := &fakePresenter{presented: presented()}
 	log := &fakeDecisionLog{}
-	s := newPresentationServer(t, p, &fakeEvaluator{err: errors.New("gno policy error")})
+	s := newPresentationServer(t, p, &fakeEvaluator{err: errors.New("policy error")})
 	s.Decisions = log
 
 	if rec := answer(s); rec.Code != http.StatusInternalServerError {

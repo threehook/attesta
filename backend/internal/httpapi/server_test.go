@@ -12,7 +12,7 @@ import (
 	"attesta/backend/internal/scripts"
 )
 
-// fakeEvaluator isolates httpapi's own routing/decoding/status-code logic from the real gnovm implementation, which has its own tests
+// fakeEvaluator isolates httpapi's own routing/decoding/status-code logic from the real OPA implementation, which has its own tests
 // (internal/authz).
 type fakeEvaluator struct {
 	result    authz.Result
@@ -32,7 +32,7 @@ func (f *fakeEvaluator) Evaluate(_ string, in authz.Input) (authz.Result, error)
 }
 
 // newTestServer wires a Server with a fake standing in for authz, plus a real scripts.Store (lightweight,
-// no gnovm involved since the fake Evaluator also serves as its Validator) pre-loaded with one policy.
+// no OPA involved since the fake Evaluator also serves as its Validator) pre-loaded with one policy.
 func newTestServer(t *testing.T, evaluator *fakeEvaluator) *Server {
 	t.Helper()
 	policies := scripts.NewStore(evaluator)

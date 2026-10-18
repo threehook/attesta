@@ -1,4 +1,4 @@
-// Command Attesta runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Gno policy.
+// Command Attesta runs the authorization backend: ask a wallet for an SD-JWT presentation, verify it, then evaluate the matching Rego policy.
 package main
 
 import (
@@ -38,12 +38,9 @@ func run() error {
 		return err
 	}
 
-	gnoVM, err := authz.NewGnoVM(os.Stderr)
-	if err != nil {
-		return fmt.Errorf("init gnovm: %w", err)
-	}
+	evaluator := authz.NewOPA()
 
-	policies := scripts.NewStore(gnoVM)
+	policies := scripts.NewStore(evaluator)
 	if cfg.PoliciesDir != "" {
 		if err := policies.LoadDir(cfg.PoliciesDir); err != nil {
 			return fmt.Errorf("load policies: %w", err)
@@ -80,7 +77,7 @@ func run() error {
 
 	server := &httpapi.Server{
 		Decisions:   decisions,
-		Authz:       gnoVM,
+		Authz:       evaluator,
 		Policies:    policies,
 		AdminToken:  cfg.AdminToken,
 		Logger:      logger,
