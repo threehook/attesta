@@ -16,21 +16,18 @@ LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
 LAADPALEN_POLICIES := $(wildcard examples/laadpalen/policies/*.rego)
 
 # put-configmap(name, files): writes a ConfigMap from the files and replaces whatever was there. kubectl apply would not do: it only removes keys that an
-# earlier apply wrote, so a key added with kubectl patch (k8s-policies-add) would stay. The YAML is piped, never echoed: sh's echo expands the \t and \n
-# escapes kubectl writes for Go source, which breaks the policy.
+# earlier apply wrote, so a key added with kubectl patch would stay. The YAML is piped, never echoed: sh's echo expands the \t and \n
+# escapes kubectl writes for policy source, which breaks the policy.
 define put-configmap
 if kubectl --context $(KUBE_CONTEXT) get configmap $(1) -n $(NAMESPACE) >/dev/null 2>&1; then verb=replace; else verb=create; fi; \
 kubectl --context $(KUBE_CONTEXT) create configmap $(1) -n $(NAMESPACE) $(addprefix --from-file=,$(2)) --dry-run=client -o yaml | kubectl --context $(KUBE_CONTEXT) $$verb -f -
 endef
 
-# POLICIES lists the .rego files the backend serves, e.g. POLICIES="a.rego b.rego"; each file's name without .rego is its policy ID. They go into the ConfigMap
-# attesta-policies, which the running backend watches. Left empty, k8s-apply keeps the ConfigMap as it is.
-POLICIES :=
 # The wildcard certificate lego obtained for the demo names (see k8s/local/ingress/ingress.yaml); never in git.
 DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
-.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward k8s-policies k8s-policies-add k8s-ensure-policies \
+.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward \
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana
@@ -51,7 +48,7 @@ docker-build:
 # rollout, unlike re-applying a manifest whose image: field never changes.
 k8s-apply: docker-build
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	$(MAKE) k8s-secret k8s-ensure-policies
+	$(MAKE) k8s-secret
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/backend/pvc.yaml -f k8s/local/backend/deployment.yaml -f k8s/local/backend/service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-backend attesta-backend=$(IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-backend -n $(NAMESPACE)
@@ -81,30 +78,6 @@ k8s-port-forward:
 # Grafana (with the decision log in Loki) is in the observability stack, not in this repo. Open http://localhost:3000 and use Explore.
 grafana:
 	kubectl --context $(KUBE_CONTEXT) port-forward -n observability svc/grafana 3000:3000
-
-# Hot-deploys policies: writes POLICIES into the ConfigMap the backend reads, and the running backend picks the change up (within about a minute, as
-# Kubernetes updates the mounted files) without a restart. Files left out of POLICIES are removed from the backend.
-# Usage: make k8s-policies POLICIES="examples/laadpalen/policies/sign_in.rego other.rego"
-k8s-policies:
-	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies POLICIES=\"path/to/a.rego path/to/b.rego\""; exit 1; fi
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	@$(call put-configmap,attesta-policies,$(POLICIES))
-
-# Like k8s-policies, but only adds or updates the named files and leaves the other policies in the ConfigMap alone. Also live, no restart.
-# Usage: make k8s-policies-add POLICIES=examples/laadpalen/policies/sign_in.rego
-k8s-policies-add:
-	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies-add POLICIES=\"path/to/a.rego\""; exit 1; fi
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
-	@kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
-		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE)
-	kubectl --context $(KUBE_CONTEXT) patch configmap attesta-policies -n $(NAMESPACE) --type merge -p "$$(kubectl create configmap attesta-policies \
-		$(addprefix --from-file=,$(POLICIES)) --dry-run=client -o json | python3 -c 'import json,sys; print(json.dumps({"data": json.load(sys.stdin)["data"]}))')"
-
-# Makes sure the ConfigMap exists before the backend starts: from POLICIES when given, empty when it does not exist yet, as it is when POLICIES is omitted.
-k8s-ensure-policies:
-	@if [ -n "$(POLICIES)" ]; then $(MAKE) k8s-policies POLICIES="$(POLICIES)"; \
-	else kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
-		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE); fi
 
 # The API is built with issuer/api as the context; the page with the repo root as context (see issuer/gui/Dockerfile) — the pnpm workspace install needs the other workspace packages' manifests.
 docker-build-issuer:

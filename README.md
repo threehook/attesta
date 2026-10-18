@@ -116,21 +116,16 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make k8s-policies POLICIES="a.rego b.rego"   # hot-deploys exactly these policies: the running backend picks them up, no restart
-make k8s-policies-add POLICIES=a.rego       # the same, but only adds or updates this file and keeps the other policies
 make k8s-issuer-apply    # deploys the issuer; open https://issuer.attesta.corbencreatives.nl and sign in for its form
 make laadpalen           # deploys examples/laadpalen (needs the issuer): page at https://laadpalen.attesta.corbencreatives.nl (needs make k8s-traefik k8s-ingress once)
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
 
-Policies come from the ConfigMap `attesta-policies`, mounted at `/policies` (`ATTESTA_POLICIES_DIR`). The backend reads the directory every five seconds and
-applies what changed without a restart: a new or changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file
-is rejected (logged once) while the previous version stays in use. `make k8s-policies POLICIES="a.rego b.rego"` writes the whole ConfigMap (policies not listed are removed) and `make k8s-policies-add` adds or updates
-files only, and Kubernetes updates the mounted files within about a minute; `make k8s-apply` keeps the ConfigMap unless it is given `POLICIES` too. The policy ID is the file name
-without `.rego`. `POST /admin/policies` hot-deploys a single policy directly and keeps working; it is held in memory until the backend restarts, and the
-directory never removes it. With `k8s-policies` and `k8s-apply POLICIES=...` the list must hold every policy the backend should serve.
-
-### TypeScript packages
+A backend serves the policies in the directory `ATTESTA_POLICIES_DIR` and reads it every five seconds. It applies what changed without a restart: a new or
+changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file is rejected (logged once) while the previous
+version stays in use. The policy ID is the file name without `.rego`. The laadpalen sidecar gets its directory from the ConfigMap `laadpalen-policies`
+(`make laadpalen-policies`; Kubernetes updates the mounted files within about a minute). `POST /admin/policies` hot-deploys a single policy directly; it
+is held in memory until the backend restarts, and the directory never removes it.
 
 ```sh
 pnpm install                          # from the repo root; allows the install scripts listed in pnpm-workspace.yaml

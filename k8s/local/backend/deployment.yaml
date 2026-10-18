@@ -50,13 +50,7 @@ spec:
               value: https://issuer.attesta.corbencreatives.nl/status/
             - name: ATTESTA_STATUS_HOSTS
               value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
-            # The backend loads every *.rego file here and reloads it when the ConfigMap changes: no restart (make k8s-policies).
-            - name: ATTESTA_POLICIES_DIR
-              value: /policies
           volumeMounts:
-            - name: policies
-              mountPath: /policies
-              readOnly: true
             - name: decision-log
               mountPath: /var/lib/attesta/adl
           readinessProbe:
@@ -75,7 +69,3 @@ spec:
         - name: decision-log
           persistentVolumeClaim:
             claimName: attesta-decision-log
-        - name: policies
-          configMap:
-            name: attesta-policies
-            optional: true

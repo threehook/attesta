@@ -36,8 +36,6 @@ pnpm -r typecheck && pnpm -r test                # all TS packages
 pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
 ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> ATTESTA_E2E_ISSUER_PORT=4099 pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts   # that backend needs ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/
 make k8s-apply k8s-issuer-apply                  # build and deploy
-make k8s-policies POLICIES="<a.rego> <b.rego>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES
-make k8s-policies-add POLICIES=<a.rego>           # hot deploy of one policy, the others stay
 make laadpalen                                   # the laadpalen app + its Attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 
