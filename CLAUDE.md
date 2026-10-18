@@ -1,13 +1,13 @@
 # Attesta
 
 Authorization with verifiable credentials. An application asks the backend to start an authorization; the user's wallet answers with an SD-JWT
-presentation that discloses only what was asked; the backend verifies it and a Gno policy decides.
+presentation that discloses only what was asked; the backend verifies it and a Rego policy (OPA) decides.
 
 ## Components
 
 - `backend/` (Go, module `attesta/backend`): SD-JWT VC presentations are verified with `sdjwt-go` (issuer signature, disclosures, key binding; issuers
   are Ed25519 `did:key`), `internal/presentation` is the OpenID4VP verifier (unsigned requests, `redirect_uri` client id, DCQL, `direct_post`, one answer
-  per request, 5 minute lifetime), `internal/status` reads the issuer's Token Status List (only from `ATTESTA_STATUS_URL_PREFIXES`, `ATTESTA_STATUS_HOSTS` maps a public host to an internal one) and denies a revoked credential, one without a status reference, and one whose list cannot be read, `internal/authz` runs Gno policies in-process (gnovm), `internal/scripts` stores policy source (loaded from `ATTESTA_POLICIES_DIR`, which
+  per request, 5 minute lifetime), `internal/status` reads the issuer's Token Status List (only from `ATTESTA_STATUS_URL_PREFIXES`, `ATTESTA_STATUS_HOSTS` maps a public host to an internal one) and denies a revoked credential, one without a status reference, and one whose list cannot be read, `internal/authz` runs Rego policies in-process (OPA), `internal/scripts` stores policy source (loaded from `ATTESTA_POLICIES_DIR`, which
   it watches, and hot-deployed through `POST /admin/policies`; hot deployment without a restart is a requirement), `internal/httpapi` is the HTTP layer.
 - `github.com/threehook/sdjwt-go` (own public repo, MIT, checked out beside this one as `../sdjwt-go`): issues and verifies SD-JWT VC; the backend and the Go issuer use it by tag.
 - `client-lib/` (`@attesta/client`): typed client for the backend API.
@@ -16,15 +16,15 @@ presentation that discloses only what was asked; the backend verifies it and a G
 - `wallet/` (`@attesta/wallet`): wallet core, a Credo holder agent with an encrypted Askar store; also a headless CLI.
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added, can remove one, and a credential of a type already held from that issuer is refused until the old one is removed, unless the issuer revoked it or it ended (read from the signed status list): then the user confirms that the new one replaces it; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code; credential types `Employee`, department and roles only, and one type per diploma, today `Diploma Laadpalen Management`, each with a form of its own; revoking a credential, with or without a corrected one, the roles an employee can be given (create, rename, soft delete; delete refused while in use), and the signed status list at `/status/1`) and `gui/` (the pages, which only call the API, among them `/credentials` and `/roles`). Staff sign in at an OpenID Connect server (Keycloak in the cluster, a customer's own elsewhere); the API checks their token and the role `issuer-staff`.
-- `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.gno`); see its README.
+- `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.rego`); see its README.
 - `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
 
 Flow: page `POST /v1/authorize/requests` -> `openid4vp://` link -> user pastes it into the wallet and confirms -> wallet posts to
 `/v1/authorize/requests/{id}/response` -> backend verifies, policy decides -> page polls `GET /v1/authorize/requests/{id}`. Every request asks for the
 holder's `email` claim; it identifies the person (issuer DID + email). An allowed outcome carries it as `subject`, a denial does not. The policy sees
 (resource, credential type, issuer DID, the requested claims as strings). A request asks for a list of `credentials` (each its own type and claims; the first identifies the person, `credentialType` with `claims` is
-shorthand for one); the wallet then answers with one presentation per credential, all of the same person (same email), and for more than one the policy's
-`AuthorizeWithOthers` gets the others by type (claims and issuers). laadpalen asks for an `Employee` (department, roles) and the diploma `Diploma Laadpalen Management`.
+shorthand for one); the wallet then answers with one presentation per credential, all of the same person (same email), and the policy gets the others by type
+(`input.others`: claims and issuer). laadpalen asks for an `Employee` (department, roles) and the diploma `Diploma Laadpalen Management`.
 
 ## Commands
 
@@ -36,8 +36,8 @@ pnpm -r typecheck && pnpm -r test                # all TS packages
 pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
 ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> ATTESTA_E2E_ISSUER_PORT=4099 pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts   # that backend needs ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/
 make k8s-apply k8s-issuer-apply                  # build and deploy
-make k8s-policies POLICIES="<a.gno> <b.gno>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES
-make k8s-policies-add POLICIES=<a.gno>           # hot deploy of one policy, the others stay
+make k8s-policies POLICIES="<a.rego> <b.rego>"      # hot deploy, no restart: replaces the set in the ConfigMap the backend watches; k8s-apply keeps it unless given POLICIES
+make k8s-policies-add POLICIES=<a.rego>           # hot deploy of one policy, the others stay
 make laadpalen                                   # the laadpalen app + its Attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 

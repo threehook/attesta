@@ -24,7 +24,7 @@ sequenceDiagram
     A->>W: 2. the user pastes the link and confirms
     W->>B: 3. SD-JWT presentation (direct_post)
     Note over B: 4. verify issuer signature, disclosures, key binding
-    Note over B: 5. evaluate the Gno policy (resource, type, issuer DID, claims)
+    Note over B: 5. evaluate the policy (resource, type, issuer DID, claims)
     A->>B: 6. GET /v1/authorize/requests/{id}, polled
     B-->>A: status, decision, reason, subject
 ```

@@ -9,8 +9,8 @@ Who may submit is Attesta's decision, made from a credential in the employee's o
   is (sign-in) and whether they may submit, and then applies its own address rules (unknown address, a laadpaal already there, no electric vehicle).
   It records every decided request with the employee's `subject` (issuer and email).
 - `gui/` is the page (Vite + React), in Dutch. The employee signs in, enters an address and sees the outcome; the page hands each step to the wallet itself.
-- `policies/sign_in.gno` signs in an `Employee` credential from a trusted issuer; nothing but the identity is read.
-- `policies/request_laadpaal.gno` decides a request on two credentials of the same person, both from a trusted issuer: an `Employee` for the `burgerzaken`
+- `policies/sign_in.rego` signs in an `Employee` credential from a trusted issuer; nothing but the identity is read.
+- `policies/request_laadpaal.rego` decides a request on two credentials of the same person, both from a trusted issuer: an `Employee` for the `burgerzaken`
   department with the role `laadpalen-aanvrager` in its `roles`, and the diploma `Diploma Laadpalen Management` (a credential type of its own). Secretariaat employees are refused.
   Each credential's own expiry (a diploma's last day) is checked before the policy runs, so an expired diploma never gets here.
 
@@ -73,7 +73,7 @@ The demo employees (record an `Employee` and the diploma for each at https://iss
 
 ## Policies
 
-`make laadpalen-policies` writes `policies/*.gno` into the ConfigMap `laadpalen-policies`. The sidecar watches it, so a changed policy is live within about a
+`make laadpalen-policies` writes `policies/*.rego` into the ConfigMap `laadpalen-policies`. The sidecar watches it, so a changed policy is live within about a
 minute, with no restart. The application owns this ConfigMap: the file set is the whole set.
 
 ## Tests and logs
@@ -84,4 +84,4 @@ make laadpalen-logs laadpalen-attesta-logs         # the backend's log (who subm
 make laadpalen-delete
 ```
 
-`backend/internal/authz/examples_test.go` runs the policy through the real gnovm.
+`backend/internal/authz/examples_test.go` runs the policy through the real OPA engine.

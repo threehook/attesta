@@ -69,7 +69,7 @@ export class ApiClient {
     }
   }
 
-  // deployPolicy hot-deploys a .gno policy via the admin API. Requires the server's configured admin token.
+  // deployPolicy hot-deploys a .rego policy via the admin API. Requires the server's configured admin token.
   async deployPolicy(adminToken: string, req: PutPolicyRequest): Promise<PutPolicyResponse> {
     return this.requestJSON<PutPolicyResponse>("POST", "/admin/policies", req, { "X-Admin-Token": adminToken });
   }

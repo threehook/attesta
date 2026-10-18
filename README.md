@@ -2,7 +2,7 @@
 
 A Go backend that authorizes requests based on verifiable credentials that users present from their own wallet. An application asks the backend to
 start an authorization; the user's wallet answers with an SD-JWT presentation that discloses only what was asked for; the backend verifies it and
-runs the result through an **authorization policy written in Gno**, evaluated in-process by [gnovm](https://github.com/gnolang/gno), gno.land's VM,
+runs the result through an **authorization policy written in Rego**, evaluated in-process by [OPA](https://www.openpolicyagent.org/),
 embedded directly in the backend.
 
 Presentations use selective disclosure (SD-JWT): the holder reveals only the requested claims, but the issuer's signature
@@ -24,7 +24,7 @@ Key design decisions:
 | Identity | the holder is identified by the `email` claim of their credential, together with the issuer's DID. Every request asks the wallet for it, a presentation without it is rejected, and an allowed outcome carries it as `subject`; a denial does not, since an untrusted issuer's claims prove nothing |
 | Revocation | the issuer publishes a signed [Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) (1 bit per credential) and every credential points to its bit. The backend reads the list of the credential's issuer, only from the URLs it is configured with, and denies a revoked credential with the reason "credential has been revoked". A credential without a status reference, and a list that cannot be read or has expired, are denied |
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
-| Gno integration | gnovm embedded in-process as a library (`gnovm/pkg/gnolang`) — no gno.land chain/node. A policy is one file with `Authorize(resource, credType, issuer string, claims map[string]string, roles []string) (decision, reason string, obligations, advice []map[string]string)`; `decision` is `Permit`, `Deny`, `NotApplicable` or `Indeterminate` (XACML), anything else is an error. `claims` holds the claims the request asked for, the email included, and a request fails unless the wallet disclosed all of them. Text claims arrive as they are, other values as JSON. `roles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. Every map in `obligations` and `advice` is one statement: its `id` key is the identifier and every other key is an attribute ID with a string value. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice A request that asks for several credentials (`credentials`) is decided by `AuthorizeWithOthers(resource, credType, issuer string, claims map[string]string, roles []string, others map[string]map[string]string, otherIssuers map[string]string)`, where `others` and `otherIssuers` hold the further credentials' claims and issuers by credential type; the credentials must all be of the same person (the same email), and a policy without that function answers such a request with an error. |
+| Policy integration | OPA embedded in-process as a library (`github.com/open-policy-agent/opa/v1/rego`), no OPA server. A policy is one `.rego` file in `package policy` that defines the rule `decision`, an object with `decision` (`Permit`, `Deny`, `NotApplicable` or `Indeterminate`, XACML; anything else is an error), `reason`, and the lists `obligations` and `advice`; a rule that is undefined gives `Indeterminate`. The input is `resource`, `type` and `issuer` (of the first credential), `claims` (the claims the request asked for, the email included; a request fails unless the wallet disclosed all of them; text claims arrive as they are, other values as JSON), `userRoles` and `others`. `userRoles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. `others` holds the further credentials of a request that asked for several (`credentials`), by credential type, each with `issuer` and `claims`; the credentials must all be of the same person (the same email). Every item of `obligations` and `advice` is one statement: an object with an `id` and `attributes`, an object of string values. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice. Policies may not call `http.send`, `net.lookup_ip_addr`, `opa.runtime`, `time.now_ns`, `rand.intn` or `uuid.rfc4122`, and an evaluation is cut off after 500 ms. |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every credential it adds, and every disclosure unless they chose to always share with that application |
 | TS workspace | pnpm workspace (root `pnpm-workspace.yaml`) linking `client-lib`, `wallet`, `wallet-desktop`, `issuer/{api,gui}` and `examples/laadpalen/gui` |
@@ -35,14 +35,12 @@ Key design decisions:
 backend/
   cmd/
     attesta/          server entrypoint
-    spike/            throwaway PoC validating embedded-gnovm policy calls (superseded
-                       by internal/authz, kept as a minimal reference)
   internal/
     config/            env-based configuration
     sdjwt/             verifies SD-JWT VC presentations: issuer signature, disclosures, key binding; resolves did:key issuers
     presentation/      OpenID4VP verifier: builds requests, checks the wallet's answer, keeps the decision for polling
     status/            reads the issuer's status list and tells whether a credential was revoked
-    authz/             Evaluator backed by an embedded gnovm interpreter
+    authz/             Evaluator backed by an embedded OPA engine
     scripts/           policy source store (loaded from a directory that is watched, plus admin hot-deploy)
     httpapi/           HTTP handlers wiring the above together
   Dockerfile
@@ -118,8 +116,8 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make k8s-policies POLICIES="a.gno b.gno"   # hot-deploys exactly these policies: the running backend picks them up, no restart
-make k8s-policies-add POLICIES=a.gno       # the same, but only adds or updates this file and keeps the other policies
+make k8s-policies POLICIES="a.rego b.rego"   # hot-deploys exactly these policies: the running backend picks them up, no restart
+make k8s-policies-add POLICIES=a.rego       # the same, but only adds or updates this file and keeps the other policies
 make k8s-issuer-apply    # deploys the issuer; open https://issuer.attesta.corbencreatives.nl and sign in for its form
 make laadpalen           # deploys examples/laadpalen (needs the issuer): page at https://laadpalen.attesta.corbencreatives.nl (needs make k8s-traefik k8s-ingress once)
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
@@ -127,9 +125,9 @@ make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no 
 
 Policies come from the ConfigMap `attesta-policies`, mounted at `/policies` (`ATTESTA_POLICIES_DIR`). The backend reads the directory every five seconds and
 applies what changed without a restart: a new or changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file
-is rejected (logged once) while the previous version stays in use. `make k8s-policies POLICIES="a.gno b.gno"` writes the whole ConfigMap (policies not listed are removed) and `make k8s-policies-add` adds or updates
+is rejected (logged once) while the previous version stays in use. `make k8s-policies POLICIES="a.rego b.rego"` writes the whole ConfigMap (policies not listed are removed) and `make k8s-policies-add` adds or updates
 files only, and Kubernetes updates the mounted files within about a minute; `make k8s-apply` keeps the ConfigMap unless it is given `POLICIES` too. The policy ID is the file name
-without `.gno`. `POST /admin/policies` hot-deploys a single policy directly and keeps working; it is held in memory until the backend restarts, and the
+without `.rego`. `POST /admin/policies` hot-deploys a single policy directly and keeps working; it is held in memory until the backend restarts, and the
 directory never removes it. With `k8s-policies` and `k8s-apply POLICIES=...` the list must hold every policy the backend should serve.
 
 ### TypeScript packages
@@ -156,18 +154,6 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
 
 ## Known risks and limits
 
-- **gnovm embedding is not an upstream-stable API.** `gnovm/pkg/test.ProdStore`
-  (used to build the base `gno.Store`) is commented upstream as backing the
-  `gno run`/`gno test` CLI, not production systems. `internal/authz.GnoVM`
-  builds that store once and forks a `TransactionStore` per call (never
-  `Write()`-ing it back) rather than reusing one long-lived store directly —
-  the latter makes `store.SetCachePackage` panic on the second call with the
-  same package path, which is exactly what happens under real traffic. This
-  works and is tested (including a hot-reload test), but the approach isn't
-  blessed by gno's maintainers. `GnoVM.Evaluate` serializes all calls behind
-  a single mutex; measured (`BenchmarkGnoVMEvaluate`) at ~60µs/call on an M5
-  Max, i.e. a ~16k/s ceiling on one core — not a bottleneck at this project's
-  scale.
 - **Presentations are linkable.** SD-JWT hides undisclosed claims but not the issuer's signature or the holder's key, so a verifier, or a verifier
   together with the issuer, can correlate presentations of the same credential.
 - **A revocation takes up to a minute to reach the backend**, which keeps the issuer's status list for its `ttl`. A policy that must not wait has no way to ask for a fresh list.

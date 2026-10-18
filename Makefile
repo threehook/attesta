@@ -13,7 +13,7 @@ ISSUER_GUI_IMAGE := attesta-issuer-gui:dev-$(shell date +%Y%m%d%H%M%S)
 LAADPALEN_API_IMAGE := laadpalen-api:dev-$(shell date +%Y%m%d%H%M%S)
 LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
 # The laadpalen example's own policies; its sidecar serves exactly these (ConfigMap laadpalen-policies).
-LAADPALEN_POLICIES := $(wildcard examples/laadpalen/policies/*.gno)
+LAADPALEN_POLICIES := $(wildcard examples/laadpalen/policies/*.rego)
 
 # put-configmap(name, files): writes a ConfigMap from the files and replaces whatever was there. kubectl apply would not do: it only removes keys that an
 # earlier apply wrote, so a key added with kubectl patch (k8s-policies-add) would stay. The YAML is piped, never echoed: sh's echo expands the \t and \n
@@ -23,7 +23,7 @@ if kubectl --context $(KUBE_CONTEXT) get configmap $(1) -n $(NAMESPACE) >/dev/nu
 kubectl --context $(KUBE_CONTEXT) create configmap $(1) -n $(NAMESPACE) $(addprefix --from-file=,$(2)) --dry-run=client -o yaml | kubectl --context $(KUBE_CONTEXT) $$verb -f -
 endef
 
-# POLICIES lists the .gno files the backend serves, e.g. POLICIES="a.gno b.gno"; each file's name without .gno is its policy ID. They go into the ConfigMap
+# POLICIES lists the .rego files the backend serves, e.g. POLICIES="a.rego b.rego"; each file's name without .rego is its policy ID. They go into the ConfigMap
 # attesta-policies, which the running backend watches. Left empty, k8s-apply keeps the ConfigMap as it is.
 POLICIES :=
 # The wildcard certificate lego obtained for the demo names (see k8s/local/ingress/ingress.yaml); never in git.
@@ -84,16 +84,16 @@ grafana:
 
 # Hot-deploys policies: writes POLICIES into the ConfigMap the backend reads, and the running backend picks the change up (within about a minute, as
 # Kubernetes updates the mounted files) without a restart. Files left out of POLICIES are removed from the backend.
-# Usage: make k8s-policies POLICIES="examples/laadpalen/policies/sign_in.gno other.gno"
+# Usage: make k8s-policies POLICIES="examples/laadpalen/policies/sign_in.rego other.rego"
 k8s-policies:
-	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies POLICIES=\"path/to/a.gno path/to/b.gno\""; exit 1; fi
+	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies POLICIES=\"path/to/a.rego path/to/b.rego\""; exit 1; fi
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	@$(call put-configmap,attesta-policies,$(POLICIES))
 
 # Like k8s-policies, but only adds or updates the named files and leaves the other policies in the ConfigMap alone. Also live, no restart.
-# Usage: make k8s-policies-add POLICIES=examples/laadpalen/policies/sign_in.gno
+# Usage: make k8s-policies-add POLICIES=examples/laadpalen/policies/sign_in.rego
 k8s-policies-add:
-	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies-add POLICIES=\"path/to/a.gno\""; exit 1; fi
+	@if [ -z "$(POLICIES)" ]; then echo "usage: make k8s-policies-add POLICIES=\"path/to/a.rego\""; exit 1; fi
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	@kubectl --context $(KUBE_CONTEXT) get configmap attesta-policies -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create configmap attesta-policies -n $(NAMESPACE)
@@ -190,7 +190,7 @@ laadpalen-secret:
 		kubectl --context $(KUBE_CONTEXT) create secret generic laadpalen-attesta -n $(NAMESPACE) \
 			--from-literal=admin-token=$$(openssl rand -hex 32)
 
-# Hot-deploys the example's policies: writes examples/laadpalen/policies/*.gno into the ConfigMap its sidecar watches, no restart. The app owns this
+# Hot-deploys the example's policies: writes examples/laadpalen/policies/*.rego into the ConfigMap its sidecar watches, no restart. The app owns this
 # ConfigMap, so unlike k8s-policies there is nothing else in it to keep.
 laadpalen-policies:
 	@$(call put-configmap,laadpalen-policies,$(LAADPALEN_POLICIES))

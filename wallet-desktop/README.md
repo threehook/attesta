@@ -61,7 +61,7 @@ pnpm --filter @attesta/wallet-desktop test:e2e    # the real app, driven like a 
 ```
 
 Setting `ATTESTA_BACKEND_URL` (a backend whose `ATTESTA_PUBLIC_URL` is that address, and `ATTESTA_ADMIN_TOKEN` if not the dev default) also runs the whole
-flow against it: issuer, wallet, backend and the Gno policy, for a trusted and an untrusted issuer.
+flow against it: issuer, wallet, backend and the policy, for a trusted and an untrusted issuer.
 
 Electron 40 and later no longer download their binary during `pnpm install`: the first `electron` run (or first `require('electron')`, which is what the
 tests do) fetches it from GitHub releases and unpacks it. Earlier versions unpacked it with `extract-zip`, which hangs on Node 24.16 and 26.1 and later
