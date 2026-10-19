@@ -408,3 +408,47 @@ describe('issuer pages', () => {
     expect(await (await fetch(`${baseUrl}/type/badge`)).text()).toContain('<label>Kleur <select name="colour" required><option value=""></option>')
   })
 })
+
+describe('Policy Editor', () => {
+  it('is the only item under Tools, below Beheer', async () => {
+    const html = await (await fetch(baseUrl)).text()
+
+    expect(html).toMatch(/<h2>Beheer<\/h2>.*<h2>Tools<\/h2><ul><li><a href="\/policy-editor"[^>]*>Policy Editor<\/a><\/li><\/ul>/s)
+  })
+
+  it('shows the editor with its file buttons, and serves Monaco itself', async () => {
+    const html = await (await fetch(`${baseUrl}/policy-editor`)).text()
+
+    expect(html).toContain('<div id="pe-editor">')
+    expect(html).toContain('id="pe-save-as"')
+    expect((await fetch(`${baseUrl}/vendor/monaco/vs/loader.js`)).status).toBe(200)
+  })
+
+  it('says the check is unavailable when no backend is set', async () => {
+    expect((await fetch(`${baseUrl}/policy-editor/diagnose`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"source":"x"}' })).status).toBe(503)
+  })
+
+  it('has the backend check the policy, with the admin token', async () => {
+    const seen: { token?: string | string[]; body: string }[] = []
+    const backend = createServer((req, res) => {
+      let raw = ''
+      req.on('data', (c) => (raw += c))
+      req.on('end', () => {
+        seen.push({ token: req.headers['x-admin-token'], body: raw })
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ diagnostics: [{ severity: 'error', message: 'boom', row: 1, col: 1, endRow: 1, endCol: 2 }] }))
+      })
+    })
+    await new Promise<void>((resolve) => backend.listen(0, resolve))
+    const checking = await startGui({ port: 0, apiUrl, backend: { url: `http://localhost:${(backend.address() as AddressInfo).port}`, adminToken: 'tok' } })
+    try {
+      const res = await fetch(`http://localhost:${checking.port}/policy-editor/diagnose`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"source":"package policy"}' })
+
+      expect(await res.json()).toEqual({ diagnostics: [{ severity: 'error', message: 'boom', row: 1, col: 1, endRow: 1, endCol: 2 }] })
+      expect(seen).toEqual([{ token: 'tok', body: '{"source":"package policy"}' }])
+    } finally {
+      await checking.close()
+      backend.close()
+    }
+  })
+})

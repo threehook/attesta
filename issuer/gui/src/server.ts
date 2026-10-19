@@ -24,5 +24,10 @@ const auth =
       })
 if (!auth) console.warn('sign-in is switched off: anyone who reaches the pages can record entitlements')
 
-await startGui({ port, apiUrl, auth })
+const backend = process.env.ATTESTA_BACKEND_URL
+  ? { url: process.env.ATTESTA_BACKEND_URL, adminToken: env('ATTESTA_BACKEND_ADMIN_TOKEN') }
+  : undefined
+if (!backend) console.warn('ATTESTA_BACKEND_URL is not set: the Policy Editor cannot check policies')
+
+await startGui({ port, apiUrl, auth, backend })
 console.log(`issuer pages listening on ${port}, issuer API at ${apiUrl}`)

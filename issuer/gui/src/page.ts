@@ -49,9 +49,17 @@ export const CREDENTIAL_TYPES: MenuItem = {
   description: 'Maak eigen credential forms. Elk formulier krijgt een menu-item onder Verifiable Credentials.',
 }
 
+export const POLICY_EDITOR: MenuItem = {
+  id: 'policy-editor',
+  label: 'Policy Editor',
+  href: '/policy-editor',
+  description: 'Schrijf en controleer een Rego-policy. Open een policy van uw schijf of maak een nieuwe en bewaar die waar u wilt.',
+}
+
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
   { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES] },
+  { label: 'Tools', items: [POLICY_EDITOR] },
 ]
 
 /** What a form or a page after it is for: the employee credential, or the type at this path. */

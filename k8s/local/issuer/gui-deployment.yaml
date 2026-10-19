@@ -25,6 +25,11 @@ spec:
           env:
             - name: ATTESTA_ISSUER_API_URL
               value: http://attesta-issuer-api:4001
+            # The Policy Editor has the backend check a policy.
+            - name: ATTESTA_BACKEND_URL
+              value: http://attesta-backend:8080
+            - name: ATTESTA_BACKEND_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: attesta-backend, key: admin-token } }
             # Staff sign in at Keycloak and come back to the https address; the server's metadata is read inside the cluster.
             - name: ATTESTA_ISSUER_GUI_PUBLIC_URL
               value: https://issuer.attesta.corbencreatives.nl

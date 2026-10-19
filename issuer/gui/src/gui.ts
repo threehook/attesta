@@ -1,4 +1,6 @@
+import { createRequire } from 'node:module'
 import type { Server } from 'node:http'
+import { dirname, join } from 'node:path'
 import type { AddressInfo } from 'node:net'
 import express from 'express'
 import type { Auth } from './auth.js'
@@ -19,6 +21,7 @@ import {
   type TypeInfo,
 } from './page.js'
 import { renderCredentials } from './credentials.js'
+import { renderPolicyEditor } from './policy-editor.js'
 import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
 
 export interface GuiOptions {
@@ -27,6 +30,8 @@ export interface GuiOptions {
   apiUrl: string
   /** Who may use the pages; without it they are open, which is for tests and local development only. */
   auth?: Auth
+  /** The Attesta backend that checks policies for the Policy Editor; without it the editor reports that it cannot check. */
+  backend?: { url: string; adminToken: string }
 }
 
 /** What the issuer API tells the pages. */
@@ -206,6 +211,24 @@ export async function startGui(options: GuiOptions) {
   app.post('/credential-types', forward('POST', '/credential-types'))
   app.put('/credential-types/:id', forward('PUT', '/credential-types/:id'))
   app.delete('/credential-types/:id', forward('DELETE', '/credential-types/:id'))
+
+  // Policy editor: Monaco is served from the package; the check of a policy is the backend's, which the GUI asks with its own token.
+  app.use('/vendor/monaco', express.static(join(dirname(createRequire(import.meta.url).resolve('monaco-editor/package.json')), 'min')))
+  app.get('/policy-editor', async (req, res) => {
+    res.type('html').send(renderPolicyEditor(chromeOf(await info(req))))
+  })
+  app.post('/policy-editor/diagnose', async (req, res) => {
+    if (!options.backend) {
+      res.status(503).json({ error: 'de controle is niet ingesteld' })
+      return
+    }
+    const answer = await fetch(`${options.backend.url.replace(/\/$/, '')}/admin/policies/diagnose`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-admin-token': options.backend.adminToken },
+      body: JSON.stringify({ source: String(req.body?.source ?? '') }),
+    })
+    res.status(answer.status).type('json').send(await answer.text())
+  })
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)
