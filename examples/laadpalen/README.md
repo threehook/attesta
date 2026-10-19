@@ -14,12 +14,18 @@ Who may submit is Attesta's decision, made from a credential in the employee's o
   department with the role `laadpalen-aanvrager` in its `roles`, and the diploma `Diploma Laadpalen Management` (a credential type of its own). Secretariaat employees are refused.
   Each credential's own expiry (a diploma's last day) is checked before the policy runs, so an expired diploma never gets here.
 
+The page's home, and the sign-in on "Laadpaal aanvragen" (the wallet must be running to offer the employee's identities):
+
+![The laadpalen page: home](docs/images/home.jpg)
+
+![The laadpalen page: Laadpaal aanvragen](docs/images/laadpaal-aanvragen.jpg)
+
 ## How it fits together
 
 ```
 browser ──► page (nginx) ──► laadpalen-api ──► Attesta (sidecar, 127.0.0.1:8080)      one pod: laadpalen-api
                                                     ▲
-wallet ─────────────────────────────────────────────┘ :8080 (wallets: https://api.attesta.corbencreatives.nl)
+wallet ─────────────────────────────────────────────┘ :8080 (wallets reach it at `ATTESTA_PUBLIC_URL`)
 ```
 
 1. **Sign in.** The page asks the wallet on this machine for the user's identities (email and issuer DID) and shows them in a dropdown;
@@ -45,24 +51,24 @@ has a single API and does not tell callers apart; which workloads may reach whic
 Docker Desktop's Kubernetes, with the shared namespace. The issuer must be deployed, since it signs the credentials and its DID is the one the policy trusts:
 
 ```sh
-make k8s-issuer-apply     # the issuer; form at http://localhost:4000, employee credentials at /employee
-make laadpalen            # builds and deploys the backend with its sidecar, and the page: http://localhost:4174
+make k8s-issuer-apply     # the issuer
+make laadpalen            # builds and deploys the backend with its sidecar, and the page: http://localhost:4174, or the Ingress address
 pnpm --filter @attesta/wallet-desktop package    # the wallet: open the app once; it needs https, see CLAUDE.md for the names
 ```
 
-Get the credentials: open https://issuer.attesta.corbencreatives.nl, sign in, and record an `Employee` (department Burgerzaken or Secretariaat, roles chosen from the list) and
-the diploma Laadpalen Management (a date in the future) for the same email address; upload each QR code from the mail in the wallet. Then open http://localhost:4174, sign in and enter an address (1111BB 2 is free, 1111AA 1 has a laadpaal, 1111DD 4 has no
+Get the credentials: open the issuer's pages, sign in as `staff`, and record an `Employee` (department Burgerzaken or Secretariaat, roles chosen from the list) and
+the diploma Laadpalen Management (a date in the future) for the same email address; upload each QR code from the mail in the wallet. Then open the laadpalen page, sign in and enter an address (1111BB 2 is free, 1111AA 1 has a laadpaal, 1111DD 4 has no
 electric vehicle). Press "Aanmelden", then "Dien aanvraag in". The page opens the wallet each time; the link is also under "Toon API-aanroep" for a wallet
 that has to be given it by hand.
 
-The wallet reaches Attesta at http://localhost:4175 (the `laadpalen-attesta` Service, container port 8080), which is `ATTESTA_PUBLIC_URL` in `k8s/local/laadpalen/api/deployment.yaml`.
+The wallet reaches Attesta at the address in `ATTESTA_PUBLIC_URL` in `k8s/local/laadpalen/api/deployment.yaml` (the `laadpalen-attesta` Service, container port 8080, is also on http://localhost:4175 for a development wallet).
 
 ## Roles
 
 The roles are in the employee's `Employee` credential (chosen from the list on the issuer's form); the policy reads them from there. An employee whose roles do not
 include `laadpalen-aanvrager` is refused with "Niet geautoriseerd vanwege rol". The sign-in asks for the Employee's identity and nothing else.
 
-The demo employees (record an `Employee` and the diploma for each at https://issuer.attesta.corbencreatives.nl):
+The demo employees (record an `Employee` and the diploma for each on the issuer's pages):
 
 | Employee | Email | Department | Roles | Diploma Laadpalen Management | Outcome |
 |---|---|---|---|---|---|
@@ -84,4 +90,4 @@ make laadpalen-logs laadpalen-attesta-logs         # the backend's log (who subm
 make laadpalen-delete
 ```
 
-`backend/internal/authz/examples_test.go` runs the policy through the real OPA engine.
+`backend/internal/authz/examples_test.go` runs the policies through the real OPA engine. To change a policy, open it in the issuer's Policy Editor (Tools) and try it in the Policy Tester; a policy reads `input.credentials["Employee"]` and `input.credentials["Diploma Laadpalen Management"]`, each with `issuer` and `claims`.
