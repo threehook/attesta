@@ -22,7 +22,7 @@ import (
 )
 
 // policyReloadInterval is how often the policy directory is read again; a ConfigMap mounted there changes in place within about a minute.
-const policyReloadInterval = 5 * time.Second
+const policyReloadInterval = 30 * time.Second
 
 func main() {
 	if err := run(); err != nil {

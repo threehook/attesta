@@ -79,8 +79,8 @@ The demo employees (record an `Employee` and the diploma for each on the issuer'
 
 ## Policies
 
-`make laadpalen-policies` writes `policies/*.rego` into the ConfigMap `laadpalen-policies`. The sidecar watches it, so a changed policy is live within about a
-minute, with no restart. The application owns this ConfigMap: the file set is the whole set.
+`make laadpalen-policies` writes `policies/*.rego` into the ConfigMap `laadpalen-policies`. The sidecar watches it, so a changed policy is live within about 90
+seconds, with no restart. The application owns this ConfigMap: the file set is the whole set.
 
 ## Tests and logs
 

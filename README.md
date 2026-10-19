@@ -105,10 +105,10 @@ make laadpalen           # deploys examples/laadpalen (needs the issuer): the pa
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
 
-A backend serves the policies in the directory `ATTESTA_POLICIES_DIR` and reads it every five seconds. It applies what changed without a restart: a new or
+A backend serves the policies in the directory `ATTESTA_POLICIES_DIR` and reads it every 30 seconds. It applies what changed without a restart: a new or
 changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file is rejected (logged once) while the previous
 version stays in use. The policy ID is the file name without `.rego`. The laadpalen sidecar gets its directory from the ConfigMap `laadpalen-policies`
-(`make laadpalen-policies`; Kubernetes updates the mounted files within about a minute). `POST /admin/policies` hot-deploys a single policy directly; it
+(`make laadpalen-policies`; Kubernetes updates the mounted files within about a minute, and the backend reads them at its next pass, so a change is live within about 90 seconds). `POST /admin/policies` hot-deploys a single policy directly; it
 is held in memory until the backend restarts, and the directory never removes it.
 
 ```sh
