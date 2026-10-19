@@ -48,6 +48,7 @@ header .app{display:flex;align-items:center;gap:8px;position:absolute;right:32px
 .crumbs li+li::before{content:"/";margin-right:6px}
 .crumbs a{color:inherit;text-decoration:none}.crumbs a:hover{text-decoration:underline}
 .crumbs [aria-current]{color:var(--brand-text)}
+header .extra{position:absolute;right:32px;bottom:12px}
 header h1{margin:6px 0 0;font-size:24px;line-height:1.25;font-weight:600}
 nav.menu{grid-area:menu;background:var(--surface);border-right:1px solid var(--border);padding:20px 12px}
 .menu h2{margin:0 0 6px;padding:6px 12px;border-radius:6px;background:var(--label-bg);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--label-text)}
@@ -135,7 +136,7 @@ details.multi .options input{width:auto;margin:0}
   nav.menu{border-right:0;border-bottom:1px solid var(--border)}
   :root{--menu-w:120px}
   header .title,main,footer{padding-left:16px;padding-right:16px}
-  header .app{right:16px}
+  header .app,header .extra{right:16px}
 }`
 
 // Lets the user drag the right edge of a column header to widen or narrow that column. The first drag fixes the widths the table has by then.
@@ -187,6 +188,8 @@ export interface Page {
   logo?: { src: string; alt: string }
   /** Important information for the one-line footer, if there is any. */
   footer?: string
+  /** Something for the bottom right of the header. */
+  headerExtra?: string
   /** Adds a sign-out link below the menu. */
   signOut?: boolean
 }
@@ -206,7 +209,7 @@ export function renderPage(page: Page): string {
   const footer = page.footer ? `<footer title="${escape(page.footer)}">${escape(page.footer)}</footer>` : '<footer>&nbsp;</footer>'
   return `<!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${APP_NAME}</title><style>${theme}</style>
-<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div></header>
+<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div>${page.headerExtra ? `<div class="extra">${page.headerExtra}</div>` : ''}</header>
 <nav class="menu" aria-label="Menu">${menu}${signOut}</nav>
 <main>${page.body}</main>
 ${footer}`
