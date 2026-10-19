@@ -28,8 +28,10 @@ for (const trusted of [true, false]) {
         id: policyId,
         source: `package policy
 
-decision := {"decision": "Deny", "reason": concat("", ["issuer not trusted: ", input.issuer])} if {
-	input.issuer != "${trustedDid}"
+diploma := input.credentials["Diploma Laadpalen Management"]
+
+decision := {"decision": "Deny", "reason": concat("", ["issuer not trusted: ", diploma.issuer])} if {
+	diploma.issuer != "${trustedDid}"
 } else := {"decision": "Permit", "reason": concat("", ["credential accepted for resource ", input.resource])}
 `,
       },

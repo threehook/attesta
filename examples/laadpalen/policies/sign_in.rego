@@ -11,8 +11,8 @@ deny(reason) := {"decision": "Deny", "reason": reason}
 
 decision := deny(concat("", ["Onbekende bron: ", input.resource])) if {
 	input.resource != "sign_in"
-} else := deny(concat("", ["Onverwacht bewijs: ", input.type])) if {
-	input.type != "Employee"
-} else := deny(concat("", ["Uitgever niet vertrouwd: ", input.issuer])) if {
-	not trusted(input.issuer)
+} else := deny("Employee ontbreekt") if {
+	not input.credentials.Employee
+} else := deny(concat("", ["Uitgever niet vertrouwd: ", input.credentials.Employee.issuer])) if {
+	not trusted(input.credentials.Employee.issuer)
 } else := {"decision": "Permit", "reason": "Aangemeld"}
