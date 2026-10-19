@@ -56,10 +56,17 @@ export const POLICY_EDITOR: MenuItem = {
   description: 'Schrijf en controleer een Rego-policy. Open een policy van uw schijf of maak een nieuwe en bewaar die waar u wilt.',
 }
 
+export const POLICY_TESTER: MenuItem = {
+  id: 'policy-tester',
+  label: 'Policy Tester',
+  href: '/policy-tester',
+  description: 'Probeer een policy uit met een eigen input en zie welk besluit de policy geeft.',
+}
+
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
   { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES] },
-  { label: 'Tools', items: [POLICY_EDITOR] },
+  { label: 'Tools', items: [POLICY_EDITOR, POLICY_TESTER] },
 ]
 
 /** What a form or a page after it is for: the employee credential, or the type at this path. */
@@ -68,7 +75,7 @@ const itemOf = (kind: Kind): MenuItem => ('employee' in kind ? EMPLOYEE : typeIt
 export const home: Crumb[] = [{ label: 'Home', href: '/' }]
 
 // What every page shares: the menu, the logo, the footer and the way to sign out.
-export const shell = (chrome: Chrome, page: Pick<Page, 'title' | 'crumbs' | 'active' | 'body'>): string =>
+export const shell = (chrome: Chrome, page: Pick<Page, 'title' | 'crumbs' | 'active' | 'body' | 'headerExtra'>): string =>
   renderPage({ ...page, menu: menuOf(chrome), footer: footerOf(chrome), logo: logoOf(chrome), signOut: signOutOf(chrome) })
 
 // Lets a drop-down with check boxes show what is chosen, and close when the page is clicked elsewhere.

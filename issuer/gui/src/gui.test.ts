@@ -410,10 +410,10 @@ describe('issuer pages', () => {
 })
 
 describe('Policy Editor', () => {
-  it('is the only item under Tools, below Beheer', async () => {
+  it('is the first item under Tools, below Beheer', async () => {
     const html = await (await fetch(baseUrl)).text()
 
-    expect(html).toMatch(/<h2>Beheer<\/h2>.*<h2>Tools<\/h2><ul><li><a href="\/policy-editor"[^>]*>Policy Editor<\/a><\/li><\/ul>/s)
+    expect(html).toMatch(/<h2>Beheer<\/h2>.*<h2>Tools<\/h2><ul><li><a href="\/policy-editor"[^>]*>Policy Editor<\/a><\/li><li><a href="\/policy-tester"[^>]*>Policy Tester<\/a><\/li><\/ul>/s)
   })
 
   it('shows the editor with its file buttons, and serves Monaco itself', async () => {
@@ -448,6 +448,42 @@ describe('Policy Editor', () => {
       expect(seen).toEqual([{ token: 'tok', body: '{"source":"package policy"}' }])
     } finally {
       await checking.close()
+      backend.close()
+    }
+  })
+})
+
+describe('Policy Tester', () => {
+  it('shows the tester with the policy and the input side by side', async () => {
+    const html = await (await fetch(`${baseUrl}/policy-tester`)).text()
+
+    expect(html).toContain('id="pt-policy"')
+    expect(html).toContain('id="pt-input"')
+    expect(html).toContain('id="pt-run" disabled')
+  })
+
+  it('has the backend evaluate the policy on the input', async () => {
+    const seen: { path?: string; token?: string | string[]; body: string }[] = []
+    const backend = createServer((req, res) => {
+      let raw = ''
+      req.on('data', (c) => (raw += c))
+      req.on('end', () => {
+        seen.push({ path: req.url, token: req.headers['x-admin-token'], body: raw })
+        res.setHeader('content-type', 'application/json')
+        res.end(JSON.stringify({ result: { decision: 'Permit', reason: 'ok', obligations: [], advice: [] } }))
+      })
+    })
+    await new Promise<void>((resolve) => backend.listen(0, resolve))
+    const testing = await startGui({ port: 0, apiUrl, backend: { url: `http://localhost:${(backend.address() as AddressInfo).port}`, adminToken: 'tok' } })
+    try {
+      const res = await fetch(`http://localhost:${testing.port}/policy-tester/evaluate`, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ source: 'package policy', input: { resource: 'r' } }),
+      })
+
+      expect(((await res.json()) as { result: { decision: string } }).result.decision).toBe('Permit')
+      expect(seen).toEqual([{ path: '/admin/policies/evaluate', token: 'tok', body: '{"source":"package policy","input":{"resource":"r"}}' }])
+    } finally {
+      await testing.close()
       backend.close()
     }
   })

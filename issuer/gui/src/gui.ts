@@ -22,6 +22,7 @@ import {
 } from './page.js'
 import { renderCredentials } from './credentials.js'
 import { renderPolicyEditor } from './policy-editor.js'
+import { renderPolicyTester } from './policy-tester.js'
 import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
 
 export interface GuiOptions {
@@ -212,23 +213,28 @@ export async function startGui(options: GuiOptions) {
   app.put('/credential-types/:id', forward('PUT', '/credential-types/:id'))
   app.delete('/credential-types/:id', forward('DELETE', '/credential-types/:id'))
 
-  // Policy editor: Monaco is served from the package; the check of a policy is the backend's, which the GUI asks with its own token.
+  // Policy editor and tester: Monaco is served from the package; the check and the test of a policy are the backend's, which the GUI asks with its own token.
   app.use('/vendor/monaco', express.static(join(dirname(createRequire(import.meta.url).resolve('monaco-editor/package.json')), 'min')))
   app.get('/policy-editor', async (req, res) => {
     res.type('html').send(renderPolicyEditor(chromeOf(await info(req))))
   })
-  app.post('/policy-editor/diagnose', async (req, res) => {
+  const askBackend = (path: string, body: (req: express.Request) => unknown): express.RequestHandler => async (req, res) => {
     if (!options.backend) {
       res.status(503).json({ error: 'de controle is niet ingesteld' })
       return
     }
-    const answer = await fetch(`${options.backend.url.replace(/\/$/, '')}/admin/policies/diagnose`, {
+    const answer = await fetch(`${options.backend.url.replace(/\/$/, '')}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-admin-token': options.backend.adminToken },
-      body: JSON.stringify({ source: String(req.body?.source ?? '') }),
+      body: JSON.stringify(body(req)),
     })
     res.status(answer.status).type('json').send(await answer.text())
+  }
+  app.post('/policy-editor/diagnose', askBackend('/admin/policies/diagnose', (req) => ({ source: String(req.body?.source ?? '') })))
+  app.get('/policy-tester', async (req, res) => {
+    res.type('html').send(renderPolicyTester(chromeOf(await info(req))))
   })
+  app.post('/policy-tester/evaluate', askBackend('/admin/policies/evaluate', (req) => ({ source: String(req.body?.source ?? ''), input: req.body?.input ?? {} })))
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     console.error(err)
