@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -151,4 +152,53 @@ func TestHandleDiagnosePolicy(t *testing.T) {
 	if got := rec.Body.String(); got != `{"diagnostics":[]}`+"\n" {
 		t.Fatalf("no problems: body = %q", got)
 	}
+}
+
+func TestHandleEvaluatePolicy(t *testing.T) {
+	admin := map[string]string{"X-Admin-Token": "admin-tok"}
+	const body = `{"source":"x","input":{"resource":"r","userRoles":["a"],"credentials":{"Employee":{"issuer":"did:key:i","claims":{"department":"burgerzaken"}}}}}`
+
+	t.Run("needs the admin token", func(t *testing.T) {
+		if rec := doRequest(newTestServer(t, &fakeEvaluator{}), "POST", "/admin/policies/evaluate", body, nil); rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d", rec.Code)
+		}
+	})
+	t.Run("runs the policy on the input", func(t *testing.T) {
+		e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit, Reason: "ok", Obligations: []authz.Statement{{ID: "log", Attributes: []authz.Attribute{{ID: "k", Value: "v"}}}}}}
+		rec := doRequest(newTestServer(t, e), "POST", "/admin/policies/evaluate", body, admin)
+
+		want := `{"result":{"advice":[],"decision":"Permit","obligations":[{"id":"log","attributes":{"k":"v"}}],"reason":"ok"}}` + "\n"
+		if rec.Code != http.StatusOK || rec.Body.String() != want {
+			t.Fatalf("status = %d, body = %q, want %q", rec.Code, rec.Body, want)
+		}
+		got := e.evaluated
+		if got.Resource != "r" || got.UserRoles[0] != "a" || got.Credentials["Employee"].Issuer != "did:key:i" || got.Credentials["Employee"].Claims["department"] != "burgerzaken" {
+			t.Fatalf("input = %+v", got)
+		}
+	})
+	t.Run("reports the problems of the policy instead of a decision", func(t *testing.T) {
+		e := &fakeEvaluator{diagnostics: []authz.Diagnostic{{Severity: "error", Message: "boom", Row: 1, Col: 1, EndRow: 1, EndCol: 2}}}
+		rec := doRequest(newTestServer(t, e), "POST", "/admin/policies/evaluate", body, admin)
+
+		if !strings.Contains(rec.Body.String(), `"diagnostics":[`) || strings.Contains(rec.Body.String(), `"result"`) || e.evaluated.Resource != "" {
+			t.Fatalf("body = %q, evaluated = %+v", rec.Body, e.evaluated)
+		}
+	})
+	t.Run("refuses an input that is not the shape of input", func(t *testing.T) {
+		for name, tc := range map[string]struct{ body, message string }{
+			"a field input does not have": {`{"source":"x","input":{"type":"Employee"}}`, "unknown field"},
+			"a claim that is not text":    {`{"source":"x","input":{"credentials":{"Employee":{"claims":{"employeeHasCar":true}}}}}`, "must be text"},
+		} {
+			rec := doRequest(newTestServer(t, &fakeEvaluator{}), "POST", "/admin/policies/evaluate", tc.body, admin)
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.message) {
+				t.Errorf("%s: status = %d, body = %q, want %q", name, rec.Code, rec.Body, tc.message)
+			}
+		}
+	})
+	t.Run("says why a policy cannot run", func(t *testing.T) {
+		rec := doRequest(newTestServer(t, &fakeEvaluator{err: errors.New("boom")}), "POST", "/admin/policies/evaluate", body, admin)
+		if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "boom") {
+			t.Fatalf("status = %d, body = %q", rec.Code, rec.Body)
+		}
+	})
 }
