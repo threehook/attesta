@@ -4,6 +4,8 @@ A credential issuer. It stands for an organization such as a university or a mun
 QR code by mail, and their wallet fetches the signed credential (SD-JWT VC) over OpenID4VCI. The issuer is independent of the Attesta backend; the backend only learns of it
 by being configured to trust the issuer's DID.
 
+![Recording an Employee credential in the issuer's pages](docs/images/medewerker.jpg)
+
 ## The idea in short
 
 ```
@@ -26,7 +28,18 @@ the same across restarts and replicas; use another seed than the default outside
 | `api/` (Go, module `attesta/issuer`) | Holds the signing key, the entitlements (in Postgres), the roles, the status list, the mail, and the OpenID4VCI endpoints for wallets under `/oid4vci`. |
 | `gui/` (`@attesta/issuer-gui`) | The pages staff use. It has no key and no store; it only calls the API. |
 
-The pages: `/` (welcome), `/employee` and `/type/<path>` (forms), `/roles` (manage roles), `/credential-types` (menu: Credential Forms; define credential types with an editor and preview, one menu item each), `/credentials` (every credential that is waiting or issued and has not ended, in a table to filter, sort and page; revoke one, or change it: it is revoked and the corrected data recorded in its place). `GET /entitlements` lists them, `GET /entitlements?email=` those of one person. Changing a credential never changes its email address (the API refuses it): that is another person, so the credential is revoked and a new one made.
+The pages (menu groups Verifiable Credentials, Beheer and Tools): `/` (welcome), `/employee` and `/type/<path>` (forms), `/roles` (manage roles), `/credential-types` (menu: Credential Forms; define credential types with an editor and preview, one menu item each), `/credentials` (every credential that is waiting or issued and has not ended, in a table to filter, sort and page; revoke one, or change it: it is revoked and the corrected data recorded in its place). `GET /entitlements` lists them, `GET /entitlements?email=` those of one person. Changing a credential never changes its email address (the API refuses it): that is another person, so the credential is revoked and a new one made.
+Roles and credential forms are managed as tables:
+
+![Rollen](docs/images/rollen.jpg)
+
+![Credential Forms](docs/images/credential-forms.jpg)
+
+Under Tools, `/policy-editor` and `/policy-tester` are for writing and trying Rego policies; they pass the policy to the Attesta backend's `/admin/policies/diagnose` and `/admin/policies/evaluate`, and nothing is stored in the issuer. They need Chrome or Edge, and the setting `ATTESTA_BACKEND_URL` and `ATTESTA_BACKEND_ADMIN_TOKEN`. The editor marks the line and position of a problem; the tester shows the decision for the input on the right:
+
+![Policy Editor, with a problem marked](docs/images/policy-editor.jpg)
+
+![Policy Tester, with a Permit](docs/images/policy-tester.jpg)
 
 ## Credentials
 
@@ -98,6 +111,7 @@ Without `ATTESTA_ISSUER_OIDC_ISSUER` the API refuses to start. `ATTESTA_ISSUER_A
 | `ATTESTA_ISSUER_OIDC_ISSUER`, `_OIDC_DISCOVERY_URL`, `_OIDC_CLIENT_ID`, `_OIDC_ROLE` | The OpenID Connect server: the name in its tokens, where its metadata is reached when that differs, the client (default `issuer-gui`) and the role (default `issuer-staff`). |
 | `ATTESTA_ISSUER_OIDC_CLIENT_SECRET`, `ATTESTA_ISSUER_GUI_PUBLIC_URL` | Pages only: the client secret, and where staff reach the pages (the server sends them back there). |
 | `ATTESTA_ISSUER_GUI_LISTEN_PORT`, `ATTESTA_ISSUER_API_URL` | Pages only: their port (4000) and where the API is (`http://localhost:4001`). |
+| `ATTESTA_BACKEND_URL`, `ATTESTA_BACKEND_ADMIN_TOKEN` | Pages only: the Attesta backend and its admin token, for the Policy Editor and Policy Tester. Without them those pages answer that the check is not set up. In the cluster: `http://attesta-backend:8080` and the Secret `attesta-backend`, key `admin-token`. |
 | `ATTESTA_ISSUER_QR_LIFETIME_SECONDS`, `ATTESTA_ISSUER_RENEWAL_COOLDOWN` | How long a QR code works, and the minimum time between renewed codes. |
 
 ## Run and test
@@ -119,7 +133,7 @@ The sender must be an address or domain that the mail server allows. `make k8s-i
 
 `make k8s-issuer-apply` builds both images and deploys them with Postgres and Keycloak (`k8s/local/issuer/`).
 
-- **Sign in** at https://issuer.attesta.corbencreatives.nl as user `staff`. The password is in the Secret `attesta-issuer-auth`:
+- **Sign in** at the address in `ATTESTA_ISSUER_GUI_PUBLIC_URL` as user `staff`. The password is in the Secret `attesta-issuer-auth`:
   `kubectl -n attesta get secret attesta-issuer-auth -o jsonpath='{.data.staff-password}' | base64 -d` (and `admin-password` for Keycloak's console at `/auth`).
   The sign-in works only at the https address, not at http://localhost:4000, because the server sends staff back to the address in `ATTESTA_ISSUER_GUI_PUBLIC_URL`.
 - **Keycloak** realm `attesta` comes from the ConfigMap `issuer-keycloak-realm`; users made by hand are gone after a restart. A customer points the issuer at its own server instead and
