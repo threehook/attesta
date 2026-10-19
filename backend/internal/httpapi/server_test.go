@@ -15,16 +15,19 @@ import (
 // fakeEvaluator isolates httpapi's own routing/decoding/status-code logic from the real OPA implementation, which has its own tests
 // (internal/authz).
 type fakeEvaluator struct {
-	result    authz.Result
-	err       error
-	validated string      // last source passed to Validate, for assertions
-	evaluated authz.Input // last input passed to Evaluate
+	result      authz.Result
+	err         error
+	validated   string      // last source passed to Validate, for assertions
+	evaluated   authz.Input // last input passed to Evaluate
+	diagnostics []authz.Diagnostic
 }
 
 func (f *fakeEvaluator) Validate(source string) error {
 	f.validated = source
 	return nil
 }
+
+func (f *fakeEvaluator) Diagnose(string) []authz.Diagnostic { return f.diagnostics }
 
 func (f *fakeEvaluator) Evaluate(_ string, in authz.Input) (authz.Result, error) {
 	f.evaluated = in
@@ -128,5 +131,24 @@ func TestHandlePutPolicyRequiresIDAndSource(t *testing.T) {
 	rec := doRequest(s, "POST", "/admin/policies", `{"id":"","source":""}`, map[string]string{"X-Admin-Token": "admin-tok"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleDiagnosePolicy(t *testing.T) {
+	evaluator := &fakeEvaluator{diagnostics: []authz.Diagnostic{{Severity: "error", Message: "boom", Row: 2, Col: 3, EndRow: 2, EndCol: 5}}}
+	s := newTestServer(t, evaluator)
+
+	if rec := doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, nil); rec.Code != http.StatusUnauthorized {
+		t.Fatalf("without token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	rec := doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, map[string]string{"X-Admin-Token": "admin-tok"})
+	want := `{"diagnostics":[{"severity":"error","message":"boom","row":2,"col":3,"endRow":2,"endCol":5}]}` + "\n"
+	if rec.Code != http.StatusOK || rec.Body.String() != want {
+		t.Fatalf("status = %d, body = %q, want %q", rec.Code, rec.Body, want)
+	}
+	evaluator.diagnostics = nil
+	rec = doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, map[string]string{"X-Admin-Token": "admin-tok"})
+	if got := rec.Body.String(); got != `{"diagnostics":[]}`+"\n" {
+		t.Fatalf("no problems: body = %q", got)
 	}
 }

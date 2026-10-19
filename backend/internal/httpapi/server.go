@@ -32,6 +32,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /v1/authorize/requests/{id}/response", s.handlePresentationResponse)
 	mux.HandleFunc("GET /v1/authorize/requests/{id}", s.handlePresentationOutcome)
 	mux.HandleFunc("POST /admin/policies", s.requireAdmin(s.handlePutPolicy))
+	mux.HandleFunc("POST /admin/policies/diagnose", s.requireAdmin(s.handleDiagnosePolicy))
 	return withCORS(mux, s.CORSOrigins)
 }
 

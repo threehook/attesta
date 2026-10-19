@@ -66,4 +66,6 @@ type Evaluator interface {
 	// the lists obligations and advice, whose items are objects with an id and attributes, an object of string values. A rule that is undefined
 	// gives Indeterminate; a policy that cannot be run or returns a value of another shape gives an error.
 	Evaluate(source string, in Input) (Result, error)
+	// Diagnose lists the problems that make Validate refuse source, each with the place in the source; none means source is accepted.
+	Diagnose(source string) []Diagnostic
 }

@@ -2,6 +2,7 @@ package authz
 
 import (
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -178,4 +179,38 @@ func BenchmarkOPAEvaluate(b *testing.B) {
 			}
 		}
 	})
+}
+
+func TestOPADiagnose(t *testing.T) {
+	vm := NewOPA()
+	tests := []struct {
+		name, source, message string
+		row, col              int
+	}{
+		{"accepted", diplomaPolicyV1, "", 0, 0},
+		{"syntax", "package policy\n\ndecision := {\"decision\": \"Deny\" if {\n", "unexpected", 3, 0},
+		{"wrong package", "package other\n\ndecision := {\"decision\": \"Deny\"}\n", "package policy", 1, 1},
+		{"no decision rule", "package policy\n\nallow := true\n", "no rule decision", 1, 1},
+		{"unknown input field", "package policy\n\ndecision := {\"decision\": \"Deny\"} if input.usr == \"a\"\n", "usr", 3, 0},
+		{"forbidden builtin", "package policy\n\ndecision := {\"decision\": \"Deny\"} if http.send({})\n", "http.send", 3, 0},
+		{"wrong shape", "package policy\n\ndecision := 1\n", "decision", 3, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := vm.Diagnose(tt.source)
+			if tt.message == "" {
+				if len(got) != 0 {
+					t.Fatalf("got %+v, want none", got)
+				}
+				return
+			}
+			if len(got) == 0 {
+				t.Fatal("got no diagnostics")
+			}
+			d := got[0]
+			if !strings.Contains(d.Message, tt.message) || d.Row != tt.row || (tt.col != 0 && d.Col != tt.col) || d.EndCol <= d.Col {
+				t.Fatalf("got %+v, want %q at %d:%d", d, tt.message, tt.row, tt.col)
+			}
+		})
+	}
 }
