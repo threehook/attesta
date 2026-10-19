@@ -24,7 +24,7 @@ sequenceDiagram
     A->>W: 2. the user pastes the link and confirms
     W->>B: 3. SD-JWT presentation (direct_post)
     Note over B: 4. verify issuer signature, disclosures, key binding
-    Note over B: 5. evaluate the policy (resource, type, issuer DID, claims)
+    Note over B: 5. evaluate the policy (resource, user roles, the credentials by type)
     A->>B: 6. GET /v1/authorize/requests/{id}, polled
     B-->>A: status, decision, reason, subject
 ```
@@ -34,7 +34,7 @@ This is the flow between a relying application, the shared backend and the deskt
 - **The laadpalen example** (`examples/laadpalen`) puts an application backend between the page and Attesta, and runs Attesta as a **sidecar** in the application's pod.
   The page never talks to Attesta; the application asks Attesta whether an employee may do something, and then does the work itself.
 - **Policies** are per application, and are reloaded while Attesta runs: they come from a directory (a ConfigMap in Kubernetes) that Attesta watches.
-- **Claims** the employee discloses are passed to the policy, next to the resource, the credential type and the issuer.
+- **Claims** the employee discloses are passed to the policy, next to the resource and the user's roles, per credential type with its issuer.
 - **The copy and paste** of the link into the wallet is a demo shortcut. Section 3 replaces it.
 
 ## 2. The scenario we design for: the workforce

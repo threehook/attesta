@@ -8,7 +8,7 @@ embedded directly in the backend.
 Presentations use selective disclosure (SD-JWT): the holder reveals only the requested claims, but the issuer's signature
 and the holder's key are the same in every presentation, so verifiers that compare notes can tell it is the same credential.
 
-This is a monorepo: the backend, a TypeScript client library, a wallet core, the issuer, and an example (the laadpalen app, a relying application).
+This is a monorepo: the backend, a TypeScript client library, a wallet core and a desktop wallet, the issuer (API and pages, with a Policy Editor and Policy Tester for writing and trying policies), and an example (the laadpalen app, a relying application).
 
 ## Architecture
 
@@ -24,6 +24,7 @@ Key design decisions:
 | Identity | the holder is identified by the `email` claim of their credential, together with the issuer's DID. Every request asks the wallet for it, a presentation without it is rejected, and an allowed outcome carries it as `subject`; a denial does not, since an untrusted issuer's claims prove nothing |
 | Revocation | the issuer publishes a signed [Token Status List](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) (1 bit per credential) and every credential points to its bit. The backend reads the list of the credential's issuer, only from the URLs it is configured with, and denies a revoked credential with the reason "credential has been revoked". A credential without a status reference, and a list that cannot be read or has expired, are denied |
 | Replay protection | each request carries a fresh nonce and state and can be answered once; the key-binding JWT must name this request's nonce and response URI and be at most five minutes old |
+| Policy authoring | the issuer's pages have a **Policy Editor** (Rego with the problems, line and position, marked as you type; open, create and save policies on your own disk) and a **Policy Tester** (run an opened policy on an input of your own and see the decision, reason, obligations and advice). Both call the backend's admin endpoints `POST /admin/policies/diagnose` and `POST /admin/policies/evaluate`, which nothing is stored by. Claim names and credential types in `input.credentials` are free, so a policy can use a claim no credential carries yet |
 | Policy integration | OPA embedded in-process as a library (`github.com/open-policy-agent/opa/v1/rego`), no OPA server. A policy is one `.rego` file in `package policy` that defines the rule `decision`, an object with `decision` (`Permit`, `Deny`, `NotApplicable` or `Indeterminate`, XACML; anything else is an error), `reason`, and the lists `obligations` and `advice`; a rule that is undefined gives `Indeterminate`. The input is `resource`, `userRoles` and `credentials`. `credentials` holds each presented credential by credential type, with its `issuer` and its `claims` (the claims the request asked for, the email included; a request fails unless the wallet disclosed all of them; text claims arrive as they are, other values as JSON); a request asks for each type at most once, and the credentials must all be of the same person (the same email). `userRoles` comes from the `Att-User-Roles` header (comma-separated) of the application's request, is empty without it, and is not verified by Attesta. Every item of `obligations` and `advice` is one statement: an object with an `id` and `attributes`, an object of string values. An application must carry out the obligations that come with a decision or not grant access; it may ignore advice. Policies may not call `http.send`, `net.lookup_ip_addr`, `opa.runtime`, `time.now_ns`, `rand.intn` or `uuid.rfc4122`, and an evaluation is cut off after 500 ms. |
 | Decision log | one [ADL](https://gitdocumentatie.logius.nl/publicatie/ftv/adl/1.0.0/) Level 1 record per decision, to stdout and over OTLP; see `backend/internal/adl/adl.md` |
 | Wallet | a desktop app (Electron) on [Credo](https://github.com/openwallet-foundation/credo-ts); keys and credentials live in an encrypted Askar store on the user's machine, and the user confirms every credential it adds, and every disclosure unless they chose to always share with that application |
@@ -47,17 +48,19 @@ backend/
 client-lib/                TypeScript package @attesta/client: typed client for the backend API (authorization requests, outcome polling, policy deploy)
 wallet/                    @attesta/wallet: the wallet core — a Credo holder agent that takes credentials from issuers' links, answers presentation requests, and has a CLI
 wallet-desktop/            @attesta/wallet-desktop: the Electron desktop wallet around the core (confirmations, credential list, link handling)
+issuer/                    credential issuer; see its README
+  api/                     Go (module attesta/issuer): OpenID4VCI, entitlements, roles, credential types, status list, the mail with the QR code
+  gui/                     @attesta/issuer-gui: the pages, including the Policy Editor and Policy Tester
 examples/
-  issuer/                  credential issuer: api/ (Go, OpenID4VCI, entitlements, the mail with the QR code), gui/ (the pages, form at /)
   laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
     backend/          namespace/deployment/service for the Go backend
-    issuer/           deployments/services for the issuer: api, gui, Postgres and Keycloak (https://issuer.attesta.corbencreatives.nl)
-    laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page (https://laadpalen.attesta.corbencreatives.nl; wallets reach Attesta at https://api.attesta.corbencreatives.nl)
-    ingress/          Ingress for those three names; Traefik terminates https (make k8s-traefik k8s-ingress)
+    issuer/           deployments/services for the issuer: api, gui, Postgres and Keycloak
+    laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page
+    ingress/          Ingress for the issuer, the laadpalen page and the sidecar's API; Traefik terminates https (make k8s-traefik k8s-ingress)
   cloud/              (empty for now)
-pnpm-workspace.yaml   client-lib + wallet + wallet-desktop + examples
+pnpm-workspace.yaml   client-lib, wallet, wallet-desktop, issuer/gui and examples/laadpalen/gui
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
 
@@ -65,30 +68,11 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 
 | GUI | Where | Used for |
 |---|---|---|
-| Issuer | `issuer/gui` | The organisation's staff records a verifiable credential for an employee. The employee gets a mail with a QR code, uploads it in their wallet, and the wallet fetches the credential. The pages are in Dutch. |
+| Issuer | `issuer/gui` | The organisation's staff records an Employee credential or a diploma for a person, manages roles and credential forms, and revokes or corrects credentials. The person gets a mail with a QR code, uploads it in their wallet, and the wallet fetches the credential. Under Tools: the Policy Editor and Policy Tester. The pages are in Dutch. |
 | Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
 | Wallet | `wallet-desktop` | The employee's wallet: reads the QR code from the mail, confirms every credential it adds, and confirms every disclosure unless the employee chose to always share with that application. |
 
-### Issuer
-
-The menu on the left lists the credentials the issuer can create, grouped under a label; the page opened from the menu is shown in the header, under a
-breadcrumb. The welcome page has a block per menu item that explains what it does. The footer shows which issuer the credentials are issued as.
-
-![The issuer, with "Aanvragen laadpalen" chosen](docs/images/issuer-aanvragen-laadpalen.png)
-
-### Laadpalen page
-
-The same layout, with the employee's own menu: "Laadpaal aanvragen" is where the employee signs in with the wallet and submits an address. The footer shows who
-is signed in, with "Afmelden".
-
-![The laadpalen page, with "Laadpaal aanvragen" chosen](docs/images/laadpalen-laadpaal-aanvragen.png)
-
-### Wallet
-
-The same layout, with the pages of the wallet in the menu: the credentials it holds, opening a link by hand, and the applications the user signs in to or shares with
-automatically. Confirmations stay in a dialog or a popup. The footer shows how many credentials the wallet holds.
-
-![The wallet, with Credentials chosen](docs/images/wallet-credentials.png)
+Each GUI is described, with screenshots, in the README of its module: [issuer](issuer/README.md), [laadpalen](examples/laadpalen/README.md) and [wallet-desktop](wallet-desktop/README.md). They share one look: a header with the logo and a breadcrumb, a menu on the left, and a one-line footer.
 
 ## Development workflow
 
@@ -116,8 +100,8 @@ make k8s-apply           # applies k8s/local/backend/*.yaml, then points the dep
 make k8s-logs             # tail the running pod's logs
 make k8s-port-forward     # expose the service on localhost:8080 for curl/Postman
 make k8s-delete           # tear down the namespace
-make k8s-issuer-apply    # deploys the issuer; open https://issuer.attesta.corbencreatives.nl and sign in for its form
-make laadpalen           # deploys examples/laadpalen (needs the issuer): page at https://laadpalen.attesta.corbencreatives.nl (needs make k8s-traefik k8s-ingress once)
+make k8s-issuer-apply    # deploys the issuer; open its pages and sign in as staff
+make laadpalen           # deploys examples/laadpalen (needs the issuer): the page is reached through the Ingress (needs make k8s-traefik k8s-ingress once)
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
 
@@ -130,7 +114,8 @@ is held in memory until the backend restarts, and the directory never removes it
 ```sh
 pnpm install                          # from the repo root; allows the install scripts listed in pnpm-workspace.yaml
 pnpm --filter @attesta/client test     # client library
-pnpm --filter @attesta/issuer test     # issues credentials to an in-process wallet
+pnpm --filter @attesta/issuer-gui test  # the issuer's pages
+cd issuer/api && go test ./...          # the issuer's API (needs Docker)
 pnpm --filter @attesta/wallet-desktop test:e2e   # the desktop wallet, driven like a user
 ```
 
@@ -141,8 +126,8 @@ Askar, the wallet's storage, ships a native library that its install script down
 The laadpalen app and its policies are in [examples/laadpalen](examples/laadpalen/README.md):
 
 ```sh
-make k8s-issuer-apply laadpalen                                # the issuer (form at https://issuer.attesta.corbencreatives.nl) and the laadpalen app
-pnpm --filter @attesta/wallet-desktop package                  # the wallet: record a credential on the issuer's form, then choose "Mijn credential ophalen" on the issuer page and log in with the mailed link (needs https)
+make k8s-issuer-apply laadpalen                                # the issuer and the laadpalen app
+pnpm --filter @attesta/wallet-desktop package                  # the wallet: record credentials on the issuer's pages, then upload the QR code from the mail on the wallet's "QR-code uploaden" page (needs https)
 ```
 
 The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|list`), handy for scripts.
