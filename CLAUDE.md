@@ -22,9 +22,9 @@ presentation that discloses only what was asked; the backend verifies it and a R
 Flow: page `POST /v1/authorize/requests` -> `openid4vp://` link -> user pastes it into the wallet and confirms -> wallet posts to
 `/v1/authorize/requests/{id}/response` -> backend verifies, policy decides -> page polls `GET /v1/authorize/requests/{id}`. Every request asks for the
 holder's `email` claim; it identifies the person (issuer DID + email). An allowed outcome carries it as `subject`, a denial does not. The policy sees
-(resource, credential type, issuer DID, the requested claims as strings). A request asks for a list of `credentials` (each its own type and claims; the first identifies the person, `credentialType` with `claims` is
-shorthand for one); the wallet then answers with one presentation per credential, all of the same person (same email), and the policy gets the others by type
-(`input.others`: claims and issuer). laadpalen asks for an `Employee` (department, roles) and the diploma `Diploma Laadpalen Management`.
+(resource, user roles, and the credentials by type: issuer DID and the requested claims as strings). A request asks for a list of `credentials` (each its own type and claims; the first identifies the person, `credentialType` with `claims` is
+shorthand for one); the wallet then answers with one presentation per credential, all of the same person (same email), and the policy gets them all by type
+(`input.credentials[type]`: issuer and claims). laadpalen asks for an `Employee` (department, roles) and the diploma `Diploma Laadpalen Management`.
 
 ## Commands
 

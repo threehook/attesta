@@ -32,26 +32,25 @@ const HELP = `<details class="pe-help">
   <p>De gegevens waarover de policy beslist staan in <code>input</code>:</p>
   <dl>
     <dt>input.resource</dt><dd>waar de applicatie toegang toe vraagt</dd>
-    <dt>input.type</dt><dd>het soort credential, bijvoorbeeld Employee</dd>
-    <dt>input.issuer</dt><dd>de DID van de uitgever van het credential</dd>
-    <dt>input.claims.&lt;naam&gt;</dt><dd>een onthuld gegeven, altijd tekst</dd>
+    <dt>input.credentials[&quot;Employee&quot;]</dt><dd>een aangeboden credential, op naam van het soort credential</dd>
+    <dt>input.credentials[&quot;Employee&quot;].issuer</dt><dd>de DID van de uitgever van dat credential</dd>
+    <dt>input.credentials[&quot;Employee&quot;].claims.&lt;naam&gt;</dt><dd>een onthuld gegeven, altijd tekst</dd>
     <dt>input.userRoles</dt><dd>de lijst rollen die de applicatie meestuurt</dd>
-    <dt>input.others.&lt;type&gt;</dt><dd>een ander credential van dezelfde persoon, met <code>issuer</code> en <code>claims</code></dd>
   </dl>
   <p>Een voorbeeld van <code>input</code>:</p>
 <pre>{
   "resource": "laadpaal-aanvraag",
-  "type": "Employee",
-  "issuer": "did:key:z6Mk…",
-  "claims": { "email": "jerry@example.com", "department": "secretariaat", "roles": "laadpalen-aanvrager" },
   "userRoles": [],
-  "others": { "Diploma Laadpalen Management": { "issuer": "did:key:z6Mk…", "claims": { "validUntil": "2099-12-31" } } }
+  "credentials": {
+    "Employee": { "issuer": "did:key:z6Mk…", "claims": { "email": "jerry@example.com", "department": "secretariaat", "roles": "laadpalen-aanvrager" } },
+    "Diploma Laadpalen Management": { "issuer": "did:key:z6Mk…", "claims": { "validUntil": "2099-12-31" } }
+  }
 }</pre>
 </details>`
 
 // The code of the page: Monaco with Rego highlighting, the check while typing, and opening and saving files on the user's own disk.
 const SCRIPT = String.raw`(() => {
-  const TEMPLATE = 'package policy\n\ndefault decision := {"decision": "Deny", "reason": "Niet toegestaan"}\n\ndecision := {"decision": "Permit", "reason": "Toegestaan"} if {\n\tinput.type == "Employee"\n}\n'
+  const TEMPLATE = 'package policy\n\ndefault decision := {"decision": "Deny", "reason": "Niet toegestaan"}\n\ndecision := {"decision": "Permit", "reason": "Toegestaan"} if {\n\tinput.credentials.Employee.claims.department == "secretariaat"\n}\n'
   const TYPES = [{ description: 'Rego-policy', accept: { 'text/plain': ['.rego'] } }]
   const $ = (id) => document.getElementById(id)
   const canFiles = typeof window.showOpenFilePicker === 'function' && typeof window.showSaveFilePicker === 'function'
