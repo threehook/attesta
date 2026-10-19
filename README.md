@@ -136,8 +136,8 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
 
 - **Presentations are linkable.** SD-JWT hides undisclosed claims but not the issuer's signature or the holder's key, so a verifier, or a verifier
   together with the issuer, can correlate presentations of the same credential.
-- **A revocation takes up to a minute to reach the backend**, which keeps the issuer's status list for its `ttl`. A policy that must not wait has no way to ask for a fresh list.
-- **The email is not checked beyond being disclosed and signed by the issuer.** Only Ed25519 `did:key` issuers are accepted.
+- **The email is as reliable as the issuer's checks on it.** Attesta only checks that it is disclosed and signed by the issuer; which issuers to trust is the policy's decision.
+- **Only Ed25519 `did:key` issuers are supported.** A `did:key` is the key itself, so replacing an issuer's key gives a new DID, and the policies that trust it must be updated.
 
 ## License
 
