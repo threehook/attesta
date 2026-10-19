@@ -160,10 +160,10 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	first, others := presented.Credentials[0], presented.Credentials[1:]
+	first := presented.Credentials[0]
 	d := decisionFor(id, presented.Request)
 	d.SubjectID, d.Issuer, d.Claims = presented.Subject.Email, first.Issuer, policyClaims(first.Claims)
-	for _, c := range others {
+	for _, c := range presented.Credentials[1:] {
 		d.Also = append(d.Also, adl.Credential{Type: c.Type, Issuer: c.Issuer, Claims: policyClaims(c.Claims)})
 	}
 	source, ok := s.Policies.Get(presented.Request.PolicyID)
@@ -175,8 +175,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	decision, err := s.Authz.Evaluate(source, authz.Input{
-		Resource: presented.Request.Resource, Type: first.Type, Issuer: first.Issuer, Claims: policyClaims(first.Claims),
-		UserRoles: presented.Request.UserRoles, Others: othersOf(others),
+		Resource: presented.Request.Resource, UserRoles: presented.Request.UserRoles, Credentials: credentialsOf(presented.Credentials),
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
@@ -199,14 +198,11 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// othersOf gives a policy the further credentials by type.
-func othersOf(also []presentation.PresentedCredential) map[string]authz.Other {
-	if len(also) == 0 {
-		return nil
-	}
-	out := make(map[string]authz.Other, len(also))
-	for _, c := range also {
-		out[c.Type] = authz.Other{Issuer: c.Issuer, Claims: policyClaims(c.Claims)}
+// credentialsOf gives a policy the presented credentials by type.
+func credentialsOf(presented []presentation.PresentedCredential) map[string]authz.Credential {
+	out := make(map[string]authz.Credential, len(presented))
+	for _, c := range presented {
+		out[c.Type] = authz.Credential{Issuer: c.Issuer, Claims: policyClaims(c.Claims)}
 	}
 	return out
 }

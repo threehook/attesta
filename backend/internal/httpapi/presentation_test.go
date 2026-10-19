@@ -174,12 +174,13 @@ func TestHandlePresentationResponsePassesTheClaimsToThePolicy(t *testing.T) {
 	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
 
 	want := map[string]string{"department": "burgerzaken", "email": "ada@example.com", "level": "3", "courses": `["a","b"]`}
-	if len(e.evaluated.Claims) != len(want) {
-		t.Fatalf("policy got claims %v, want %v", e.evaluated.Claims, want)
+	got := e.evaluated.Credentials[p.Credentials[0].Type].Claims
+	if len(got) != len(want) {
+		t.Fatalf("policy got claims %v, want %v", got, want)
 	}
 	for name, value := range want {
-		if e.evaluated.Claims[name] != value {
-			t.Errorf("claim %s = %q, want %q", name, e.evaluated.Claims[name], value)
+		if got[name] != value {
+			t.Errorf("claim %s = %q, want %q", name, got[name], value)
 		}
 	}
 }
@@ -452,8 +453,8 @@ func TestSeveralCredentialsTravelFromTheRequestToThePolicyAndTheLog(t *testing.T
 	s.Decisions = log
 	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
 
-	got := e.evaluated.Others["Certificate"]
-	if got.Issuer != "did:key:z6Mkc" || got.Claims["course"] != "laadpalen-management" || e.evaluated.Type != "Diploma" {
+	got := e.evaluated.Credentials["Certificate"]
+	if got.Issuer != "did:key:z6Mkc" || got.Claims["course"] != "laadpalen-management" || len(e.evaluated.Credentials) != 2 {
 		t.Errorf("policy got %+v", e.evaluated)
 	}
 	if len(log.decisions) != 1 || len(log.decisions[0].Also) != 1 || log.decisions[0].Also[0].Type != "Certificate" {

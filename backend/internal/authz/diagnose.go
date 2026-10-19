@@ -26,11 +26,8 @@ const inputSchema = `{
   "type": "object",
   "properties": {
     "resource": {"type": "string"},
-    "type": {"type": "string"},
-    "issuer": {"type": "string"},
-    "claims": {"type": "object", "additionalProperties": {"type": "string"}},
     "userRoles": {"type": "array", "items": {"type": "string"}},
-    "others": {"type": "object", "additionalProperties": {"type": "object", "properties": {
+    "credentials": {"type": "object", "additionalProperties": {"type": "object", "properties": {
       "issuer": {"type": "string"},
       "claims": {"type": "object", "additionalProperties": {"type": "string"}}
     }}}

@@ -8,12 +8,15 @@ import (
 	"time"
 )
 
+func diplomaFrom(issuer string) Input {
+	return Input{Resource: "diploma-vault", Credentials: map[string]Credential{"Diploma": {Issuer: issuer}}}
+}
+
 const diplomaPolicyV1 = `package policy
 
 decision := {"decision": "Permit", "reason": "ok"} if {
 	input.resource == "diploma-vault"
-	input.type == "Diploma"
-	input.issuer == "trusted-university"
+	input.credentials.Diploma.issuer == "trusted-university"
 } else := {"decision": "Deny", "reason": "not allowed"}
 `
 
@@ -25,7 +28,7 @@ decision := {"decision": "Deny", "reason": "v2 denies everything"}
 func TestOPAEvaluate(t *testing.T) {
 	vm := NewOPA()
 	for issuer, want := range map[string]Decision{"trusted-university": Permit, "diploma-mill": Deny} {
-		got, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: issuer})
+		got, err := vm.Evaluate(diplomaPolicyV1, diplomaFrom(issuer))
 		if err != nil || got.Decision != want {
 			t.Errorf("issuer %s: got %+v, %v, want %s", issuer, got, err, want)
 		}
@@ -35,7 +38,7 @@ func TestOPAEvaluate(t *testing.T) {
 // Hot deployment gives the evaluator another source for the same policy; it must be used at once.
 func TestOPAEvaluateAfterHotReload(t *testing.T) {
 	vm := NewOPA()
-	in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"}
+	in := diplomaFrom("trusted-university")
 	if got, err := vm.Evaluate(diplomaPolicyV1, in); err != nil || got.Decision != Permit {
 		t.Fatalf("v1: got %+v, %v, want Permit", got, err)
 	}
@@ -85,13 +88,16 @@ decision := {"decision": "Permit", "reason": "ok"} if input.resource == "a"
 
 const claimsPolicy = `package policy
 
-decision := {"decision": "Permit", "reason": sprintf("%s %s %s %v", [input.claims.department, input.userRoles[0], input.others.Diploma.claims.level, input.others.Diploma.issuer])}
+decision := {"decision": "Permit", "reason": sprintf("%s %s %s %v", [input.credentials.Employee.claims.department, input.userRoles[0], input.credentials.Diploma.claims.level, input.credentials.Diploma.issuer])}
 `
 
 func TestOPAInput(t *testing.T) {
 	got, err := NewOPA().Evaluate(claimsPolicy, Input{
-		Claims: map[string]string{"department": "burgerzaken"}, UserRoles: []string{"reader"},
-		Others: map[string]Other{"Diploma": {Issuer: "did:key:x", Claims: map[string]string{"level": "2"}}},
+		UserRoles: []string{"reader"},
+		Credentials: map[string]Credential{
+			"Employee": {Claims: map[string]string{"department": "burgerzaken"}},
+			"Diploma":  {Issuer: "did:key:x", Claims: map[string]string{"level": "2"}},
+		},
 	})
 	if err != nil || got.Reason != "burgerzaken reader 2 did:key:x" {
 		t.Fatalf("got %+v, %v", got, err)
@@ -158,7 +164,7 @@ func TestOPAEvaluateConcurrently(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				if got, err := vm.Evaluate(diplomaPolicyV1, Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"}); err != nil || got.Decision != Permit {
+				if got, err := vm.Evaluate(diplomaPolicyV1, diplomaFrom("trusted-university")); err != nil || got.Decision != Permit {
 					t.Errorf("got %+v, %v", got, err)
 					return
 				}
@@ -170,7 +176,7 @@ func TestOPAEvaluateConcurrently(t *testing.T) {
 
 func BenchmarkOPAEvaluate(b *testing.B) {
 	vm := NewOPA()
-	in := Input{Resource: "diploma-vault", Type: "Diploma", Issuer: "trusted-university"}
+	in := diplomaFrom("trusted-university")
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -192,6 +198,7 @@ func TestOPADiagnose(t *testing.T) {
 		{"wrong package", "package other\n\ndecision := {\"decision\": \"Deny\"}\n", "package policy", 1, 1},
 		{"no decision rule", "package policy\n\nallow := true\n", "no rule decision", 1, 1},
 		{"unknown input field", "package policy\n\ndecision := {\"decision\": \"Deny\"} if input.usr == \"a\"\n", "usr", 3, 0},
+		{"old input field", "package policy\n\ndecision := {\"decision\": \"Deny\"} if input.type == \"Employee\"\n", "input.type", 3, 0},
 		{"forbidden builtin", "package policy\n\ndecision := {\"decision\": \"Deny\"} if http.send({})\n", "http.send", 3, 0},
 		{"wrong shape", "package policy\n\ndecision := 1\n", "decision", 3, 1},
 	}

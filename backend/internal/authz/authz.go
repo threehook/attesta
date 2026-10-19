@@ -1,24 +1,20 @@
 // Package authz evaluates authorization policies written in Rego, executed in-process by OPA — no OPA server is involved.
 package authz
 
-// Input is what gets passed into a policy's Authorize function. Type and Issuer are the credential type and issuer that a verified presentation
-// established — the policy decides whether that combination is acceptable for Resource.
+// Input is what gets passed into a policy: the resource asked for, the roles the application asserts, and the credentials the verified presentation
+// held, by credential type. The policy decides whether those credentials, from those issuers, are acceptable for the resource.
 type Input struct {
 	Resource string
-	Type     string
-	Issuer   string
-	// Claims are the disclosed claims the policy may base its decision on, by name. The values are strings; the caller encodes anything else.
-	Claims map[string]string
 	// UserRoles are asserted by the calling application, not verified by Attesta; empty when it sent none.
 	UserRoles []string
-	// Others are the further credentials of the same person that the request asked for, by credential type. A request without any is evaluated with
-	// Authorize, one with some with AuthorizeWithOthers.
-	Others map[string]Other
+	// Credentials are the presented credentials of one person, by credential type; a request asks for each type at most once.
+	Credentials map[string]Credential
 }
 
-// Other is a further credential a presentation held: who issued it and its disclosed claims, as strings.
-type Other struct {
+// Credential is a credential a presentation held: who issued it and its disclosed claims, as strings.
+type Credential struct {
 	Issuer string
+	// Claims are the disclosed claims the policy may base its decision on, by name. The values are strings; the caller encodes anything else.
 	Claims map[string]string
 }
 
@@ -61,7 +57,7 @@ type Evaluator interface {
 	// Validate reports whether source is a policy Evaluate can run: it compiles, is in package policy and defines the rule decision. Used to reject
 	// bad policy source before it's stored.
 	Validate(source string) error
-	// Evaluate runs the rule data.policy.decision of source with the Input as input: resource, type, issuer, claims, userRoles and others (by
+	// Evaluate runs the rule data.policy.decision of source with the Input as input: resource, userRoles and credentials (by
 	// credential type: issuer and claims). The rule's value is an object with decision (Permit, Deny, NotApplicable or Indeterminate), reason, and
 	// the lists obligations and advice, whose items are objects with an id and attributes, an object of string values. A rule that is undefined
 	// gives Indeterminate; a policy that cannot be run or returns a value of another shape gives an error.

@@ -54,15 +54,14 @@ func NewOPA() *OPA {
 	return &OPA{capabilities: caps, prepared: make(map[[sha256.Size]byte]rego.PreparedEvalQuery)}
 }
 
-// validationInput and validationInputWithOthers are the sample calls Validate makes to prove that the rule's value has the expected shape; their
-// values are never interpreted.
+// validationInput and validationInputWithoutCredentials are the sample calls Validate makes to prove that the rule's value has the expected shape;
+// their values are never interpreted.
 var (
-	validationInput = Input{Resource: "validate", Type: "validate", Issuer: "validate", Claims: map[string]string{"validate": "validate"}}
-
-	validationInputWithOthers = Input{
-		Resource: "validate", Type: "validate", Issuer: "validate", Claims: map[string]string{"validate": "validate"},
-		Others: map[string]Other{"validate": {Issuer: "validate", Claims: map[string]string{"validate": "validate"}}},
+	validationInput = Input{
+		Resource: "validate", Credentials: map[string]Credential{"validate": {Issuer: "validate", Claims: map[string]string{"validate": "validate"}}},
 	}
+
+	validationInputWithoutCredentials = Input{Resource: "validate"}
 )
 
 // Validate checks that source compiles, is in package policy and defines the rule decision, and that the rule's value has the right shape for a
@@ -82,7 +81,7 @@ func (e *OPA) Validate(source string) error {
 	if !defined {
 		return fmt.Errorf("the policy defines no rule %s", decisionRule)
 	}
-	for _, in := range []Input{validationInput, validationInputWithOthers} {
+	for _, in := range []Input{validationInput, validationInputWithoutCredentials} {
 		if _, err := e.Evaluate(source, in); err != nil {
 			return err
 		}
@@ -142,17 +141,15 @@ func (e *OPA) prepare(source string) (rego.PreparedEvalQuery, error) {
 }
 
 func inputOf(in Input) map[string]any {
-	others := make(map[string]any, len(in.Others))
-	for t, o := range in.Others {
-		others[t] = map[string]any{"issuer": o.Issuer, "claims": stringMap(o.Claims)}
+	credentials := make(map[string]any, len(in.Credentials))
+	for t, c := range in.Credentials {
+		credentials[t] = map[string]any{"issuer": c.Issuer, "claims": stringMap(c.Claims)}
 	}
 	roles := make([]any, len(in.UserRoles))
 	for i, r := range in.UserRoles {
 		roles[i] = r
 	}
-	return map[string]any{
-		"resource": in.Resource, "type": in.Type, "issuer": in.Issuer, "claims": stringMap(in.Claims), "userRoles": roles, "others": others,
-	}
+	return map[string]any{"resource": in.Resource, "userRoles": roles, "credentials": credentials}
 }
 
 func stringMap(m map[string]string) map[string]any {
