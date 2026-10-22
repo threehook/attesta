@@ -51,10 +51,10 @@ because the gate always runs. A service does not have to know what called it.
 | Credential | What it says | How it is obtained | Lifetime |
 |---|---|---|---|
 | **Identity** | What the system is: workload id, owner (a person or team), environment, platform claims such as repository and ref | The issuer checks a platform proof and issues a credential bound to the wallet's key | Minutes to days, renewed automatically |
-| **Mandate** | A named person's approval: what, where, until when. The scope is exact (one digest) or a rule (actions matching a fixed pattern) | The person approves it in their own wallet. The issuer issues it to the machine | As short as the policy requires. Revocable |
+| **Mandate** | Named people's approval: what, where, until when. The scope is exact or a glob over the resource | People with the role `release-manager` approve on the issuer's page. The issuer issues it with the identity credential | As short as the policy requires. Revocable |
 
 Routine work needs only the identity credential and the policy. Work that needs an accountable person adds a mandate. Two people agreeing means two
-mandates in the same machine wallet, which is one holder.
+names in the `approvers` of one mandate; a request takes one credential per type, so the policy counts the names.
 
 ### SPIFFE/SPIRE
 
@@ -111,7 +111,8 @@ Without Anna's approval there is no mandate, and the policy answers Deny with th
 - **Enrollment:** staff enroll a workload by SPIFFE ID, owner and environment (`POST /workloads`, `GET /workloads`, `DELETE /workloads/{id}`, all behind the
   staff sign-in). Revoking an enrollment also revokes the credentials already made for it. The workload endpoint is not exposed outside the cluster.
 - **Owner:** every identity credential names an owner team. Issuer staff, who have the role `issuer-staff`, can revoke it.
-- **Mandates:** required for production deployments. Everything else is decided by policy on the identity alone.
+- **Mandates:** required for production deployments. Everything else is decided by policy on the identity alone. A mandate is a stored approval, and it becomes a credential each
+  time the workload asks for its credentials, so it is bound to the key the wallet has then and needs no stable key. A system has one mandate at a time.
 - **State:** Attesta keeps none. Credentials expire. Use-once is added only when a case needs it.
 - **Missing mandate:** Deny with the reason. Parking the action until a person approves comes in phase 4.
 - **Unattended wallet:** it presents only to verifiers on a registered list. There is no switch to present to everyone, as in the desktop wallet.
@@ -124,7 +125,7 @@ Each phase ends with a review of the open points in section 7.
 |---|---|---|
 | **0 Prove it** | A headless wallet presents with nobody there; the gate hands a link to the local wallet; the Python gate and the Agent SDK wiring work. | Verified, see section 7. |
 | **1 Machine identity** | Issuer: a workload credential, an endpoint that checks the JWT-SVID or CI token and returns a short-lived credential offer, enrollment of a workload, owner claim. A generic holder identifier next to `email` in the backend, the entitlements and the credential forms. Wallet: unattended mode for registered verifiers. Gate as a Python module, a CLI and a GitHub Action. SPIRE in `k8s/local`. | A pipeline or pod gets Permit or Deny from policy with nobody present. |
-| **2 Mandates** | The mandate credential and a page where a named person approves it, for one exact item or by a fixed rule. The wallet shows the mandate in plain words before signing. Revocable. | A production release needs two named people and still runs at night. |
+| **2 Mandates** | The mandate credential and a page where named people approve it, for one exact item or by a glob. Revocable. | A production release needs two named people and still runs at night. |
 | **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input. | An agent works a night shift inside its mandate and is stopped outside it. |
 | **4 Parked approvals** | An uncovered action waits. The approver gets an https link, approves, and the issuer issues a one-time mandate. The system continues. | An unforeseen action waits for the morning and then proceeds. |
 | **5 Devices and hosted wallet** | Devices prove what they are (TPM, secure element). The hosted wallet from [architecture.md](architecture.md) serves people away from their desktop. | A device and a phone both work. |
@@ -144,8 +145,8 @@ Each phase ends with a review of the open points in section 7.
 | One request needs one holder. A machine that holds its identity and several mandates is one holder | Checked in code | Mandates are issued to the machine wallet's key. |
 | The verifier accepts EdDSA and ES256 for key binding | Checked in code | A KMS key with ES256 works without a library change. |
 | A presentation lives as long as its request (5 minutes by default, configurable) | Checked in code | The machine presents live, so this is enough. |
-| A mandate rule must be data. A signer must not be able to supply Rego code | Design needed | A small fixed rule format that our own policy evaluates. |
-| A person could approve a mandate they do not understand | Design needed | The wallet shows every mandate in plain words and refuses one it cannot show. |
+| A mandate rule must be data. A signer must not be able to supply Rego code | Built and tested | The rule is a glob that the policy matches against the resource; the policy also requires that it names production. |
+| A person could approve a mandate they do not understand | Built | The page shows the system, the resource and the end before the person approves. |
 | An agent must not reach its own key or approve its own mandate | Design needed | Key custody in the harness. The agent has only our tools. |
 | The issuer has to verify a JWT-SVID against a SPIFFE trust bundle | Tested in the local cluster | The issuer reads the bundle from the SPIFFE Workload API. A CI proof goes on the same list when a pipeline is the first system. |
 | Delay between a revocation and the moment the status list shows it | Covered | Short lifetimes. An unreadable list already means Deny. |
