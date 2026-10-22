@@ -16,6 +16,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "cli": "tsx src/cli.ts",
+    "serve": "tsx src/serve-cli.ts",
     "test": "vitest run"
   },
   "dependencies": {

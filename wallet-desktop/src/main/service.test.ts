@@ -224,7 +224,7 @@ describe("signing in", () => {
 
 const issuer = "https://issuer.example/oid4vci/diploma";
 const qrLink = "openid-credential-offer://?credential_offer_uri=x";
-const previewed = { issuer, types: ["Employee"], resolved: {}, replaces: [] };
+const previewed = { issuer, types: ["Employee"], resolved: {}, replaces: [], replaceHeld: false };
 const image = new Uint8Array([1, 2, 3]);
 
 describe("WalletService, a QR code in an image", () => {

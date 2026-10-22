@@ -32,10 +32,17 @@ export interface CredentialPreview {
   resolved: OpenId4VciResolvedCredentialOffer
   /** Credentials held of the same type from the same issuer that no longer count (revoked or ended); accepting the new one removes them. */
   replaces: HeldCredential[]
+  /** Whether the new credential replaces a held one of the same type from the same issuer even while that still counts. */
+  replaceHeld: boolean
+}
+
+export interface PreviewOptions {
+  /** A system that renews its own credential replaces the held one when the new one is in; a person has to remove it first. */
+  replaceHeld?: boolean
 }
 
 /** Reads an `openid-credential-offer://` link (the text of a QR code from an issuer) without accepting what it gives. */
-export async function previewCredential(agent: WalletAgent, link: string): Promise<CredentialPreview> {
+export async function previewCredential(agent: WalletAgent, link: string, options: PreviewOptions = {}): Promise<CredentialPreview> {
   const resolved = await agent.openid4vc.holder.resolveCredentialOffer(link).catch((error: unknown) => {
     throw saidByIssuer(error) ?? error
   })
@@ -46,6 +53,7 @@ export async function previewCredential(agent: WalletAgent, link: string): Promi
     ),
     resolved,
     replaces: [],
+    replaceHeld: options.replaceHeld ?? false,
   }
   preview.replaces = await replacedBy(agent, preview)
   return preview
@@ -62,7 +70,7 @@ async function replacedBy(agent: WalletAgent, preview: CredentialPreview): Promi
     const origin = record.metadata.get<{ url: string }>(ISSUER_URL)?.url
     if (!preview.types.includes(held.type) || (origin !== undefined && origin !== preview.issuer)) continue
     const standing = await standingOf(agent.sdJwtVc.fromCompact(record.firstCredential.compact).payload)
-    if (standing === 'revoked' || standing === 'ended') {
+    if (preview.replaceHeld || standing === 'revoked' || standing === 'ended') {
       replaces.push(held)
       continue
     }
@@ -75,8 +83,8 @@ async function replacedBy(agent: WalletAgent, preview: CredentialPreview): Promi
 export const titleOf = (held: HeldCredential): string => (typeof held.claims.title === 'string' && held.claims.title !== '' ? held.claims.title : held.type)
 
 /** Takes what a link gives (pre-authorized code flow) and stores the SD-JWT VCs it yields. */
-export async function acceptCredential(agent: WalletAgent, link: string): Promise<HeldCredential[]> {
-  return acceptPreviewed(agent, await previewCredential(agent, link))
+export async function acceptCredential(agent: WalletAgent, link: string, options: PreviewOptions = {}): Promise<HeldCredential[]> {
+  return acceptPreviewed(agent, await previewCredential(agent, link, options))
 }
 
 /** Takes the credential that was read with previewCredential. */

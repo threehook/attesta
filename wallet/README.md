@@ -12,6 +12,20 @@ it.
 - `resolvePresentationRequest(agent, link)` reads an `openid4vp://` request from a verifier and reports who asks for what and whether the wallet can answer;
   `submitPresentation(agent, request)` answers it, disclosing only the requested claims.
 
+## The wallet of a system
+
+`pnpm serve` (`src/serve-cli.ts`) is the wallet of a system such as a pod or a pipeline job. It keeps its credentials in memory, with a key made at start, and answers by itself: nobody
+confirms anything. It listens on 127.0.0.1 only.
+
+| Call | What it does |
+| --- | --- |
+| `POST /credentials` `{ "offer": "openid-credential-offer://..." }` | Takes the credential the link gives and replaces the held one of the same type from the same issuer, even while that still counts. Answers the type and issuer, not the claims. |
+| `POST /present` `{ "link": "openid4vp://..." }` | Answers the request, disclosing only the claims asked for. Only for a verifier whose client id starts with one of `ATTESTA_WALLET_VERIFIERS` (comma-separated, such as `redirect_uri:http://127.0.0.1:8080/`); with none set the wallet does not start. 403 for any other verifier, 409 when it holds nothing that answers. |
+| `GET /healthz` | How many credentials it holds. |
+
+`ATTESTA_WALLET_PORT` (7100), `ATTESTA_ALLOW_INSECURE_HTTP=1` for a verifier or issuer on plain http, and `ATTESTA_WALLET_HOSTS` (`https://public.example=http://internal:4001,...`) for a public
+name that does not resolve inside the cluster: what is meant for the first goes to the second.
+
 ## Headless use
 
 ```sh

@@ -1,7 +1,7 @@
 export { createWalletAgent } from './agent.js'
 export type { WalletAgent, WalletOptions } from './agent.js'
 export { acceptCredential, acceptPreviewed, listCredentials, previewCredential, removeCredential, titleOf } from './credentials.js'
-export type { CredentialPreview, HeldCredential } from './credentials.js'
+export type { CredentialPreview, HeldCredential, PreviewOptions } from './credentials.js'
 export { readQrImage } from './qr.js'
 export { applyIdentityHint, resolvePresentationRequest, submitPresentation } from './presentations.js'
 export type { PresentationRequest } from './presentations.js'

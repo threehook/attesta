@@ -6,6 +6,7 @@ import { Agent } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
 import { OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
+import { mappedFetch } from './hosts.js'
 
 export interface WalletOptions {
   /** Names the store; also its file name under `path` when persisted. */
@@ -16,6 +17,8 @@ export interface WalletOptions {
   path?: string
   /** Accept links and issuers served over plain http, for local development. */
   allowInsecureHttp?: boolean
+  /** Public addresses that are reached at another address, such as inside a cluster: what is sent to the key goes to its value. */
+  hosts?: Record<string, string>
 }
 
 export async function createWalletAgent(options: WalletOptions) {
@@ -26,7 +29,7 @@ export async function createWalletAgent(options: WalletOptions) {
   if (options.path) mkdirSync(options.path, { recursive: true })
   const agent = new Agent({
     config: { allowInsecureHttpUrls: options.allowInsecureHttp ?? false },
-    dependencies: agentDependencies,
+    dependencies: options.hosts ? { ...agentDependencies, fetch: mappedFetch(agentDependencies.fetch, options.hosts) } : agentDependencies,
     modules: {
       askar: new AskarModule({
         askar: NativeAskar,
