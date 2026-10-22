@@ -48,6 +48,8 @@ type Config struct {
 	Status http.Handler
 	// Workloads serves the endpoints for workloads and the staff's enrollment of them; nil leaves them out. It protects its own staff endpoints.
 	Workloads http.Handler
+	// Mandates serves the endpoints people approve mandates with; nil leaves them out. It protects its own endpoints.
+	Mandates http.Handler
 	// Protect wraps what only staff may use; nil leaves it open.
 	Protect func(http.Handler) http.Handler
 }
@@ -62,6 +64,10 @@ func Handler(cfg Config, svc Service) http.Handler {
 	if cfg.Workloads != nil {
 		mux.Handle("/workloads", cfg.Workloads)
 		mux.Handle("/workloads/", cfg.Workloads)
+	}
+	if cfg.Mandates != nil {
+		mux.Handle("/mandates", cfg.Mandates)
+		mux.Handle("/mandates/", cfg.Mandates)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	staff := http.NewServeMux()

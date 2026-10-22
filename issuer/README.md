@@ -68,6 +68,17 @@ A system, such as a pipeline or a service, has a credential of its own: **Worklo
   credential from it as from any other offer. Every request makes a new entitlement, so each credential ends by itself, and no QR code is mailed.
 - The endpoint is not on the Ingress. The trust bundle is read from the SPIFFE Workload API, so the pod needs SPIRE's socket (`k8s/local/issuer/api-spiffe-patch.yaml`).
 
+### Mandates
+
+A **Mandate** says that named people allow a system to do something until a given moment: the claims `workload`, `resource` (a glob over the resource an application asks about, `:` separates
+the parts), `approvers` (a list of emails) and the end. A system has one mandate at a time, for at most 31 days.
+
+- People with the role `release-manager` (`ATTESTA_ISSUER_OIDC_APPROVER_ROLE`) approve on the page **Mandaten**: the first person makes the mandate, others add their approval. The API:
+  `POST /mandates` (`workload`, `resource`, `expiresAt`), `POST /mandates/{id}/approvals`, `GET /mandates` and `DELETE /mandates/{id}`, which also revokes the credentials already made.
+  The approver is the email of the signed-in person, not something the caller gives.
+- `POST /workloads/offer` answers `{ "offer": ..., "mandate": ... }`; `mandate` is the link for a Mandate credential with the approvers at that moment, and is left out when no mandate is active.
+  A Mandate credential ends at the end of the mandate or after the Workload credential's lifetime, whichever comes first.
+
 ### Roles
 
 The roles an employee can be given are rows of the table `roles` (a name without comma, not blank), not code. A deployment starts with `laadpalen-aanvrager`.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"attesta/issuer/internal/credential"
@@ -35,6 +36,18 @@ type Verifier interface {
 	Verify(ctx context.Context, token string) (spiffeID string, err error)
 }
 
+// Grant is what people allowed a workload to do, as its active mandate says.
+type Grant struct {
+	Resource  string
+	Approvers []string
+	EndsAt    time.Time
+}
+
+// Grants gives the active mandate of a workload, if it has one.
+type Grants interface {
+	GrantFor(ctx context.Context, spiffeID string) (Grant, bool, error)
+}
+
 // Offerer makes the link a wallet takes a credential from.
 type Offerer interface {
 	OfferFor(ctx context.Context, e entitlement.Entitlement, lifetime time.Duration) (string, error)
@@ -55,9 +68,10 @@ type Service struct {
 	entitlements Entitlements
 	verifier     Verifier
 	offers       Offerer
+	grants       Grants
 }
 
-func NewService(cfg Config, registry Registry, entitlements Entitlements, verifier Verifier, offers Offerer) *Service {
+func NewService(cfg Config, registry Registry, entitlements Entitlements, verifier Verifier, offers Offerer, grants Grants) *Service {
 	if cfg.CredentialLifetime == 0 {
 		cfg.CredentialLifetime = DefaultCredentialLifetime
 	}
@@ -67,36 +81,58 @@ func NewService(cfg Config, registry Registry, entitlements Entitlements, verifi
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
-	return &Service{cfg: cfg, registry: registry, entitlements: entitlements, verifier: verifier, offers: offers}
+	return &Service{cfg: cfg, registry: registry, entitlements: entitlements, verifier: verifier, offers: offers, grants: grants}
 }
 
 // ErrNotEnrolled is a token that is valid for a SPIFFE ID nobody enrolled.
 var ErrNotEnrolled = errors.New("this workload is not enrolled")
 
-// Offer checks the token and, for an enrolled workload, gives the link its wallet takes a new credential from. Every call makes a new entitlement, so the
-// workload gets a credential for each run, and each ends by itself.
-func (s *Service) Offer(ctx context.Context, token string) (string, error) {
+// Offers are the links a workload's wallet takes its credentials from. Mandate is empty when no mandate is active.
+type Offers struct {
+	Workload string
+	Mandate  string
+}
+
+// Offer checks the token and, for an enrolled workload, gives the links its wallet takes new credentials from: the Workload credential, and the Mandate
+// credential when people allowed something. Every call makes new entitlements, so the workload gets credentials for each run, and each ends by itself.
+func (s *Service) Offer(ctx context.Context, token string) (Offers, error) {
 	spiffeID, err := s.verifier.Verify(ctx, token)
 	if err != nil {
-		return "", err
+		return Offers{}, err
 	}
 	w, err := s.registry.FindEnrolled(ctx, spiffeID)
 	if errors.Is(err, ErrNotFound) {
-		return "", ErrNotEnrolled
+		return Offers{}, ErrNotEnrolled
 	}
 	if err != nil {
-		return "", err
+		return Offers{}, err
 	}
-	e, err := s.entitlements.Create(ctx, entitlement.New{
-		Subject: entitlement.WorkloadOf(w.SpiffeID),
-		Type:    credential.Workload,
-		Claims: map[string]string{
-			"workload": w.SpiffeID, "owner": w.Owner, "environment": w.Environment,
-			credential.ExpiresAtKey: s.cfg.Now().Add(s.cfg.CredentialLifetime).UTC().Format(time.RFC3339),
-		},
+	now := s.cfg.Now()
+	end := now.Add(s.cfg.CredentialLifetime)
+	var offers Offers
+	if offers.Workload, err = s.offer(ctx, w.SpiffeID, credential.Workload, map[string]string{
+		"workload": w.SpiffeID, "owner": w.Owner, "environment": w.Environment, credential.ExpiresAtKey: end.UTC().Format(time.RFC3339),
+	}); err != nil {
+		return Offers{}, err
+	}
+	grant, ok, err := s.grants.GrantFor(ctx, w.SpiffeID)
+	if err != nil || !ok {
+		return offers, err
+	}
+	if grant.EndsAt.Before(end) {
+		end = grant.EndsAt
+	}
+	offers.Mandate, err = s.offer(ctx, w.SpiffeID, credential.Mandate, map[string]string{
+		"workload": w.SpiffeID, "resource": grant.Resource, "approvers": strings.Join(grant.Approvers, ","), credential.ExpiresAtKey: end.UTC().Format(time.RFC3339),
 	})
+	return offers, err
+}
+
+// offer records an entitlement of the workload and makes the link its wallet takes the credential from.
+func (s *Service) offer(ctx context.Context, spiffeID, credentialType string, claims map[string]string) (string, error) {
+	e, err := s.entitlements.Create(ctx, entitlement.New{Subject: entitlement.WorkloadOf(spiffeID), Type: credentialType, Claims: claims})
 	if err != nil {
-		return "", fmt.Errorf("record the entitlement: %w", err)
+		return "", fmt.Errorf("record the %s entitlement: %w", credentialType, err)
 	}
 	return s.offers.OfferFor(ctx, e, s.cfg.OfferLifetime)
 }

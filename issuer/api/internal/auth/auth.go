@@ -67,7 +67,8 @@ func (v *Verifier) Protect(next http.Handler) http.Handler {
 			deny(w, http.StatusServiceUnavailable, "de loginserver is niet bereikbaar")
 			return
 		}
-		if err := v.check(r.Context(), verifier, token); err != nil {
+		email, err := v.check(r.Context(), verifier, token)
+		if err != nil {
 			status := http.StatusUnauthorized
 			if errors.Is(err, errForbidden) {
 				status = http.StatusForbidden
@@ -75,18 +76,27 @@ func (v *Verifier) Protect(next http.Handler) http.Handler {
 			deny(w, status, err.Error())
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), emailKey{}, email)))
 	})
 }
 
 var errForbidden = errors.New("geen toegang voor deze gebruiker")
 
-func (v *Verifier) check(ctx context.Context, verifier *oidc.IDTokenVerifier, raw string) error {
+type emailKey struct{}
+
+// Email is the address of the person whose token passed Protect; empty when there is none.
+func Email(ctx context.Context) string {
+	email, _ := ctx.Value(emailKey{}).(string)
+	return email
+}
+
+func (v *Verifier) check(ctx context.Context, verifier *oidc.IDTokenVerifier, raw string) (string, error) {
 	t, err := verifier.Verify(ctx, raw)
 	if err != nil {
-		return errors.New("de aanmelding is ongeldig of verlopen")
+		return "", errors.New("de aanmelding is ongeldig of verlopen")
 	}
 	var claims struct {
+		Email       string   `json:"email"`
 		Azp         string   `json:"azp"`
 		Roles       []string `json:"roles"`
 		RealmAccess struct {
@@ -94,15 +104,15 @@ func (v *Verifier) check(ctx context.Context, verifier *oidc.IDTokenVerifier, ra
 		} `json:"realm_access"`
 	}
 	if err := t.Claims(&claims); err != nil {
-		return errors.New("de aanmelding is ongeldig of verlopen")
+		return "", errors.New("de aanmelding is ongeldig of verlopen")
 	}
 	if claims.Azp != v.opts.ClientID {
-		return errForbidden
+		return "", errForbidden
 	}
 	if !slices.Contains(claims.RealmAccess.Roles, v.opts.Role) && !slices.Contains(claims.Roles, v.opts.Role) {
-		return errForbidden
+		return "", errForbidden
 	}
-	return nil
+	return strings.ToLower(strings.TrimSpace(claims.Email)), nil
 }
 
 func deny(w http.ResponseWriter, status int, message string) {

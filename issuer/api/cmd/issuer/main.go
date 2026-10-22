@@ -23,6 +23,7 @@ import (
 	"attesta/issuer/internal/httpapi"
 	"attesta/issuer/internal/identity"
 	"attesta/issuer/internal/mail"
+	"attesta/issuer/internal/mandate"
 	"attesta/issuer/internal/oid4vci"
 	"attesta/issuer/internal/postgres"
 	"attesta/issuer/internal/role"
@@ -70,11 +71,15 @@ func run() error {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 
+	var approvers *auth.Verifier
 	httpCfg := httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler(), Status: status.Handler()}
 	if cfg.Auth.Disabled {
 		slog.Warn("sign-in is switched off: anyone who reaches the forms can record entitlements")
 	} else {
-		httpCfg.Protect = auth.New(auth.Options{Issuer: cfg.Auth.Issuer, DiscoveryURL: cfg.Auth.DiscoveryURL, ClientID: cfg.Auth.ClientID, Role: cfg.Auth.Role}).Protect
+		opts := auth.Options{Issuer: cfg.Auth.Issuer, DiscoveryURL: cfg.Auth.DiscoveryURL, ClientID: cfg.Auth.ClientID, Role: cfg.Auth.Role}
+		httpCfg.Protect = auth.New(opts).Protect
+		opts.Role = cfg.Auth.ApproverRole
+		approvers = auth.New(opts)
 	}
 
 	if cfg.SPIFFE.TrustDomain != "" {
@@ -91,8 +96,15 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		workloads := workload.NewService(workload.Config{CredentialLifetime: cfg.SPIFFE.CredentialLifetime}, workload.NewStore(pool), store, verifier, protocol)
+		registry := workload.NewStore(pool)
+		mandates := mandate.NewService(mandate.NewStore(pool), registry, store)
+		workloads := workload.NewService(workload.Config{CredentialLifetime: cfg.SPIFFE.CredentialLifetime}, registry, store, verifier, protocol, mandates)
 		httpCfg.Workloads = workload.Handler(workloads, httpCfg.Protect)
+		var protectApprovers func(http.Handler) http.Handler
+		if approvers != nil {
+			protectApprovers = approvers.Protect
+		}
+		httpCfg.Mandates = mandate.Handler(mandates, protectApprovers, func(r *http.Request) string { return auth.Email(r.Context()) })
 		slog.Info("workloads are recognized in the SPIFFE trust domain " + cfg.SPIFFE.TrustDomain)
 	}
 

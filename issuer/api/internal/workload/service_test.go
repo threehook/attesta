@@ -22,6 +22,7 @@ type fakes struct {
 	offered    []time.Duration
 	verifyErr  error
 	verifiedAs string
+	grant      *workload.Grant
 }
 
 func (f *fakes) Enroll(_ context.Context, in workload.Input) (workload.Workload, error) {
@@ -70,10 +71,17 @@ func (f *fakes) OfferFor(_ context.Context, e entitlement.Entitlement, lifetime 
 	return "openid-credential-offer://?for=" + e.ID, nil
 }
 
+func (f *fakes) GrantFor(context.Context, string) (workload.Grant, bool, error) {
+	if f.grant == nil {
+		return workload.Grant{}, false, nil
+	}
+	return *f.grant, true, nil
+}
+
 var now = time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
 
 func newService(f *fakes) *workload.Service {
-	return workload.NewService(workload.Config{CredentialLifetime: 30 * time.Minute, OfferLifetime: 2 * time.Minute, Now: func() time.Time { return now }}, f, f, f, f)
+	return workload.NewService(workload.Config{CredentialLifetime: 30 * time.Minute, OfferLifetime: 2 * time.Minute, Now: func() time.Time { return now }}, f, f, f, f, f)
 }
 
 func enrolledAgent() *fakes {
@@ -85,9 +93,9 @@ func enrolledAgent() *fakes {
 
 func TestOfferMakesACredentialThatEndsByItself(t *testing.T) {
 	f := enrolledAgent()
-	link, err := newService(f).Offer(context.Background(), "token")
-	if err != nil || link != "openid-credential-offer://?for=e-1" {
-		t.Fatalf("Offer = %q, %v", link, err)
+	offers, err := newService(f).Offer(context.Background(), "token")
+	if err != nil || offers.Workload != "openid-credential-offer://?for=e-1" || offers.Mandate != "" {
+		t.Fatalf("Offer = %+v, %v", offers, err)
 	}
 	want := entitlement.New{Subject: entitlement.WorkloadOf(agent), Type: credential.Workload, Claims: map[string]string{
 		"workload": agent, "owner": "platform", "environment": "staging", credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
@@ -102,6 +110,37 @@ func TestOfferMakesACredentialThatEndsByItself(t *testing.T) {
 	}
 	if len(f.offered) != 1 || f.offered[0] != 2*time.Minute {
 		t.Errorf("the link lives %v, want 2m", f.offered)
+	}
+}
+
+func TestOfferAddsTheMandateOfferedPeopleApproved(t *testing.T) {
+	f := enrolledAgent()
+	f.grant = &workload.Grant{Resource: "deploy:prod:v1.*", Approvers: []string{"anna@corp.test", "bob@corp.test"}, EndsAt: now.Add(10 * time.Minute)}
+	offers, err := newService(f).Offer(context.Background(), "token")
+	if err != nil || offers.Workload == "" || offers.Mandate == "" {
+		t.Fatalf("Offer = %+v, %v", offers, err)
+	}
+	if len(f.created) != 2 || f.created[1].Type != credential.Mandate {
+		t.Fatalf("entitlements = %+v, want a Workload and a Mandate", f.created)
+	}
+	want := map[string]string{
+		"workload": agent, "resource": "deploy:prod:v1.*", "approvers": "anna@corp.test,bob@corp.test", credential.ExpiresAtKey: "2026-10-22T09:10:00Z",
+	}
+	for k, v := range want {
+		if f.created[1].Claims[k] != v {
+			t.Errorf("mandate claim %s = %q, want %q", k, f.created[1].Claims[k], v)
+		}
+	}
+}
+
+func TestAMandateNeverOutlivesTheCredentialLifetime(t *testing.T) {
+	f := enrolledAgent()
+	f.grant = &workload.Grant{Resource: "deploy:prod:*", Approvers: []string{"anna@corp.test"}, EndsAt: now.Add(72 * time.Hour)}
+	if _, err := newService(f).Offer(context.Background(), "token"); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.created[1].Claims[credential.ExpiresAtKey]; got != "2026-10-22T09:30:00Z" {
+		t.Errorf("the mandate credential ends at %s, want 09:30, the credential lifetime", got)
 	}
 }
 

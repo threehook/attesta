@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -330,5 +331,40 @@ func TestAWorkloadCredentialNeedsItsClaimsAndAMoment(t *testing.T) {
 	claims := map[string]string{"workload": "w", "owner": "o", "environment": "e", credential.ExpiresAtKey: "tomorrow"}
 	if _, err := credential.Content(credential.WorkloadType, claims, ""); err == nil {
 		t.Error("a Workload with a moment that is not RFC 3339 was built")
+	}
+}
+
+var approved = map[string]string{
+	"workload": "spiffe://corp.test/ns/cicd/sa/agent", "resource": "deploy:prod:v1.*", "approvers": "anna@corp.test, bob@corp.test, anna@corp.test",
+	credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
+}
+
+func TestMandateHoldsTheApproversOnceAndEndsAtTheMoment(t *testing.T) {
+	c, err := credential.Content(credential.MandateType, approved, "Gemeente Vlierdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Type != "Mandate" || !c.ExpiresAt.Equal(time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC)) {
+		t.Fatalf("content %+v", c)
+	}
+	if got := c.Disclosable["approvers"]; !reflect.DeepEqual(got, []string{"anna@corp.test", "bob@corp.test"}) {
+		t.Errorf("approvers = %v, want each person once", got)
+	}
+	if c.Disclosable["resource"] != "deploy:prod:v1.*" || c.Disclosable["workload"] != approved["workload"] {
+		t.Errorf("claims %v", c.Disclosable)
+	}
+}
+
+func TestAMandateNeedsItsClaimsAnApproverAndAMoment(t *testing.T) {
+	for _, missing := range []string{"workload", "resource", "approvers", credential.ExpiresAtKey} {
+		claims := map[string]string{}
+		for k, v := range approved {
+			if k != missing {
+				claims[k] = v
+			}
+		}
+		if _, err := credential.Content(credential.MandateType, claims, ""); err == nil {
+			t.Errorf("a Mandate without %s was built", missing)
+		}
 	}
 }

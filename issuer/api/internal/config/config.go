@@ -46,6 +46,8 @@ type Auth struct {
 	DiscoveryURL string
 	ClientID     string
 	Role         string
+	// ApproverRole is the role of the people who approve mandates.
+	ApproverRole string
 	Disabled     bool
 }
 
@@ -125,7 +127,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	auth := Auth{
 		Issuer: str("OIDC_ISSUER", ""), DiscoveryURL: str("OIDC_DISCOVERY_URL", ""), ClientID: str("OIDC_CLIENT_ID", "issuer-gui"),
-		Role: str("OIDC_ROLE", "issuer-staff"), Disabled: str("AUTH_DISABLED", "") == "true",
+		Role: str("OIDC_ROLE", "issuer-staff"), ApproverRole: str("OIDC_APPROVER_ROLE", "release-manager"), Disabled: str("AUTH_DISABLED", "") == "true",
 	}
 	if auth.Issuer == "" && !auth.Disabled {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_OIDC_ISSUER is required (ATTESTA_ISSUER_AUTH_DISABLED=true leaves the forms open)")

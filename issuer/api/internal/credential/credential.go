@@ -17,6 +17,8 @@ const (
 	Employee = "Employee"
 	// Workload is the credential of a system, such as a pipeline or a service, instead of a person.
 	Workload = "Workload"
+	// Mandate is what named people allow a system to do: a resource pattern, the people who approved, and until when.
+	Mandate = "Mandate"
 )
 
 var Departments = []string{"burgerzaken", "secretariaat"}
@@ -25,6 +27,12 @@ var Departments = []string{"burgerzaken", "secretariaat"}
 const (
 	employeeTitle       = "Medewerker afdeling & rollen"
 	employeeDescription = "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt en welke rollen je hebt"
+)
+
+// mandateTitle and mandateDescription are fixed like the Employee's.
+const (
+	mandateTitle       = "Mandaat van personen voor een systeem"
+	mandateDescription = "Deze credential laat zien welke personen een systeem toestemming gaven voor welke handeling, en tot wanneer"
 )
 
 // workloadTitle and workloadDescription are fixed like the Employee's.
@@ -77,8 +85,11 @@ var EmployeeType = Type{Type: Employee, Path: "employee", Title: employeeTitle, 
 // WorkloadType is the Workload credential. Its claims are fixed in code, and staff enroll a system instead of filling in a form.
 var WorkloadType = Type{Type: Workload, Path: "workload", Title: workloadTitle, Description: workloadDescription, profile: workloadProfile{}}
 
+// MandateType is the Mandate credential. Its claims are fixed in code; people approve a mandate on a page of its own instead of filling in a form.
+var MandateType = Type{Type: Mandate, Path: "mandate", Title: mandateTitle, Description: mandateDescription, profile: mandateProfile{}}
+
 // BuiltIn are the types that are fixed in code; staff cannot define a type with their name or path.
-var BuiltIn = []Type{EmployeeType, WorkloadType}
+var BuiltIn = []Type{EmployeeType, WorkloadType, MandateType}
 
 // ExpiresAtKey is the claim of a Workload entitlement that holds the moment its credential ends, as RFC 3339 text.
 const ExpiresAtKey = "expiresAt"
@@ -356,6 +367,30 @@ func (workloadProfile) fill(def Type, claims map[string]string, c *sdjwt.Credent
 		}
 		c.Disclosable[name] = claims[name]
 	}
+	at, err := time.Parse(time.RFC3339, claims[ExpiresAtKey])
+	if err != nil {
+		return fmt.Errorf("%s: %w", ExpiresAtKey, err)
+	}
+	c.ExpiresAt = at.UTC()
+	return nil
+}
+
+// mandateProfile: fixed claims; `approvers` is a list of emails, `resource` a pattern the policy matches against the resource asked about. A Mandate
+// ends at the moment in its `expiresAt` claim.
+type mandateProfile struct{}
+
+func (mandateProfile) fill(def Type, claims map[string]string, c *sdjwt.Credential) error {
+	for _, name := range []string{"workload", "resource"} {
+		if claims[name] == "" {
+			return fmt.Errorf("%s credential has no %s", def.Type, name)
+		}
+		c.Disclosable[name] = claims[name]
+	}
+	approvers := SplitRoles(claims["approvers"])
+	if len(approvers) == 0 {
+		return fmt.Errorf("%s credential has no approvers", def.Type)
+	}
+	c.Disclosable["approvers"] = approvers
 	at, err := time.Parse(time.RFC3339, claims[ExpiresAtKey])
 	if err != nil {
 		return fmt.Errorf("%s: %w", ExpiresAtKey, err)

@@ -212,6 +212,12 @@ func (s *Store) RevokeAll(ctx context.Context, subject Subject) (int64, error) {
 	return tag.RowsAffected(), err
 }
 
+// RevokeType withdraws the subject's entitlements of one credential type that are not withdrawn yet. It gives how many.
+func (s *Store) RevokeType(ctx context.Context, subject Subject, credentialType string) (int64, error) {
+	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE "+subject.column()+" = $1 AND type = $2 AND status IN ('open', 'claimed', 'issued')", subject.key(), credentialType)
+	return tag.RowsAffected(), err
+}
+
 // StatusIndexes gives the status index of every revoked credential, and how many positions the list needs (one past the highest index given out).
 func (s *Store) StatusIndexes(ctx context.Context) (revoked []int64, size int64, err error) {
 	if err := s.pool.QueryRow(ctx, "SELECT COALESCE(max(status_index) + 1, 0) FROM entitlements").Scan(&size); err != nil {

@@ -19,6 +19,12 @@ type workloadJSON struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
+// offersJSON: offer is the link for the Workload credential, mandate the one for the Mandate credential, left out when none is active.
+type offersJSON struct {
+	Offer   string `json:"offer"`
+	Mandate string `json:"mandate,omitempty"`
+}
+
 func jsonOf(w Workload) workloadJSON {
 	return workloadJSON{ID: w.ID, SpiffeID: w.SpiffeID, Owner: w.Owner, Environment: w.Environment, CreatedAt: w.CreatedAt}
 }
@@ -99,7 +105,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 			writeError(w, http.StatusUnauthorized, "a JWT-SVID is required")
 			return
 		}
-		link, err := svc.Offer(r.Context(), token)
+		offers, err := svc.Offer(r.Context(), token)
 		switch {
 		case errors.Is(err, svid.ErrInvalid):
 			w.Header().Set("WWW-Authenticate", `Bearer error="invalid_token"`)
@@ -110,7 +116,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 			slog.Error("could not make an offer for a workload", "error", err)
 			writeError(w, http.StatusInternalServerError, "the offer could not be made")
 		default:
-			writeJSON(w, http.StatusOK, map[string]string{"offer": link})
+			writeJSON(w, http.StatusOK, offersJSON{Offer: offers.Workload, Mandate: offers.Mandate})
 		}
 	})
 	return mux
