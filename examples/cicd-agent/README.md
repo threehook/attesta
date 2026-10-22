@@ -10,9 +10,10 @@ and every tool it has asks Attesta first. The design is in [`docs/unattended-aut
 - `src/cicd_agent/gate.py` asks Attesta whether an action may happen, hands the request to the wallet and reads the decision. Anything that goes wrong is a denial, with the reason.
 - `src/cicd_agent/tools.py` is all the agent has: `run_tests` and `deploy`, as tools of the SDK, with none of the built-in tools (no shell, no files) and a hook that refuses any other tool.
   Each tool runs its action only after Permit. `LoggingRunner` only records the actions; a runner that builds and deploys takes its place.
-- `src/cicd_agent/service.py` serves `GET /healthz`, `POST /check` (`{"resource": "deploy:staging"}`: the gate's decision, without the model) and `POST /tasks` (`{"task": "..."}`: the agent carries
+- `src/cicd_agent/service.py` serves `GET /healthz`, `POST /check` (`{"resource": "deploy:staging:v1.4.2", "mandate": false}`: the gate's decision, without the model) and `POST /tasks` (`{"task": "..."}`: the agent carries
   it out; needs `ANTHROPIC_API_KEY`). `CICD_AGENT_TOKEN` makes both POST calls need that bearer token.
-- `policies/cicd.rego` permits `run_tests` and `deploy:staging` for the agent's own SPIFFE ID and the environment `staging`, from the trusted issuer. `deploy:prod` is always denied.
+- `policies/cicd.rego` permits `run_tests` and `deploy:staging:<version>` for the agent's own SPIFFE ID and the environment `staging`, from the trusted issuer. `deploy:prod:<version>` also needs a
+  Mandate from that issuer whose `resource` covers it and which two different people approved; the `deploy` tool then asks for the Mandate too.
 
 ## How it fits together
 
@@ -45,7 +46,7 @@ curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resour
 
 ## Limits
 
-- Production is always denied: a mandate does not exist yet.
+- A system has one mandate at a time, so a second release waits for the first to end or be covered by its pattern (`deploy:prod:v1.4.*`).
 - The wallet keeps its key and credential in memory, so a new pod gets a new credential. Every request for one makes an entitlement and a position in the issuer's status list.
 - `cicd-enroll` writes the enrollment into the issuer's database; the staff API (`POST /workloads`) needs a staff sign-in that only the issuer's pages have.
 - Any pod that has the token can send tasks to the agent.

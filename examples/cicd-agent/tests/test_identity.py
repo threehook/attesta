@@ -61,3 +61,10 @@ def test_a_failed_attempt_is_tried_again_next_time(server):
     issuer.routes["POST /workloads/offer"] = (200, {"offer": "openid-credential-offer://?x=2"})
     identity.ensure()
     assert wallet.requests[-1]["body"]["offer"] == "openid-credential-offer://?x=2"
+
+
+def test_hands_the_mandate_offer_to_the_wallet_too(server):
+    identity, issuer, wallet = make(server)
+    issuer.routes["POST /workloads/offer"] = (200, {"offer": "openid-credential-offer://?x=1", "mandate": "openid-credential-offer://?x=2"})
+    identity.ensure()
+    assert [r["body"] for r in wallet.requests] == [{"offer": "openid-credential-offer://?x=1"}, {"offer": "openid-credential-offer://?x=2"}]

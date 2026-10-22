@@ -1,4 +1,5 @@
-"""The agent's identity: a JWT-SVID shown to the issuer gives the credential its wallet holds."""
+"""The agent's identity: a JWT-SVID shown to the issuer gives the credentials its wallet holds: the Workload credential and, when people allowed
+something, the Mandate."""
 import threading
 import time
 from typing import Callable
@@ -26,7 +27,7 @@ def spiffe_jwt_source(audience: str) -> Callable[[], str]:
 
 
 class WorkloadIdentity:
-    """Keeps the wallet's Workload credential fresh. Each credential ends by itself, so the agent renews before that."""
+    """Keeps the wallet's credentials fresh. Each credential ends by itself, so the agent renews before that."""
 
     def __init__(self, issuer_url: str, wallet_url: str, svid: Callable[[], str], renew_after: float = 1800, clock: Callable[[], float] = time.monotonic):
         self._issuer = issuer_url.rstrip("/")
@@ -51,8 +52,10 @@ class WorkloadIdentity:
 
     def _obtain(self) -> None:
         try:
-            offer = call("POST", f"{self._issuer}/workloads/offer", token=self._svid())["offer"]
-            call("POST", f"{self._wallet}/credentials", {"offer": offer})
+            offers = call("POST", f"{self._issuer}/workloads/offer", token=self._svid())
+            for offer in (offers["offer"], offers.get("mandate")):
+                if offer:
+                    call("POST", f"{self._wallet}/credentials", {"offer": offer})
         except HttpError as error:
             raise IdentityError(f"no credential: {error}") from error
         except (KeyError, OSError) as error:

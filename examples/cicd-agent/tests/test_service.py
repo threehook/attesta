@@ -11,8 +11,9 @@ from cicd_agent.service import make_handler
 
 
 class FakeGate:
-    def authorize(self, resource):
-        return Decision(resource == "deploy:staging", "Permit" if resource == "deploy:staging" else "Deny", "why", "spiffe://corp/agent")
+    def authorize(self, resource, mandate=False):
+        permit = resource == "deploy:staging" or (resource == "deploy:prod:v1" and mandate)
+        return Decision(permit, "Permit" if permit else "Deny", "why", "spiffe://corp/agent")
 
 
 @pytest.fixture
@@ -45,6 +46,12 @@ def test_check_gives_the_decision(service):
     assert post(f"{base}/check", {"resource": "deploy:staging"}) == (200, {"permit": True, "decision": "Permit", "reason": "why", "subject": "spiffe://corp/agent"})
     assert post(f"{base}/check", {"resource": "deploy:prod"})[1]["permit"] is False
     assert post(f"{base}/check", {})[0] == 400
+
+
+def test_check_asks_for_the_mandate_when_told_to(service):
+    base = service()
+    assert post(f"{base}/check", {"resource": "deploy:prod:v1"})[1]["permit"] is False
+    assert post(f"{base}/check", {"resource": "deploy:prod:v1", "mandate": True})[1]["permit"] is True
 
 
 def test_a_token_is_required_when_one_is_set(service):

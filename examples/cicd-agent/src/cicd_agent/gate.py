@@ -4,9 +4,11 @@ from dataclasses import dataclass
 from typing import Callable
 
 from .identity import WorkloadIdentity
-from .jsonhttp import call
+from .jsonhttp import HttpError, call
 
 IDENTITY_CLAIM = "workload"
+WORKLOAD = {"credentialType": "Workload", "claims": ["owner", "environment"]}
+MANDATE = {"credentialType": "Mandate", "claims": ["resource", "approvers"]}
 
 
 @dataclass(frozen=True)
@@ -36,7 +38,8 @@ class Gate:
         self._wait = wait
         self._sleep = sleep
 
-    def authorize(self, resource: str) -> Decision:
+    def authorize(self, resource: str, mandate: bool = False) -> Decision:
+        """Asks whether the action on the resource may happen. With `mandate` the wallet also shows what people allowed."""
         try:
             self._identity.ensure()
             for attempt in (1, 2):
@@ -47,10 +50,17 @@ class Gate:
                         "resource": resource,
                         "policyId": self._policy,
                         "identityClaim": IDENTITY_CLAIM,
-                        "credentials": [{"credentialType": "Workload", "claims": ["owner", "environment"]}],
+                        "credentials": [WORKLOAD, MANDATE] if mandate else [WORKLOAD],
                     },
                 )
-                answered = call("POST", f"{self._wallet}/present", {"link": started["authorizationRequest"]})
+                try:
+                    answered = call("POST", f"{self._wallet}/present", {"link": started["authorizationRequest"]})
+                except HttpError as error:
+                    if error.status != 409 or attempt == 2:
+                        raise
+                    # The wallet holds no credential for the request, a Mandate approved after it last asked the issuer for example.
+                    self._identity.renew()
+                    continue
                 if answered.get("status") == 200 or attempt == 2:
                     break
                 # Attesta did not accept the credential, a revoked one for example. The issuer gives a new one if the workload is still enrolled.
@@ -65,5 +75,9 @@ class Gate:
                 self._sleep(0.25)
             subject = (outcome.get("subject") or {}).get("id")
             return Decision(outcome.get("decision") == "Permit", str(outcome.get("decision")), str(outcome.get("reason", "")), subject)
+        except HttpError as error:
+            if error.status == 409:  # the wallet holds nothing that answers the request, such as a Mandate nobody approved
+                return Decision(False, "Deny", "the wallet holds no credential for this request: " + ("a mandate is needed" if mandate else error.body))
+            return Decision(False, "Indeterminate", f"{type(error).__name__}: {error}")
         except Exception as error:  # an action that cannot be authorized does not happen
             return Decision(False, "Indeterminate", f"{type(error).__name__}: {error}")

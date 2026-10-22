@@ -50,7 +50,7 @@ def make_handler(gate: Gate, runner: Runner, token: str | None, model_available:
                 resource = body.get("resource")
                 if not isinstance(resource, str) or not resource:
                     return self._send(400, {"error": "resource is required"})
-                decision = gate.authorize(resource)
+                decision = gate.authorize(resource, mandate=body.get("mandate") is True)
                 return self._send(200, {"permit": decision.permit, "decision": decision.decision, "reason": decision.reason, "subject": decision.subject})
             task = body.get("task")
             if not isinstance(task, str) or not task:

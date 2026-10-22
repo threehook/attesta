@@ -8,9 +8,11 @@ class FakeGate:
     def __init__(self, permit):
         self.permit = permit
         self.asked: list[str] = []
+        self.mandates: list[bool] = []
 
-    def authorize(self, resource):
+    def authorize(self, resource, mandate=False):
         self.asked.append(resource)
+        self.mandates.append(mandate)
         return Decision(self.permit, "Permit" if self.permit else "Deny", "ok" if self.permit else "Mandate ontbreekt")
 
 
@@ -34,7 +36,7 @@ def tools_of(gate, runner):
 def test_an_action_runs_only_after_a_permit():
     gate, runner = FakeGate(True), FakeRunner()
     reply = asyncio.run(tools_of(gate, runner)["deploy"].handler({"application": "shop", "version": "v1", "environment": "staging"}))
-    assert gate.asked == ["deploy:staging"] and runner.done == [("deploy", "shop", "v1", "staging")]
+    assert gate.asked == ["deploy:staging:v1"] and gate.mandates == [False] and runner.done == [("deploy", "shop", "v1", "staging")]
     assert reply["content"][0]["text"] == "shop v1 deployed to staging" and "is_error" not in reply
 
 
@@ -43,7 +45,7 @@ def test_a_denied_action_does_not_run_and_says_why():
     reply = asyncio.run(tools_of(gate, runner)["deploy"].handler({"application": "shop", "version": "v1", "environment": "prod"}))
     assert runner.done == [] and reply["is_error"] and "Mandate ontbreekt" in reply["content"][0]["text"]
     reply = asyncio.run(tools_of(gate, runner)["run_tests"].handler({"application": "shop"}))
-    assert runner.done == [] and reply["is_error"] and gate.asked == ["deploy:prod", "run_tests"]
+    assert runner.done == [] and reply["is_error"] and gate.asked == ["deploy:prod:v1", "run_tests"] and gate.mandates == [True, False]
 
 
 def test_the_agent_has_only_its_own_tools():

@@ -31,6 +31,23 @@ func TestExamplePolicies(t *testing.T) {
 		}
 		return in
 	}
+	const agent = "spiffe://attesta.local/ns/attesta/sa/cicd-agent"
+	cicd := func(resource string, mutate func(*Input)) Input {
+		in := Input{
+			Resource:    resource,
+			Credentials: map[string]Credential{"Workload": {Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "owner": "platform", "environment": "staging"}}},
+		}
+		if mutate != nil {
+			mutate(&in)
+		}
+		return in
+	}
+	mandated := func(resource, approvers string) func(*Input) {
+		return func(in *Input) {
+			in.Credentials["Mandate"] = Credential{Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "resource": resource, "approvers": approvers}}
+		}
+	}
+	const prod = "cicd-agent/policies/cicd.rego"
 	employee := func(in *Input) Credential { return in.Credentials["Employee"] }
 
 	for _, tc := range []struct {
@@ -68,6 +85,23 @@ func TestExamplePolicies(t *testing.T) {
 		}), false, "Diploma Laadpalen Management ontbreekt"},
 		{"the Employee alone", "laadpalen/policies/request_laadpaal.rego", laadpaal(func(in *Input) { delete(in.Credentials, "Diploma Laadpalen Management") }), false, "Diploma Laadpalen Management ontbreekt"},
 		{"the diploma alone", "laadpalen/policies/request_laadpaal.rego", laadpaal(func(in *Input) { delete(in.Credentials, "Employee") }), false, "Employee ontbreekt"},
+
+		{"cicd, tests", prod, cicd("run_tests", nil), true, "Toegestaan voor staging"},
+		{"cicd, staging deploy", prod, cicd("deploy:staging:v1.4.2", nil), true, "Toegestaan voor staging"},
+		{"cicd, another system", prod, cicd("run_tests", func(in *Input) { in.Credentials["Workload"].Claims["workload"] = "spiffe://attesta.local/ns/x/sa/y" }), false, "Systeem niet toegestaan: spiffe://attesta.local/ns/x/sa/y"},
+		{"cicd, production without a mandate", prod, cicd("deploy:prod:v1.4.2", nil), false, "Productie vraagt een mandaat"},
+		{"cicd, production with two approvers", prod, cicd("deploy:prod:v1.4.2", mandated("deploy:prod:v1.4.2", `["anna@corp.test","bob@corp.test"]`)), true, "Toegestaan voor productie, goedgekeurd door anna@corp.test, bob@corp.test"},
+		{"cicd, production by a pattern", prod, cicd("deploy:prod:v1.4.2", mandated("deploy:prod:v1.4.*", `["anna@corp.test","bob@corp.test"]`)), true, "Toegestaan voor productie, goedgekeurd door anna@corp.test, bob@corp.test"},
+		{"cicd, production with one approver", prod, cicd("deploy:prod:v1.4.2", mandated("deploy:prod:v1.4.2", `["anna@corp.test"]`)), false, "Productie vraagt twee verschillende goedkeurders"},
+		{"cicd, one person twice", prod, cicd("deploy:prod:v1.4.2", mandated("deploy:prod:v1.4.2", `["anna@corp.test","anna@corp.test"]`)), false, "Productie vraagt twee verschillende goedkeurders"},
+		{"cicd, another version", prod, cicd("deploy:prod:v2.0.0", mandated("deploy:prod:v1.4.2", `["anna@corp.test","bob@corp.test"]`)), false, "Het mandaat geldt niet voor deploy:prod:v2.0.0"},
+		{"cicd, a mandate for staging", prod, cicd("deploy:prod:v1.4.2", mandated("deploy:staging:*", `["anna@corp.test","bob@corp.test"]`)), false, "Het mandaat geldt niet voor productie"},
+		{"cicd, a resource with an extra part is unknown", prod, cicd("deploy:prod:v1:x", mandated("deploy:prod:*", `["anna@corp.test","bob@corp.test"]`)), false, "Onbekende bron: deploy:prod:v1:x"},
+		{"cicd, a mandate from an untrusted issuer", prod, cicd("deploy:prod:v1.4.2", func(in *Input) {
+			mandated("deploy:prod:v1.4.2", `["anna@corp.test","bob@corp.test"]`)(in)
+			in.Credentials["Mandate"] = Credential{Issuer: "did:key:z6Mkother", Claims: in.Credentials["Mandate"].Claims}
+		}), false, "Uitgever van het mandaat niet vertrouwd: did:key:z6Mkother"},
+		{"cicd, a mandate does not widen staging", prod, cicd("deploy:other:v1", mandated("deploy:prod:*", `["anna@corp.test","bob@corp.test"]`)), false, "Onbekende bron: deploy:other:v1"},
 
 		{"sign in", "laadpalen/policies/sign_in.rego", signIn(nil), true, "Aangemeld"},
 		{"sign in, untrusted issuer", "laadpalen/policies/sign_in.rego", signIn(func(in *Input) { in.Credentials["Employee"] = Credential{Issuer: "did:key:z6Mkother"} }), false, "Uitgever niet vertrouwd: did:key:z6Mkother"},

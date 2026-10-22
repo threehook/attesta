@@ -38,6 +38,10 @@ class LoggingRunner:
         return f"{application} {version} deployed to {environment}"
 
 
+# The environments where people must have allowed the deployment.
+MANDATE_FOR = {"prod"}
+
+
 def _reply(text: str, error: bool = False) -> dict:
     return {"content": [{"type": "text", "text": text}], **({"is_error": True} if error else {})}
 
@@ -52,7 +56,8 @@ def build_tools(gate: Gate, runner: Runner):
 
     @tool("deploy", "Deploy a version of an application to an environment", {"application": str, "version": str, "environment": str})
     async def deploy(args: dict) -> dict:
-        decision = gate.authorize(f"deploy:{args['environment']}")
+        environment = args["environment"]
+        decision = gate.authorize(f"deploy:{environment}:{args['version']}", mandate=environment in MANDATE_FOR)
         if not decision.permit:
             return _reply(f"refused: {decision.reason}", error=True)
         return _reply(runner.deploy(args["application"], args["version"], args["environment"]))

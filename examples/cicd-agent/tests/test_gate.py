@@ -38,6 +38,27 @@ def test_permit_after_the_wallet_answered(server):
     assert wallet.requests[0]["body"] == {"link": "openid4vp://?x=1"}
 
 
+def test_a_request_with_a_mandate_also_asks_for_it(server):
+    gate, attesta, _, _ = make(server)
+    assert gate.authorize("deploy:prod:v1", mandate=True).permit
+    assert [c["credentialType"] for c in attesta.requests[0]["body"]["credentials"]] == ["Workload", "Mandate"]
+
+
+def test_a_wallet_without_the_mandate_asks_the_issuer_again_once(server):
+    gate, _, wallet, identity = make(server)
+    answers = iter([(409, {"error": "the wallet holds no credential that answers the request"}), (200, {"status": 200})])
+    wallet.routes["POST /present"] = lambda _request: next(answers)
+    assert gate.authorize("deploy:prod:v1", mandate=True).permit
+    assert identity.renewed == 1 and len(wallet.requests) == 2
+
+
+def test_a_wallet_without_the_mandate_is_a_denial(server):
+    gate, _, wallet, _ = make(server)
+    wallet.routes["POST /present"] = (409, {"error": "the wallet holds no credential that answers the request"})
+    decision = gate.authorize("deploy:prod:v1", mandate=True)
+    assert not decision.permit and decision.decision == "Deny" and "mandate is needed" in decision.reason
+
+
 def test_deny_carries_the_reason(server):
     gate, attesta, _, _ = make(server)
     attesta.routes["GET /v1/authorize/requests/r1"] = (200, {"status": "done", "decision": "Deny", "reason": "Mandate ontbreekt"})
