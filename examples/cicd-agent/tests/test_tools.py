@@ -1,19 +1,18 @@
 import asyncio
 
-from cicd_agent.gate import Decision
-from cicd_agent.tools import TOOLS, _only_our_tools, build_options, build_tools
+from cicd_agent.tools import TOOLS, build_options, build_tools, gate_hook
 
 
-class FakeGate:
+class FakeGuard:
     def __init__(self, permit):
         self.permit = permit
-        self.asked: list[str] = []
-        self.mandates: list[bool] = []
+        self.asked: list[tuple] = []
 
-    def authorize(self, resource, mandate=False):
-        self.asked.append(resource)
-        self.mandates.append(mandate)
-        return Decision(self.permit, "Permit" if self.permit else "Deny", "ok" if self.permit else "Mandate ontbreekt")
+    def check(self, name, args):
+        from cicd_agent.gate import Decision
+
+        self.asked.append((name, dict(args)))
+        return Decision(self.permit, "Permit" if self.permit else "Deny", "ok" if self.permit else "Mandaat ontbreekt")
 
 
 class FakeRunner:
@@ -29,30 +28,43 @@ class FakeRunner:
         return f"{application} {version} deployed to {environment}"
 
 
-def tools_of(gate, runner):
-    return {t.name: t for t in build_tools(gate, runner)}
+def tools_of(runner):
+    return {t.name: t for t in build_tools(runner)}
 
 
-def test_an_action_runs_only_after_a_permit():
-    gate, runner = FakeGate(True), FakeRunner()
-    reply = asyncio.run(tools_of(gate, runner)["deploy"].handler({"application": "shop", "version": "v1", "environment": "staging"}))
-    assert gate.asked == ["deploy:staging:v1"] and gate.mandates == [False] and runner.done == [("deploy", "shop", "v1", "staging")]
-    assert reply["content"][0]["text"] == "shop v1 deployed to staging" and "is_error" not in reply
+def hook_for(permit):
+    guard = FakeGuard(permit)
+    return guard, gate_hook(guard)
 
 
-def test_a_denied_action_does_not_run_and_says_why():
-    gate, runner = FakeGate(False), FakeRunner()
-    reply = asyncio.run(tools_of(gate, runner)["deploy"].handler({"application": "shop", "version": "v1", "environment": "prod"}))
-    assert runner.done == [] and reply["is_error"] and "Mandate ontbreekt" in reply["content"][0]["text"]
-    reply = asyncio.run(tools_of(gate, runner)["run_tests"].handler({"application": "shop"}))
-    assert runner.done == [] and reply["is_error"] and gate.asked == ["deploy:prod:v1", "run_tests"] and gate.mandates == [True, False]
+def call(hook, name, args=None):
+    return asyncio.run(hook({"tool_name": name, "tool_input": args or {}}, None, None))
 
 
-def test_the_agent_has_only_its_own_tools():
-    options = build_options(FakeGate(True), FakeRunner())
-    assert options.tools == [] and options.allowed_tools == TOOLS
-    hook = options.hooks["PreToolUse"][0].hooks[0]
-    assert asyncio.run(hook({"tool_name": TOOLS[1]}, None, None)) == {}
+def test_the_tools_only_carry_out_the_action():
+    runner = FakeRunner()
+    reply = asyncio.run(tools_of(runner)["deploy"].handler({"application": "shop", "version": "v1", "environment": "staging"}))
+    assert runner.done == [("deploy", "shop", "v1", "staging")] and reply["content"][0]["text"] == "shop v1 deployed to staging" and "is_error" not in reply
+
+
+def test_a_permitted_tool_call_goes_on_with_what_was_asked():
+    guard, hook = hook_for(True)
+    args = {"application": "shop", "version": "v1", "environment": "prod"}
+    assert call(hook, TOOLS[1], args) == {}
+    assert guard.asked == [("deploy", args)]
+
+
+def test_a_denied_tool_call_is_refused_with_the_reason():
+    guard, hook = hook_for(False)
+    refused = call(hook, TOOLS[1], {"application": "shop", "version": "v1", "environment": "prod"})["hookSpecificOutput"]
+    assert refused["permissionDecision"] == "deny" and "Mandaat ontbreekt" in refused["permissionDecisionReason"]
+
+
+def test_the_agent_has_only_its_own_tools_and_nothing_else_is_asked_about():
+    guard, hook = hook_for(True)
     for foreign in ("Bash", "Read", "WebFetch", "mcp__other__thing"):
-        denied = asyncio.run(_only_our_tools({"tool_name": foreign}, None, None))
-        assert denied["hookSpecificOutput"]["permissionDecision"] == "deny"
+        assert call(hook, foreign)["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert guard.asked == []
+    options = build_options(guard, FakeRunner())
+    assert options.tools == [] and options.allowed_tools == TOOLS
+    assert len(options.hooks["PreToolUse"]) == 1

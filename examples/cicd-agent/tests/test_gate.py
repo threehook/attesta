@@ -38,6 +38,16 @@ def test_permit_after_the_wallet_answered(server):
     assert wallet.requests[0]["body"] == {"link": "openid4vp://?x=1"}
 
 
+def test_the_action_goes_with_the_request(server):
+    gate, attesta, _, _ = make(server)
+    gate.authorize("deploy:staging:v1", action={"application": "shop", "version": "v1"})
+    started = [r["body"] for r in attesta.requests if r["method"] == "POST"]
+    assert started[0]["action"] == {"application": "shop", "version": "v1"}
+    gate.authorize("run_tests")
+    started = [r["body"] for r in attesta.requests if r["method"] == "POST"]
+    assert "action" not in started[1]
+
+
 def test_a_request_with_a_mandate_also_asks_for_it(server):
     gate, attesta, _, _ = make(server)
     assert gate.authorize("deploy:prod:v1", mandate=True).permit

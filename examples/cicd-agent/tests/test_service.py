@@ -11,7 +11,7 @@ from cicd_agent.service import make_handler
 
 
 class FakeGate:
-    def authorize(self, resource, mandate=False):
+    def authorize(self, resource, mandate=False, action=None):
         permit = resource == "deploy:staging" or (resource == "deploy:prod:v1" and mandate)
         return Decision(permit, "Permit" if permit else "Deny", "why", "spiffe://corp/agent")
 

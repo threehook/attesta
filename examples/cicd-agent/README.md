@@ -8,8 +8,12 @@ and every tool it has asks Attesta first. The design is in [`docs/unattended-aut
 - `src/cicd_agent/identity.py` gets the agent's credential: it asks SPIRE for a JWT-SVID, shows it to the issuer's `POST /workloads/offer`, and hands the offer link to its wallet. The credential
   ends after an hour; the agent asks for a new one after half of that, and at once when Attesta did not accept the one it holds (a revoked one, for example).
 - `src/cicd_agent/gate.py` asks Attesta whether an action may happen, hands the request to the wallet and reads the decision. Anything that goes wrong is a denial, with the reason.
-- `src/cicd_agent/tools.py` is all the agent has: `run_tests` and `deploy`, as tools of the SDK, with none of the built-in tools (no shell, no files) and a hook that refuses any other tool.
-  Each tool runs its action only after Permit. `LoggingRunner` only records the actions; a runner that builds and deploys takes its place.
+- `src/cicd_agent/tools.py` is all the agent has: `run_tests` and `deploy`, as tools of the SDK, with none of the built-in tools (no shell, no files). A `PreToolUse` hook asks the gate before every
+  tool call, so a tool runs only after Permit, and refuses any other tool. `LoggingRunner` only records the actions; a runner that builds and deploys takes its place.
+- `src/cicd_agent/actions.py` says what each tool is to the gate: the resource (`deploy:<environment>:<version>`), the concrete action (`application`, `version`, `environment`, which the policy sees as
+  `input.action`) and whether a mandate is needed. `src/cicd_agent/guard.py` turns a tool name and its arguments into that question, for any host: the hook uses it, and so can a worker of Managed Agents.
+  A name or arguments it does not know are denied without asking.
+- `src/cicd_agent/middleware.py` is the gate as WSGI middleware for a service: `gated(app, guard, action_of)` asks before it handles a request and answers 403 with the reason when the answer is not Permit.
 - `src/cicd_agent/service.py` serves `GET /healthz`, `POST /check` (`{"resource": "deploy:staging:v1.4.2", "mandate": false}`: the gate's decision, without the model) and `POST /tasks` (`{"task": "..."}`: the agent carries
   it out; needs `ANTHROPIC_API_KEY`). `CICD_AGENT_TOKEN` makes both POST calls need that bearer token.
 - `policies/cicd.rego` permits `run_tests` and `deploy:staging:<version>` for the agent's own SPIFFE ID and the environment `staging`, from the trusted issuer. `deploy:prod:<version>` also needs a

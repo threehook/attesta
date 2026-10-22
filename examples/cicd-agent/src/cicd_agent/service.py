@@ -6,6 +6,7 @@ import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .gate import Gate
+from .guard import Guard
 from .tools import Runner, run_task
 
 
@@ -50,14 +51,15 @@ def make_handler(gate: Gate, runner: Runner, token: str | None, model_available:
                 resource = body.get("resource")
                 if not isinstance(resource, str) or not resource:
                     return self._send(400, {"error": "resource is required"})
-                decision = gate.authorize(resource, mandate=body.get("mandate") is True)
+                action = body.get("action")
+                decision = gate.authorize(resource, mandate=body.get("mandate") is True, action=action if isinstance(action, dict) else None)
                 return self._send(200, {"permit": decision.permit, "decision": decision.decision, "reason": decision.reason, "subject": decision.subject})
             task = body.get("task")
             if not isinstance(task, str) or not task:
                 return self._send(400, {"error": "task is required"})
             if not model_available:
                 return self._send(503, {"error": "no model is configured: set ANTHROPIC_API_KEY"})
-            self._send(200, {"result": asyncio.run(run_task(task, gate, runner))})
+            self._send(200, {"result": asyncio.run(run_task(task, Guard(gate), runner))})
 
     return Handler
 

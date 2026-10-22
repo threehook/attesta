@@ -1,4 +1,5 @@
-"""The agent's tools. They are all it has: no shell, no files. Each action runs only after the gate said Permit."""
+"""The agent's tools. They are all it has: no shell, no files. A hook asks the gate before each tool runs, so an action runs only after Permit."""
+import asyncio
 import json
 import logging
 from typing import Protocol
@@ -6,7 +7,7 @@ from typing import Protocol
 from claude_agent_sdk import ClaudeAgentOptions, HookMatcher, create_sdk_mcp_server, query, tool
 from claude_agent_sdk import AssistantMessage, ResultMessage, TextBlock
 
-from .gate import Gate
+from .guard import Guard
 
 SERVER = "cicd"
 TOOLS = [f"mcp__{SERVER}__run_tests", f"mcp__{SERVER}__deploy"]
@@ -38,60 +39,56 @@ class LoggingRunner:
         return f"{application} {version} deployed to {environment}"
 
 
-# The environments where people must have allowed the deployment.
-MANDATE_FOR = {"prod"}
-
-
 def _reply(text: str, error: bool = False) -> dict:
     return {"content": [{"type": "text", "text": text}], **({"is_error": True} if error else {})}
 
 
-def build_tools(gate: Gate, runner: Runner):
+def build_tools(runner: Runner):
+    """The tools only carry out the action. Whether it may happen is decided before, by the hook."""
+
     @tool("run_tests", "Run the tests of an application", {"application": str})
     async def run_tests(args: dict) -> dict:
-        decision = gate.authorize("run_tests")
-        if not decision.permit:
-            return _reply(f"refused: {decision.reason}", error=True)
         return _reply(runner.run_tests(args["application"]))
 
     @tool("deploy", "Deploy a version of an application to an environment", {"application": str, "version": str, "environment": str})
     async def deploy(args: dict) -> dict:
-        environment = args["environment"]
-        decision = gate.authorize(f"deploy:{environment}:{args['version']}", mandate=environment in MANDATE_FOR)
-        if not decision.permit:
-            return _reply(f"refused: {decision.reason}", error=True)
         return _reply(runner.deploy(args["application"], args["version"], args["environment"]))
 
     return [run_tests, deploy]
 
 
-async def _only_our_tools(input_data, tool_use_id, context):
-    if input_data.get("tool_name") in TOOLS:
-        return {}
-    return {
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "deny",
-            "permissionDecisionReason": "this agent has only run_tests and deploy",
-        }
-    }
+def _refuse(reason: str) -> dict:
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": reason}}
 
 
-def build_options(gate: Gate, runner: Runner) -> ClaudeAgentOptions:
+def gate_hook(guard: Guard):
+    """The hook that runs before every tool call: only our tools, and only what Attesta permits. A tool that is refused does not run."""
+
+    async def hook(input_data, tool_use_id, context):
+        name = input_data.get("tool_name", "")
+        if name not in TOOLS:
+            return _refuse("this agent has only run_tests and deploy")
+        decision = await asyncio.to_thread(guard.check, name.removeprefix(f"mcp__{SERVER}__"), input_data.get("tool_input") or {})
+        return {} if decision.permit else _refuse(f"refused: {decision.reason}")
+
+    return hook
+
+
+def build_options(guard: Guard, runner: Runner) -> ClaudeAgentOptions:
     return ClaudeAgentOptions(
         system_prompt=SYSTEM_PROMPT,
-        mcp_servers={SERVER: create_sdk_mcp_server(name=SERVER, version="0.1.0", tools=build_tools(gate, runner))},
+        mcp_servers={SERVER: create_sdk_mcp_server(name=SERVER, version="0.1.0", tools=build_tools(runner))},
         tools=[],  # none of the built-in tools
         allowed_tools=TOOLS,
-        hooks={"PreToolUse": [HookMatcher(matcher=None, hooks=[_only_our_tools])]},
+        hooks={"PreToolUse": [HookMatcher(matcher=None, hooks=[gate_hook(guard)])]},
         max_turns=10,
     )
 
 
-async def run_task(task: str, gate: Gate, runner: Runner) -> str:
+async def run_task(task: str, guard: Guard, runner: Runner) -> str:
     """Lets the agent carry out the task with its tools, and gives what it answered."""
     answer = ""
-    async for message in query(prompt=task, options=build_options(gate, runner)):
+    async for message in query(prompt=task, options=build_options(guard, runner)):
         if isinstance(message, AssistantMessage):
             answer = "".join(block.text for block in message.content if isinstance(block, TextBlock)) or answer
         elif isinstance(message, ResultMessage) and message.result:

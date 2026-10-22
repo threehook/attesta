@@ -38,8 +38,9 @@ class Gate:
         self._wait = wait
         self._sleep = sleep
 
-    def authorize(self, resource: str, mandate: bool = False) -> Decision:
-        """Asks whether the action on the resource may happen. With `mandate` the wallet also shows what people allowed."""
+    def authorize(self, resource: str, mandate: bool = False, action: dict[str, str] | None = None) -> Decision:
+        """Asks whether the action on the resource may happen. With `mandate` the wallet also shows what people allowed; `action` tells the policy what
+        is about to be done, as texts by name."""
         try:
             self._identity.ensure()
             for attempt in (1, 2):
@@ -51,6 +52,7 @@ class Gate:
                         "policyId": self._policy,
                         "identityClaim": IDENTITY_CLAIM,
                         "credentials": [WORKLOAD, MANDATE] if mandate else [WORKLOAD],
+                        **({"action": action} if action else {}),
                     },
                 )
                 try:
