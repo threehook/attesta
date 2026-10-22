@@ -86,7 +86,7 @@ button.danger{background:var(--danger);color:var(--danger-text)}
 .actions form{margin:0}
 .toolbar{display:flex;gap:16px;align-items:center;margin:0 0 16px}
 .toolbar input{margin:0;max-width:20rem}
-.tablebox{width:fit-content;max-width:112rem;overflow-x:auto}
+.tablebox{width:fit-content;max-width:146rem;overflow-x:auto}
 table.data th{position:relative}
 table.data.sized th,table.data.sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .grip{position:absolute;top:0;right:0;width:8px;height:100%;border-right:1px solid color-mix(in srgb,var(--border) 30%,transparent);cursor:col-resize;user-select:none;touch-action:none}
