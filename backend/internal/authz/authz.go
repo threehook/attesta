@@ -7,6 +7,8 @@ type Input struct {
 	Resource string
 	// UserRoles are asserted by the calling application, not verified by Attesta; empty when it sent none.
 	UserRoles []string
+	// Action describes what the application is about to do, as texts by name; asserted by the application like UserRoles. Empty when it sent none.
+	Action map[string]string
 	// Credentials are the presented credentials of one person, by credential type; a request asks for each type at most once.
 	Credentials map[string]Credential
 }

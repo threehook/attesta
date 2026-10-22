@@ -104,6 +104,24 @@ func TestOPAInput(t *testing.T) {
 	}
 }
 
+func TestOPAInputHasTheAction(t *testing.T) {
+	policy := `package policy
+
+decision := {"decision": "Permit", "reason": concat(" ", [input.action.application, input.action.version])}
+`
+	got, err := NewOPA().Evaluate(policy, Input{Action: map[string]string{"application": "shop", "version": "v1.4.2"}})
+	if err != nil || got.Reason != "shop v1.4.2" {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	empty := `package policy
+
+decision := {"decision": "Permit", "reason": sprintf("%d", [count(input.action)])}
+`
+	if got, err := NewOPA().Evaluate(empty, Input{}); err != nil || got.Reason != "0" {
+		t.Errorf("without an action: %+v, %v; the input has an empty action", got, err)
+	}
+}
+
 const statementsPolicy = `package policy
 
 decision := {

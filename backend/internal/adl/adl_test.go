@@ -93,6 +93,16 @@ func TestRecordIsALevel1RecordWithTheCallersTrace(t *testing.T) {
 	}
 }
 
+func TestTheActionIsLoggedAsAssertedByTheApplication(t *testing.T) {
+	d := allowed()
+	d.Action = map[string]string{"application": "shop", "version": "v1.4.2"}
+	rec := logged(t, d)
+	if at(t, rec, "body", "adl.core.request", "context", "action_details", "values", "version") != "v1.4.2" ||
+		at(t, rec, "body", "adl.core.request", "context", "action_details", "origin") != "application" {
+		t.Errorf("context = %v", at(t, rec, "body", "adl.core.request", "context"))
+	}
+}
+
 func TestADenialIsStillOkAndShowsFalse(t *testing.T) {
 	d := allowed()
 	d.Allow, d.Reason = false, "Niet geautoriseerd vanwege rol"

@@ -58,8 +58,9 @@ func (s *Server) handleDiagnosePolicy(w http.ResponseWriter, r *http.Request) {
 type evaluateRequest struct {
 	Source string `json:"source"`
 	Input  struct {
-		Resource    string   `json:"resource"`
-		UserRoles   []string `json:"userRoles"`
+		Resource    string            `json:"resource"`
+		UserRoles   []string          `json:"userRoles"`
+		Action      map[string]string `json:"action"`
 		Credentials map[string]struct {
 			Issuer string            `json:"issuer"`
 			Claims map[string]string `json:"claims"`
@@ -103,7 +104,7 @@ func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	in := authz.Input{Resource: req.Input.Resource, UserRoles: req.Input.UserRoles, Credentials: make(map[string]authz.Credential, len(req.Input.Credentials))}
+	in := authz.Input{Resource: req.Input.Resource, UserRoles: req.Input.UserRoles, Action: req.Input.Action, Credentials: make(map[string]authz.Credential, len(req.Input.Credentials))}
 	for t, c := range req.Input.Credentials {
 		in.Credentials[t] = authz.Credential{Issuer: c.Issuer, Claims: c.Claims}
 	}

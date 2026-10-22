@@ -43,6 +43,8 @@ type Request struct {
 	Credentials []CredentialQuery
 	// IdentityClaim is the claim that identifies the holder in every credential. Every request asks for it and Respond requires it. Empty means email.
 	IdentityClaim string
+	// Action describes what the application is about to do, as texts by name. The application asserts it; Attesta cannot verify it.
+	Action map[string]string
 	// UserRoles are the roles the calling application asserted. They are not part of the presentation and Attesta cannot verify them.
 	UserRoles []string
 	// TraceParent is the W3C traceparent the application sent with the request; the decision log keeps its trace.

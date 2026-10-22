@@ -300,6 +300,35 @@ func TestUserRolesTravelFromTheRequestToThePolicy(t *testing.T) {
 	}
 }
 
+func TestTheActionTravelsFromTheRequestToThePolicyAndIsChecked(t *testing.T) {
+	p := &fakePresenter{presented: presented()}
+	e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit}}
+	s := newPresentationServer(t, p, e)
+
+	body := strings.Replace(requestBody, "{", `{"action":{"application":"shop","version":"v1.4.2"},`, 1)
+	if rec := doRequest(s, "POST", "/v1/authorize/requests", body, nil); rec.Code != http.StatusOK {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body)
+	}
+	if p.gotRequest.Action["version"] != "v1.4.2" {
+		t.Fatalf("request action = %v", p.gotRequest.Action)
+	}
+	p.presented.Request.Action = p.gotRequest.Action
+	postForm(s, "/v1/authorize/requests/req-1/response", url.Values{"vp_token": {"{}"}, "state": {"s"}})
+	if e.evaluated.Action["application"] != "shop" {
+		t.Errorf("policy action = %v", e.evaluated.Action)
+	}
+
+	for name, action := range map[string]string{
+		"a name with capitals first": `{"Version":"1"}`,
+		"a long value":               `{"version":"` + strings.Repeat("x", maxActionValue+1) + `"}`,
+	} {
+		bad := strings.Replace(requestBody, "{", `{"action":`+action+",", 1)
+		if rec := doRequest(s, "POST", "/v1/authorize/requests", bad, nil); rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: status %d, want 400", name, rec.Code)
+		}
+	}
+}
+
 type fakeDecisionLog struct {
 	decisions []adl.Decision
 	err       error

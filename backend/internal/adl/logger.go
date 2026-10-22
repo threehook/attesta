@@ -26,6 +26,8 @@ type Decision struct {
 	Also []Credential
 	// UserRoles are the roles the application asserted; Attesta cannot verify them.
 	UserRoles []string
+	// Action is what the application said it was about to do; Attesta cannot verify it.
+	Action map[string]string
 	// Allow and Reason are the decision. DecidedBy says who gave the reason: "policy", or "attesta" when no policy ran.
 	Allow     bool
 	Reason    string
@@ -177,6 +179,9 @@ func authzenRequest(d Decision) map[string]any {
 		"request_id": d.RequestID, "policy_id": d.PolicyID, "credential_type": d.CredentialType,
 		"claims":     claims,
 		"user_roles": map[string]any{"values": roles, "origin": "application"},
+	}
+	if len(d.Action) > 0 {
+		context["action_details"] = map[string]any{"values": d.Action, "origin": "application"}
 	}
 	if len(d.Also) > 0 {
 		also := make([]map[string]any, len(d.Also))

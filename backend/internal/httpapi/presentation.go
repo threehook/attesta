@@ -40,6 +40,8 @@ type presentationRequest struct {
 	Credentials []credentialRequest `json:"credentials"`
 	// IdentityClaim is the claim that identifies the holder in every credential. Empty means email.
 	IdentityClaim string `json:"identityClaim"`
+	// Action describes what the application is about to do, as texts by name. The policy sees it as input.action.
+	Action map[string]string `json:"action"`
 	// CredentialType and Claims ask for a single credential; they are shorthand for Credentials with one entry and cannot be combined with it.
 	CredentialType string   `json:"credentialType"`
 	Claims         []string `json:"claims"`
@@ -69,6 +71,27 @@ func (r presentationRequest) credentials() ([]presentation.CredentialQuery, stri
 		queries[i] = presentation.CredentialQuery{CredentialType: c.CredentialType, Claims: c.Claims}
 	}
 	return queries, ""
+}
+
+const (
+	maxActionEntries = 20
+	maxActionValue   = 200
+)
+
+// actionName limits the names of an action to plain names.
+var actionName = regexp.MustCompile(`^[a-z][A-Za-z0-9_]{0,39}$`)
+
+// checkAction says why an action cannot be used, or gives "" when it can.
+func checkAction(action map[string]string) string {
+	if len(action) > maxActionEntries {
+		return fmt.Sprintf("an action has at most %d entries", maxActionEntries)
+	}
+	for name, value := range action {
+		if !actionName.MatchString(name) || len([]rune(value)) > maxActionValue {
+			return fmt.Sprintf("an action has plain names and values of at most %d characters", maxActionValue)
+		}
+	}
+	return ""
 }
 
 // identityClaimName limits the identity claim to a plain top-level claim name.
@@ -107,13 +130,17 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, "identityClaim is not a claim that can identify the holder")
 		return
 	}
+	if problem := checkAction(req.Action); problem != "" {
+		writeError(w, http.StatusBadRequest, problem)
+		return
+	}
 	if _, ok := s.Policies.Get(req.PolicyID); !ok {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", req.PolicyID))
 		return
 	}
 
 	id, link, err := s.Presenter.NewRequest(presentation.Request{
-		Resource: req.Resource, PolicyID: req.PolicyID, Credentials: queries, IdentityClaim: req.IdentityClaim,
+		Resource: req.Resource, PolicyID: req.PolicyID, Credentials: queries, IdentityClaim: req.IdentityClaim, Action: req.Action,
 		UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)), TraceParent: traceParent(r),
 	})
 	if err != nil {
@@ -188,7 +215,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	decision, err := s.Authz.Evaluate(source, authz.Input{
-		Resource: presented.Request.Resource, UserRoles: presented.Request.UserRoles, Credentials: credentialsOf(presented.Credentials),
+		Resource: presented.Request.Resource, UserRoles: presented.Request.UserRoles, Action: presented.Request.Action, Credentials: credentialsOf(presented.Credentials),
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
@@ -246,7 +273,7 @@ func firstType(r presentation.Request) string {
 func decisionFor(id string, req presentation.Request) adl.Decision {
 	return adl.Decision{
 		TraceParent: req.TraceParent, RequestID: id, Resource: req.Resource, PolicyID: req.PolicyID, CredentialType: firstType(req),
-		UserRoles: req.UserRoles,
+		UserRoles: req.UserRoles, Action: req.Action,
 	}
 }
 

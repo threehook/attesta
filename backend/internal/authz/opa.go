@@ -149,7 +149,7 @@ func inputOf(in Input) map[string]any {
 	for i, r := range in.UserRoles {
 		roles[i] = r
 	}
-	return map[string]any{"resource": in.Resource, "userRoles": roles, "credentials": credentials}
+	return map[string]any{"resource": in.Resource, "userRoles": roles, "action": stringMap(in.Action), "credentials": credentials}
 }
 
 func stringMap(m map[string]string) map[string]any {
