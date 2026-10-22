@@ -21,6 +21,7 @@ import {
   type TypeInfo,
 } from './page.js'
 import { renderCredentials } from './credentials.js'
+import { renderApprovals } from './approvals.js'
 import { renderMandates } from './mandates.js'
 import { renderPolicyEditor } from './policy-editor.js'
 import { renderPolicyTester } from './policy-tester.js'
@@ -225,6 +226,14 @@ export async function startGui(options: GuiOptions) {
   app.post('/mandates', forward('POST', '/mandates'))
   app.post('/mandates/:id/approvals', forward('POST', '/mandates/:id/approvals'))
   app.delete('/mandates/:id', forward('DELETE', '/mandates/:id'))
+
+  // Approvals: the page asks for the actions that wait as JSON and sends the approvals; the API checks the role of the person.
+  app.get('/approvals', async (req, res) => {
+    res.type('html').send(renderApprovals(chromeOf(await info(req))))
+  })
+  app.get('/approvals/data', forward('GET', '/approvals'))
+  app.post('/approvals/:id/approvals', forward('POST', '/approvals/:id/approvals'))
+  app.delete('/approvals/:id', forward('DELETE', '/approvals/:id'))
 
   // Policy editor and tester: Monaco is served from the package; the check and the test of a policy are the backend's, which the GUI asks with its own token.
   app.use('/vendor/monaco', express.static(join(dirname(createRequire(import.meta.url).resolve('monaco-editor/package.json')), 'min')))

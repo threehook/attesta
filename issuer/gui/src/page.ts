@@ -58,6 +58,13 @@ export const MANDATES: MenuItem = {
   description: 'Geef een systeem toestemming voor een handeling, of keur een eerder door een collega aangemaakt mandaat goed. Een mandaat kan op elk moment worden beëindigd.',
 }
 
+export const APPROVALS: MenuItem = {
+  id: 'approvals',
+  label: 'Goedkeuringen',
+  href: '/approvals',
+  description: 'Een systeem vraagt zelf om goedkeuring voor een handeling die geen mandaat dekt. Een aanvraag verschijnt hier vanzelf; u kunt er geen aanmaken. Keur de handeling goed of wijs haar af.',
+}
+
 export const POLICY_EDITOR: MenuItem = {
   id: 'policy-editor',
   label: 'Policy Editor',
@@ -74,7 +81,7 @@ export const POLICY_TESTER: MenuItem = {
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, MANDATES] },
+  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, MANDATES, APPROVALS] },
   { label: 'Tools', items: [POLICY_EDITOR, POLICY_TESTER] },
 ]
 

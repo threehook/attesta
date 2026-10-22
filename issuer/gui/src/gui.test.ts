@@ -58,10 +58,10 @@ beforeEach(async () => {
         res.end(refuse ? JSON.stringify({ error: refuse }) : req.method === 'DELETE' ? undefined : '{}')
         return
       }
-      if (req.url?.startsWith('/mandates') || req.url?.startsWith('/workloads')) {
+      if (req.url?.startsWith('/mandates') || req.url?.startsWith('/approvals') || req.url?.startsWith('/workloads')) {
         changed.push(`${req.method} ${req.url} ${raw}`.trim())
         res.statusCode = req.method === 'DELETE' ? 204 : 200
-        res.end(req.method === 'DELETE' ? undefined : req.url === '/mandates' && req.method === 'GET' ? '[]' : '{}')
+        res.end(req.method === 'DELETE' ? undefined : (req.url === '/mandates' || req.url === '/approvals') && req.method === 'GET' ? '[]' : '{}')
         return
       }
       if (req.url?.startsWith('/roles')) {
@@ -140,6 +140,19 @@ describe('issuer pages', () => {
       'POST /mandates/m-1/approvals {}',
       'DELETE /mandates/m-1',
     ])
+  })
+
+  it('has a page for the actions that wait for approval, under Beheer', async () => {
+    const html = await (await fetch(`${baseUrl}/approvals`)).text()
+    expect(html).toContain('<a href="/approvals" aria-current="page">Goedkeuringen</a>')
+    expect(html).toContain('id="approvals-body"')
+  })
+
+  it('passes the approvals and the rejections on to the API', async () => {
+    await fetch(`${baseUrl}/approvals/data`)
+    await fetch(`${baseUrl}/approvals/r-1/approvals`, { method: 'POST' })
+    await fetch(`${baseUrl}/approvals/r-1`, { method: 'DELETE' })
+    expect(changed).toEqual(['GET /approvals', 'POST /approvals/r-1/approvals {}', 'DELETE /approvals/r-1'])
   })
 
   it('serves the logo that the header shows', async () => {
