@@ -9,7 +9,10 @@ data:
     {
       "realm": "attesta",
       "enabled": true,
-      "roles": { "realm": [{ "name": "issuer-staff", "description": "May record entitlements in the issuer" }] },
+      "roles": { "realm": [
+        { "name": "issuer-staff", "description": "May record entitlements in the issuer" },
+        { "name": "release-manager", "description": "May approve what a system is allowed to do" }
+      ] },
       "clients": [{
         "clientId": "issuer-gui",
         "enabled": true,
@@ -34,5 +37,23 @@ data:
         "lastName": "Issuer",
         "credentials": [{ "type": "password", "value": "${ISSUER_STAFF_PASSWORD}", "temporary": false }],
         "realmRoles": ["issuer-staff"]
+      }, {
+        "username": "anna",
+        "enabled": true,
+        "email": "anna@attesta.local",
+        "emailVerified": true,
+        "firstName": "Anna",
+        "lastName": "Release",
+        "credentials": [{ "type": "password", "value": "${ISSUER_STAFF_PASSWORD}", "temporary": false }],
+        "realmRoles": ["issuer-staff", "release-manager"]
+      }, {
+        "username": "bob",
+        "enabled": true,
+        "email": "bob@attesta.local",
+        "emailVerified": true,
+        "firstName": "Bob",
+        "lastName": "Release",
+        "credentials": [{ "type": "password", "value": "${ISSUER_STAFF_PASSWORD}", "temporary": false }],
+        "realmRoles": ["issuer-staff", "release-manager"]
       }]
     }
