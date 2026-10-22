@@ -165,8 +165,15 @@ pod per employee. What stops each threat:
 
 - Is a KMS or HSM available in the environments we target? Without one, the keys are weaker.
 - Do the managed desktops support passkeys (platform authenticators)?
-- Does Credo, the wallet framework we use, do what the design assumes: multiple tenants in one agent, signing through an external KMS, and the redirect after a
-  presentation? These are assumptions to **verify in the first spike**, not facts.
+- Credo (0.7.2), the wallet framework we use, and what the design assumes of it:
+  - **Tenants in one agent: works.** With `@credo-ts/tenants` two tenants in one agent cannot read each other's records or keys, and a tenant cannot sign with another tenant's key. Both
+    storage schemes isolate: a profile per tenant in one store, or a store per tenant. The second gives each tenant its own data key, as the design asks; that key is kept in the
+    tenant record and has to be wrapped by the KMS.
+  - **Signing through an external KMS: works.** A `KeyManagementService` backend registered with `Kms.KeyManagementModule` creates the holder key and signs; the private key never enters
+    the wallet. An SD-JWT presentation with key binding signed that way verified, and an undisclosed claim stayed hidden. A backend must find a key by the id Credo derives from the
+    public key in the credential (`Kms.legacyKeyIdFromPublicJwk`) as well as by its own id, or the presentation finds no key.
+  - **Redirect after a presentation: the wallet side exists.** The holder service hands on a `redirect_uri` from the verifier's answer. Attesta answers with an empty reply today, so
+    the work is on its side.
 - An organisation-run wallet records every approval. That is a privacy matter for employees, so it needs the works council's agreement and a clear retention rule.
 - Concentration risk: a compromised service reaches many wallets. The KMS, the passkey per presentation and the approval gate exist to limit it.
 - Employees away from managed desktops (phones, shared computers) are not covered.
