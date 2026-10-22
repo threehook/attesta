@@ -114,7 +114,10 @@ Without Anna's approval there is no mandate, and the policy answers Deny with th
 - **Mandates:** required for production deployments. Everything else is decided by policy on the identity alone. A mandate is a stored approval, and it becomes a credential each
   time the workload asks for its credentials, so it is bound to the key the wallet has then and needs no stable key. A system has one mandate at a time.
 - **State:** Attesta keeps none. Credentials expire. Use-once is added only when a case needs it.
-- **Missing mandate:** Deny with the reason. Parking the action until a person approves comes in phase 4.
+- **Missing mandate:** Deny with the reason. When people can undo the denial, the policy adds the advice `request_approval` and the gate parks the action (phase 4).
+- **Parked approvals:** the gate asks the issuer (`POST /workloads/approvals`), which mails the approvers a link to the page Goedkeuringen. When two different people approved, the workload takes an
+  `Approval` credential once: the exact resource, 15 minutes. The gate then asks again with the Approval in place of the Mandate. `CICD_APPROVAL_WAIT_SECONDS` is how long the gate waits for
+  the people (0: it answers Pending at once, and the next ask picks the approval up). Attesta keeps no state: the credential is short, and the issuer hands it out once.
 - **Unattended wallet:** it presents only to verifiers on a registered list. There is no switch to present to everyone, as in the desktop wallet.
 
 ## 6. Build in phases
@@ -127,7 +130,7 @@ Each phase ends with a review of the open points in section 7.
 | **1 Machine identity** | Issuer: a workload credential, an endpoint that checks the JWT-SVID or CI token and returns a short-lived credential offer, enrollment of a workload, owner claim. A generic holder identifier next to `email` in the backend, the entitlements and the credential forms. Wallet: unattended mode for registered verifiers. Gate as a Python module, a CLI and a GitHub Action. SPIRE in `k8s/local`. | A pipeline or pod gets Permit or Deny from policy with nobody present. |
 | **2 Mandates** | The mandate credential and a page where named people approve it, for one exact item or by a glob. Revocable. | A production release needs two named people and still runs at night. |
 | **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input (`action` in the request, `input.action` in the policy, `action_details` in the decision log). | An agent works a night shift inside its mandate and is stopped outside it. |
-| **4 Parked approvals** | An uncovered action waits. The approver gets an https link, approves, and the issuer issues a one-time mandate. The system continues. | An unforeseen action waits for the morning and then proceeds. |
+| **4 Parked approvals** | An uncovered action waits. The approvers get an https link, approve, and the issuer issues a one-time Approval. The system continues. | An unforeseen action waits for the morning and then proceeds. |
 | **5 Devices and hosted wallet** | Devices prove what they are (TPM, secure element). The hosted wallet from [architecture.md](architecture.md) serves people away from their desktop. | A device and a phone both work. |
 
 ## 7. Verified facts and open points
