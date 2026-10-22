@@ -38,7 +38,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-enroll cicd-api-key cicd-delete cicd-logs
+	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs
 
 build:
 	cd backend && go build ./...
@@ -223,7 +223,7 @@ k8s-issuer-approval-mail:
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 
 # The CI/CD agent example (examples/cicd-agent): the agent, its wallet and an attesta, in one pod. It needs the issuer (k8s-issuer-apply) with SPIRE
-# (k8s-spire), and its workload enrolled (cicd-enroll).
+# (k8s-spire), and its workload enrolled on the issuer's page Systemen.
 docker-build-cicd-agent:
 	docker build -t $(CICD_AGENT_IMAGE) examples/cicd-agent
 
@@ -253,11 +253,6 @@ cicd-api-key:
 # Hot-deploys the agent's policies, no restart.
 cicd-policies:
 	@$(call put-configmap,cicd-policies,$(CICD_POLICIES))
-
-# Enrolls the agent's SPIFFE ID in the issuer, straight in the issuer's database: the staff API (POST /workloads) needs a staff token, which only the
-# issuer's page gets. Staff with a token enroll with that call instead.
-cicd-enroll:
-	@kubectl --context $(KUBE_CONTEXT) exec -n $(NAMESPACE) deploy/issuer-postgres -- sh -c 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -U "$$POSTGRES_USER" -d issuer_entitlements -v ON_ERROR_STOP=1 -c "INSERT INTO workloads (spiffe_id, owner, environment) SELECT '"'"'$(CICD_SPIFFE_ID)'"'"', '"'"'platform'"'"', '"'"'staging'"'"' WHERE NOT EXISTS (SELECT 1 FROM workloads WHERE spiffe_id = '"'"'$(CICD_SPIFFE_ID)'"'"' AND revoked_at IS NULL)"'
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it.
 cicd-delete:

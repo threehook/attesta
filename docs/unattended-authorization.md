@@ -132,6 +132,7 @@ Each phase ends with a review of the open points in section 7.
 | **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input (`action` in the request, `input.action` in the policy, `action_details` in the decision log). | An agent works a night shift inside its mandate and is stopped outside it. |
 | **4 Parked approvals** | An uncovered action waits. The approvers get an https link, approve, and the issuer issues a one-time Approval. The system continues. | An unforeseen action waits for the morning and then proceeds. |
 | **5 Devices and hosted wallet** | Devices prove what they are (TPM, secure element). The hosted wallet from [architecture.md](architecture.md) serves people away from their desktop. | A device and a phone both work. |
+| **6 Enrolment page** | An issuer page where staff add a system (SPIFFE ID, owner, environment), see the enrolled systems and revoke one. It calls the staff API that exists (`POST`, `GET` and `DELETE /workloads`). | A customer enrols a system without database access. |
 
 ## 7. Verified facts and open points
 

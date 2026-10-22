@@ -61,7 +61,7 @@ Both answer `{ "entitlementId": ..., "mailedTo": ... }`. A verifier that needs a
 A system, such as a pipeline or a service, has a credential of its own: **Workload**, with the claims `workload` (its SPIFFE ID, which identifies it), `owner` and
 `environment`, and a title that is always visible. It is switched on by `ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN`.
 
-- Staff enroll a system with `POST /workloads` (`spiffeId`, `owner`, `environment`), list the enrolled ones with `GET /workloads` and end an enrollment with `DELETE /workloads/{id}`,
+- Staff enroll a system on the page **Systemen**, or with `POST /workloads` (`spiffeId`, `owner`, `environment`), list the enrolled ones with `GET /workloads` and end an enrollment with `DELETE /workloads/{id}`,
   which also revokes the credentials already made for it. All three need the staff sign-in. A SPIFFE ID is enrolled once at a time.
 - The system asks for its credential with `POST /workloads/offer` and the header `Authorization: Bearer <JWT-SVID>`. The issuer checks the token (the audience, the expiry, a key of the
   trust bundle and the trust domain), finds the enrolled system and answers `{ "offer": "openid-credential-offer://..." }`. The link works for five minutes; the system's wallet takes the

@@ -38,7 +38,7 @@ agent ──► Attesta ──► request link ──► wallet ──► Attest
 cd examples/cicd-agent && pip install -e '.[dev]' && pytest     # Python 3.10 or later
 make k8s-spire              # SPIRE in the cluster
 make k8s-issuer-apply       # the issuer, with the SPIFFE socket and trust domain
-make cicd cicd-enroll       # the pod, and the enrollment of its SPIFFE ID
+make cicd                   # the pod; then enrol its SPIFFE ID on the issuer's page Systemen (owner platform, environment staging)
 make cicd-api-key           # only for /tasks
 make cicd-policies          # hot-deploys policies/*.rego, no restart
 ```
@@ -56,5 +56,4 @@ curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resour
 - An Approval is handed out once and lasts 15 minutes; a second deployment of the same version needs a new approval. Attesta itself keeps no state, so the use-once is the issuer's.
 - A system has one mandate at a time, so a second release waits for the first to end or be covered by its pattern (`deploy:prod:v1.4.*`).
 - The wallet keeps its key and credential in memory, so a new pod gets a new credential. Every request for one makes an entitlement and a position in the issuer's status list.
-- `cicd-enroll` writes the enrollment into the issuer's database; the staff API (`POST /workloads`) needs a staff sign-in that only the issuer's pages have.
 - Any pod that has the token can send tasks to the agent.
