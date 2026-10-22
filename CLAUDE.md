@@ -17,11 +17,12 @@ presentation that discloses only what was asked; the backend verifies it and a R
 - `wallet-desktop/` (`@attesta/wallet-desktop`): the Electron app around the core. The user confirms every credential that is added, can remove one, and a credential of a type already held from that issuer is refused until the old one is removed, unless the issuer revoked it or it ended (read from the signed status list): then the user confirms that the new one replaces it; it reaches the wallet as a QR code in a mail, which the user uploads in the wallet. A disclosure is confirmed in a popup (the window stays closed), unless the user chose "Always share" for that application (kept in settings.json in its data folder). There is deliberately no switch to share with every application.
 - `issuer/`: the issuer, split in `api/` (Go, module `attesta/issuer`: OpenID4VCI endpoints, entitlements and QR-code sessions in Postgres, and the mail with the QR code; credential types `Employee`, department and roles only, and one type per diploma, today `Diploma Laadpalen Management`, each with a form of its own; revoking a credential, with or without a corrected one, the roles an employee can be given (create, rename, soft delete; delete refused while in use), and the signed status list at `/status/1`) and `gui/` (the pages, which only call the API, among them `/credentials` and `/roles`). Staff sign in at an OpenID Connect server (Keycloak in the cluster, a customer's own elsewhere); the API checks their token and the role `issuer-staff`.
 - `examples/laadpalen/`: relying app with Attesta as its sidecar (`api/` Go backend, `gui/` page, `policies/request_laadpaal.rego`); see its README.
-- `k8s/local/{backend,issuer,laadpalen}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`.
+- `examples/cicd-agent/`: a CI/CD agent (Python, Claude Agent SDK) in one pod with its own wallet (`wallet/` served by `serve-cli.ts`) and an Attesta sidecar. Its SPIFFE identity (SPIRE) gets it a `Workload` credential from the issuer (`POST /workloads/offer`), and every tool it has asks Attesta first; the design is in `docs/unattended-authorization.md`.
+- `k8s/local/{backend,issuer,laadpalen,cicd,spire}` + `Makefile`: Docker Desktop Kubernetes, namespace `attesta`; SPIRE runs in `spire-mgmt` (`make k8s-spire`).
 
 Flow: page `POST /v1/authorize/requests` -> `openid4vp://` link -> user pastes it into the wallet and confirms -> wallet posts to
 `/v1/authorize/requests/{id}/response` -> backend verifies, policy decides -> page polls `GET /v1/authorize/requests/{id}`. Every request asks for the
-holder's `email` claim; it identifies the person (issuer DID + email). An allowed outcome carries it as `subject`, a denial does not. The policy sees
+holder's `email` claim, or the claim its `identityClaim` names; it identifies the holder (issuer DID + email, or `id`). An allowed outcome carries it as `subject`, a denial does not. The policy sees
 (resource, user roles, and the credentials by type: issuer DID and the requested claims as strings). A request asks for a list of `credentials` (each its own type and claims; the first identifies the person, `credentialType` with `claims` is
 shorthand for one); the wallet then answers with one presentation per credential, all of the same person (same email), and the policy gets them all by type
 (`input.credentials[type]`: issuer and claims). laadpalen asks for an `Employee` (department, roles) and the diploma `Diploma Laadpalen Management`.
@@ -36,6 +37,7 @@ pnpm -r typecheck && pnpm -r test                # all TS packages
 pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
 ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> ATTESTA_E2E_ISSUER_PORT=4099 pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts   # that backend needs ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/
 make k8s-apply k8s-issuer-apply                  # build and deploy
+make k8s-spire cicd cicd-enroll                  # SPIRE, then the CI/CD agent example and its workload (needs the issuer); k8s-issuer-apply adds SPIFFE to the issuer once SPIRE is there
 make laadpalen                                   # the laadpalen app + its Attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 
@@ -57,6 +59,8 @@ The issuer's staff user is `staff`, its password is in the Secret `attesta-issue
 - Desktop wallet dev switches (`ATTESTA_WALLET_KEY`, `ATTESTA_WALLET_DATA_DIR`, `ATTESTA_ALLOW_INSECURE_HTTP`) are honoured only when the app is not packaged.
 - A new `enforcer-go` tag is not visible to `go mod tidy` until sum.golang.org drops its cached 404 (about 30 minutes); `GOPROXY=direct GONOSUMDB=github.com/threehook/enforcer-go` skips the wait.
 - pnpm 12 blocks install scripts that are not listed in `allowBuilds`; `-s` is not a pnpm flag.
+- The SPIRE controller manager handles only a `ClusterSPIFFEID` with `className: spire-mgmt-spire`; without it no pod gets an identity.
+- The kubelet cannot probe over HTTP a container that listens on 127.0.0.1 only; the wallet in the cicd-agent pod uses an `exec` probe.
 
 ## Words
 
