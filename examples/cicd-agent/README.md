@@ -1,0 +1,51 @@
+# cicd-agent
+
+A CI/CD agent (Python, [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview)) that no person is at the screen for. It has a SPIFFE identity, a wallet of its own and an Attesta beside it,
+and every tool it has asks Attesta first. The design is in [`docs/unattended-authorization.md`](../../docs/unattended-authorization.md).
+
+## What's here
+
+- `src/cicd_agent/identity.py` gets the agent's credential: it asks SPIRE for a JWT-SVID, shows it to the issuer's `POST /workloads/offer`, and hands the offer link to its wallet. The credential
+  ends after an hour; the agent asks for a new one after half of that, and at once when Attesta did not accept the one it holds (a revoked one, for example).
+- `src/cicd_agent/gate.py` asks Attesta whether an action may happen, hands the request to the wallet and reads the decision. Anything that goes wrong is a denial, with the reason.
+- `src/cicd_agent/tools.py` is all the agent has: `run_tests` and `deploy`, as tools of the SDK, with none of the built-in tools (no shell, no files) and a hook that refuses any other tool.
+  Each tool runs its action only after Permit. `LoggingRunner` only records the actions; a runner that builds and deploys takes its place.
+- `src/cicd_agent/service.py` serves `GET /healthz`, `POST /check` (`{"resource": "deploy:staging"}`: the gate's decision, without the model) and `POST /tasks` (`{"task": "..."}`: the agent carries
+  it out; needs `ANTHROPIC_API_KEY`). `CICD_AGENT_TOKEN` makes both POST calls need that bearer token.
+- `policies/cicd.rego` permits `run_tests` and `deploy:staging` for the agent's own SPIFFE ID and the environment `staging`, from the trusted issuer. `deploy:prod` is always denied.
+
+## How it fits together
+
+One pod, three containers on 127.0.0.1: the agent, its wallet (`wallet/`, run as `serve-cli.ts`) and Attesta (the backend image) with this example's policy. Only the agent gets the SPIFFE socket.
+The issuer is the shared one, reached at its Service; it recognizes the agent by `spiffe://attesta.local/ns/attesta/sa/cicd-agent`.
+
+```
+agent ──► issuer /workloads/offer ──► offer link ──► wallet            (JWT-SVID from SPIRE)
+agent ──► Attesta ──► request link ──► wallet ──► Attesta ──► decision (Permit or Deny)
+```
+
+## Run and test
+
+```sh
+cd examples/cicd-agent && pip install -e '.[dev]' && pytest     # Python 3.10 or later
+make k8s-spire              # SPIRE in the cluster
+make k8s-issuer-apply       # the issuer, with the SPIFFE socket and trust domain
+make cicd cicd-enroll       # the pod, and the enrollment of its SPIFFE ID
+make cicd-api-key           # only for /tasks
+make cicd-policies          # hot-deploys policies/*.rego, no restart
+```
+
+Ask the gate without the model, from inside the cluster:
+
+```sh
+kubectl -n attesta port-forward svc/cicd-agent 8090:8090
+TOKEN=$(kubectl -n attesta get secret cicd-agent -o jsonpath='{.data.token}' | base64 -d)
+curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resource":"deploy:staging"}'
+```
+
+## Limits
+
+- Production is always denied: a mandate does not exist yet.
+- The wallet keeps its key and credential in memory, so a new pod gets a new credential. Every request for one makes an entitlement and a position in the issuer's status list.
+- `cicd-enroll` writes the enrollment into the issuer's database; the staff API (`POST /workloads`) needs a staff sign-in that only the issuer's pages have.
+- Any pod that has the token can send tasks to the agent.

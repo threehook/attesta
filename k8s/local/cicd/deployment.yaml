@@ -1,0 +1,128 @@
+# The CI/CD agent with a wallet and attesta beside it. The three share the pod's network and talk to each other on 127.0.0.1. Only the agent gets the SPIFFE
+# socket; the wallet holds the agent's credential and key, and nothing else in the pod can read them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cicd-agent
+  namespace: attesta
+  labels:
+    app: cicd-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cicd-agent
+  template:
+    metadata:
+      labels:
+        app: cicd-agent
+    spec:
+      serviceAccountName: cicd-agent
+      # Kubernetes would otherwise inject variables such as CICD_AGENT_PORT=tcp://10.0.0.1:8090 for every Service in the namespace.
+      enableServiceLinks: false
+      containers:
+        - name: cicd-agent
+          image: cicd-agent:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATTESTA_URL
+              value: http://127.0.0.1:8080
+            - name: CICD_WALLET_URL
+              value: http://127.0.0.1:7100
+            - name: CICD_ISSUER_URL
+              value: http://attesta-issuer-api:4001
+            - name: CICD_SPIFFE_AUDIENCE
+              value: attesta-issuer
+            - name: SPIFFE_ENDPOINT_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            # The credential lasts an hour (ATTESTA_ISSUER_WORKLOAD_LIFETIME); the agent asks for a new one after half of that.
+            - name: CICD_CREDENTIAL_RENEW_SECONDS
+              value: "1800"
+            - name: CICD_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-agent
+                  key: token
+            # Without a key the agent still answers /check; /tasks needs the model (make cicd-api-key).
+            - name: ANTHROPIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-agent
+                  key: anthropic-api-key
+                  optional: true
+          ports:
+            - containerPort: 8090
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+        - name: cicd-wallet
+          image: cicd-wallet:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATTESTA_WALLET_PORT
+              value: "7100"
+            # It answers only this attesta, the one beside it.
+            - name: ATTESTA_WALLET_VERIFIERS
+              value: redirect_uri:http://127.0.0.1:8080/
+            - name: ATTESTA_ALLOW_INSECURE_HTTP
+              value: "1"
+            # The issuer's public name resolves to 127.0.0.1 inside the cluster, so it is reached at its Service.
+            - name: ATTESTA_WALLET_HOSTS
+              value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
+          # The wallet listens on 127.0.0.1 only, which the kubelet cannot reach, so it asks from inside.
+          readinessProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:7100/healthz').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+        - name: cicd-attesta
+          image: attesta-backend:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ATTESTA_ADDR
+              value: 127.0.0.1:8080
+            - name: ATTESTA_PUBLIC_URL
+              value: http://127.0.0.1:8080
+            - name: ATTESTA_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-agent
+                  key: admin-token
+            - name: ATTESTA_ADL_OUTPUT
+              value: stdout
+            - name: ATTESTA_ADL_RESOURCE
+              value: "application=cicd-agent"
+            # Revocation: status lists are read from the issuer only, at its Service.
+            - name: ATTESTA_STATUS_URL_PREFIXES
+              value: https://issuer.attesta.corbencreatives.nl/status/
+            - name: ATTESTA_STATUS_HOSTS
+              value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
+            # The agent's policies; attesta reloads them when the ConfigMap changes: no restart (make cicd-policies).
+            - name: ATTESTA_POLICIES_DIR
+              value: /policies
+          volumeMounts:
+            - name: policies
+              mountPath: /policies
+              readOnly: true
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true
+        - name: policies
+          configMap:
+            name: cicd-policies
+            optional: true

@@ -1,0 +1,18 @@
+# The identity of the pods that need one: spiffe://attesta.local/ns/<namespace>/sa/<service account>. The issuer reads the trust bundle with it, and the
+# CI/CD agent shows a JWT-SVID of it to the issuer.
+apiVersion: spire.spiffe.io/v1alpha1
+kind: ClusterSPIFFEID
+metadata:
+  name: attesta-workloads
+spec:
+  # The controller manager only handles resources of its class.
+  className: spire-mgmt-spire
+  spiffeIDTemplate: "spiffe://{{ .TrustDomain }}/ns/{{ .PodMeta.Namespace }}/sa/{{ .PodSpec.ServiceAccountName }}"
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: attesta
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [attesta-issuer-api, cicd-agent]

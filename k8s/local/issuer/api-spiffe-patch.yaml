@@ -1,0 +1,24 @@
+# What the issuer needs to recognize workloads by their JWT-SVID: the SPIFFE Workload API socket, and the trust domain it accepts. Applied by
+# make k8s-issuer-spiffe, and by make k8s-issuer-apply once SPIRE is installed, because the volume needs SPIRE's CSI driver.
+spec:
+  template:
+    spec:
+      containers:
+        - name: attesta-issuer-api
+          env:
+            - name: ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN
+              value: attesta.local
+            - name: ATTESTA_ISSUER_SPIFFE_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            # What a workload's JWT-SVID must name; the workload asks SPIRE for exactly this audience.
+            - name: ATTESTA_ISSUER_SPIFFE_AUDIENCE
+              value: attesta-issuer
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true

@@ -1,0 +1,15 @@
+# SPIRE for the local cluster, from the hardened Helm chart (make k8s-spire). Workloads get their identity from k8s/local/spire/clusterspiffeid.yaml.
+global:
+  spire:
+    trustDomain: attesta.local
+    clusterName: docker-desktop
+    # The chart's recommendations switch on settings that a single local node does not need.
+    recommendations:
+      enabled: false
+spire-server:
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        # Only the pods named in clusterspiffeid.yaml get an identity.
+        default:
+          enabled: false

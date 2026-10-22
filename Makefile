@@ -15,6 +15,13 @@ LAADPALEN_GUI_IMAGE := laadpalen-gui:dev-$(shell date +%Y%m%d%H%M%S)
 # The laadpalen example's own policies; its sidecar serves exactly these (ConfigMap laadpalen-policies).
 LAADPALEN_POLICIES := $(wildcard examples/laadpalen/policies/*.rego)
 
+CICD_AGENT_IMAGE := cicd-agent:dev-$(shell date +%Y%m%d%H%M%S)
+CICD_WALLET_IMAGE := cicd-wallet:dev-$(shell date +%Y%m%d%H%M%S)
+# The CI/CD agent example's own policies; its sidecar serves exactly these (ConfigMap cicd-policies).
+CICD_POLICIES := $(wildcard examples/cicd-agent/policies/*.rego)
+# The SPIFFE ID SPIRE gives the agent's pod (k8s/local/spire/clusterspiffeid.yaml), and what the issuer records about it.
+CICD_SPIFFE_ID := spiffe://attesta.local/ns/attesta/sa/cicd-agent
+
 # put-configmap(name, files): writes a ConfigMap from the files and replaces whatever was there. kubectl apply would not do: it only removes keys that an
 # earlier apply wrote, so a key added with kubectl patch would stay. The YAML is piped, never echoed: sh's echo expands the \t and \n
 # escapes kubectl writes for policy source, which breaks the policy.
@@ -30,7 +37,8 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward \
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
-	k8s-traefik k8s-tls k8s-ingress grafana
+	k8s-traefik k8s-tls k8s-ingress grafana \
+	k8s-spire k8s-issuer-spiffe docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-enroll cicd-api-key cicd-delete cicd-logs
 
 build:
 	cd backend && go build ./...
@@ -96,6 +104,7 @@ k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=$(ISSUER_API_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=$(ISSUER_GUI_IMAGE) -n $(NAMESPACE)
+	@if kubectl --context $(KUBE_CONTEXT) get csidriver csi.spiffe.io >/dev/null 2>&1; then $(MAKE) k8s-issuer-spiffe; fi
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
@@ -193,3 +202,61 @@ k8s-tls:
 
 k8s-ingress: k8s-tls
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/ingress
+
+# SPIRE (server, agent, CSI driver and controller manager) from the hardened Helm chart, with the identities of k8s/local/spire. Needs SPIRE's chart repository.
+k8s-spire:
+	helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ --force-update
+	helm upgrade --install spire-crds spiffe/spire-crds --kube-context $(KUBE_CONTEXT) -n spire-mgmt --create-namespace --wait
+	helm upgrade --install spire spiffe/spire --kube-context $(KUBE_CONTEXT) -n spire-mgmt -f k8s/local/spire/values.yaml --wait --timeout 10m
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/spire/clusterspiffeid.yaml
+
+# Lets the issuer recognize workloads by their JWT-SVID. Needs SPIRE (k8s-spire); k8s-issuer-apply does the same when SPIRE is installed.
+k8s-issuer-spiffe:
+	kubectl --context $(KUBE_CONTEXT) patch deployment/attesta-issuer-api -n $(NAMESPACE) --patch-file k8s/local/issuer/api-spiffe-patch.yaml
+
+# The CI/CD agent example (examples/cicd-agent): the agent, its wallet and an attesta, in one pod. It needs the issuer (k8s-issuer-apply) with SPIRE
+# (k8s-spire), and its workload enrolled (cicd-enroll).
+docker-build-cicd-agent:
+	docker build -t $(CICD_AGENT_IMAGE) examples/cicd-agent
+
+# Built with the repo root as context (see wallet/Dockerfile): the pnpm workspace install needs the root manifests.
+docker-build-cicd-wallet:
+	docker build -f wallet/Dockerfile -t $(CICD_WALLET_IMAGE) .
+
+cicd: docker-build docker-build-cicd-agent docker-build-cicd-wallet
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	$(MAKE) cicd-secret cicd-policies
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/cicd
+	kubectl --context $(KUBE_CONTEXT) set image deployment/cicd-agent cicd-agent=$(CICD_AGENT_IMAGE) cicd-wallet=$(CICD_WALLET_IMAGE) cicd-attesta=$(IMAGE) -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/cicd-agent -n $(NAMESPACE)
+
+# The agent's token for its own endpoints and its attesta's admin token, random, created once. The model key is added by cicd-api-key.
+cicd-secret:
+	@kubectl --context $(KUBE_CONTEXT) get secret cicd-agent -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic cicd-agent -n $(NAMESPACE) \
+			--from-literal=token=$$(openssl rand -hex 24) --from-literal=admin-token=$$(openssl rand -hex 32)
+
+# Gives the agent the key it needs for /tasks. The key is asked for and goes straight into the Secret, never on a command line.
+cicd-api-key:
+	@printf 'Anthropic API key (typing is hidden): '; stty -echo; read -r key; stty echo; echo; \
+		kubectl --context $(KUBE_CONTEXT) patch secret cicd-agent -n $(NAMESPACE) --type merge -p "{\"stringData\":{\"anthropic-api-key\":\"$$key\"}}"
+	kubectl --context $(KUBE_CONTEXT) rollout restart deployment/cicd-agent -n $(NAMESPACE)
+
+# Hot-deploys the agent's policies, no restart.
+cicd-policies:
+	@$(call put-configmap,cicd-policies,$(CICD_POLICIES))
+
+# Enrolls the agent's SPIFFE ID in the issuer, straight in the issuer's database: the staff API (POST /workloads) needs a staff token, which only the
+# issuer's page gets. Staff with a token enroll with that call instead.
+cicd-enroll:
+	@kubectl --context $(KUBE_CONTEXT) exec -n $(NAMESPACE) deploy/issuer-postgres -- sh -c 'PGPASSWORD="$$POSTGRES_PASSWORD" psql -U "$$POSTGRES_USER" -d issuer_entitlements -v ON_ERROR_STOP=1 -c "INSERT INTO workloads (spiffe_id, owner, environment) SELECT '"'"'$(CICD_SPIFFE_ID)'"'"', '"'"'platform'"'"', '"'"'staging'"'"' WHERE NOT EXISTS (SELECT 1 FROM workloads WHERE spiffe_id = '"'"'$(CICD_SPIFFE_ID)'"'"' AND revoked_at IS NULL)"'
+
+# Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it.
+cicd-delete:
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/cicd --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete secret cicd-agent -n $(NAMESPACE) --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete configmap cicd-policies -n $(NAMESPACE) --ignore-not-found
+
+cicd-logs:
+	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/cicd-agent --all-containers --prefix -f

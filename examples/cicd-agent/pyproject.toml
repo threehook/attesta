@@ -1,0 +1,19 @@
+[project]
+name = "cicd-agent"
+version = "0.1.0"
+description = "A CI/CD agent (Claude Agent SDK) whose every action passes Attesta, with a SPIFFE identity and a wallet of its own."
+requires-python = ">=3.10"
+dependencies = ["claude-agent-sdk>=0.2.170", "spiffe>=0.3.2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

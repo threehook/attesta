@@ -11,6 +11,12 @@ dist/
 test-results/
 playwright-report/
 
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+.venv/
+
 # IDE
 .idea/
 .vscode/
