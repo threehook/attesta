@@ -126,7 +126,7 @@ Each phase ends with a review of the open points in section 7.
 | **0 Prove it** | A headless wallet presents with nobody there; the gate hands a link to the local wallet; the Python gate and the Agent SDK wiring work. | Verified, see section 7. |
 | **1 Machine identity** | Issuer: a workload credential, an endpoint that checks the JWT-SVID or CI token and returns a short-lived credential offer, enrollment of a workload, owner claim. A generic holder identifier next to `email` in the backend, the entitlements and the credential forms. Wallet: unattended mode for registered verifiers. Gate as a Python module, a CLI and a GitHub Action. SPIRE in `k8s/local`. | A pipeline or pod gets Permit or Deny from policy with nobody present. |
 | **2 Mandates** | The mandate credential and a page where named people approve it, for one exact item or by a glob. Revocable. | A production release needs two named people and still runs at night. |
-| **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input. | An agent works a night shift inside its mandate and is stopped outside it. |
+| **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input (`action` in the request, `input.action` in the policy, `action_details` in the decision log). | An agent works a night shift inside its mandate and is stopped outside it. |
 | **4 Parked approvals** | An uncovered action waits. The approver gets an https link, approves, and the issuer issues a one-time mandate. The system continues. | An unforeseen action waits for the morning and then proceeds. |
 | **5 Devices and hosted wallet** | Devices prove what they are (TPM, secure element). The hosted wallet from [architecture.md](architecture.md) serves people away from their desktop. | A device and a phone both work. |
 
@@ -147,7 +147,7 @@ Each phase ends with a review of the open points in section 7.
 | A presentation lives as long as its request (5 minutes by default, configurable) | Checked in code | The machine presents live, so this is enough. |
 | A mandate rule must be data. A signer must not be able to supply Rego code | Built and tested | The rule is a glob that the policy matches against the resource; the policy also requires that it names production. |
 | A person could approve a mandate they do not understand | Built | The page shows the system, the resource and the end before the person approves. |
-| An agent must not reach its own key or approve its own mandate | Design needed | Key custody in the harness. The agent has only our tools. |
+| An agent must not reach its own key or approve its own mandate | Built and tested | The wallet is a separate container that only the harness calls. The model has our two tools and a hook refuses any other; approving a mandate needs a person's sign-in at the issuer. |
 | The issuer has to verify a JWT-SVID against a SPIFFE trust bundle | Tested in the local cluster | The issuer reads the bundle from the SPIFFE Workload API. A CI proof goes on the same list when a pipeline is the first system. |
 | Delay between a revocation and the moment the status list shows it | Covered | Short lifetimes. An unreadable list already means Deny. |
 | Offline devices cannot reach Attesta or the status list | Not checked | Phase 5. |
