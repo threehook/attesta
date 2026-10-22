@@ -55,7 +55,7 @@ export const MANDATES: MenuItem = {
   id: 'mandates',
   label: 'Mandaten',
   href: '/mandates',
-  description: 'Geef een systeem toestemming voor een handeling, of keur een mandaat goed dat een collega aanmaakte. Een mandaat kan op elk moment worden beëindigd.',
+  description: 'Geef een systeem toestemming voor een handeling, of keur een eerder door een collega aangemaakt mandaat goed. Een mandaat kan op elk moment worden beëindigd.',
 }
 
 export const POLICY_EDITOR: MenuItem = {
