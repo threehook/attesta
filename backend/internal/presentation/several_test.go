@@ -123,7 +123,7 @@ func TestRespondVerifiesEveryCredentialAndKeepsThemApart(t *testing.T) {
 	}
 	if len(got.Credentials) != 2 || got.Credentials[0].Type != "Employee" || got.Credentials[0].Claims["department"] != "burgerzaken" ||
 		got.Credentials[1].Type != "Certificate" || got.Credentials[1].Claims["course"] != "laadpalen-management" || got.Credentials[1].Issuer != w.did ||
-		got.Subject.Email != "Jerry@example.com" {
+		got.Subject.ID != "Jerry@example.com" {
 		t.Fatalf("presented %+v", got)
 	}
 }

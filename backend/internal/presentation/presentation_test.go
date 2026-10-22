@@ -140,7 +140,7 @@ func TestRespond(t *testing.T) {
 	if first := got.Credentials[0]; first.Issuer != r.Issuer || first.Type != "Diploma" || first.Claims["degree"] != "Mathematics" || got.Request.Resource != "vault" {
 		t.Errorf("Presented = %+v", got)
 	}
-	if got.Subject != (Subject{Issuer: r.Issuer, Email: "ada@example.com"}) {
+	if got.Subject != (Subject{Issuer: r.Issuer, ID: "ada@example.com", Claim: "email"}) {
 		t.Errorf("Subject = %+v, want the issuer and the disclosed email", got.Subject)
 	}
 }

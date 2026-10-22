@@ -31,34 +31,43 @@ func queryIDOf(n int) string {
 	return fmt.Sprintf("%s_%d", queryID, n+1)
 }
 
-// identityClaim is the credential claim that identifies the person. Every request asks for it and Respond requires it.
-const identityClaim = "email"
+// defaultIdentityClaim is the credential claim that identifies the holder when a request names none.
+const defaultIdentityClaim = "email"
 
 // Request is what an application asks the holder for.
 type Request struct {
 	Resource string
 	PolicyID string
-	// Credentials are what the holder must present, each of a type of its own. The first identifies the person; Respond requires every other one to be
-	// of the same person (the same email).
+	// Credentials are what the holder must present, each of a type of its own. The first identifies the holder; Respond requires every other one to be
+	// of the same holder (the same identity claim).
 	Credentials []CredentialQuery
+	// IdentityClaim is the claim that identifies the holder in every credential. Every request asks for it and Respond requires it. Empty means email.
+	IdentityClaim string
 	// UserRoles are the roles the calling application asserted. They are not part of the presentation and Attesta cannot verify them.
 	UserRoles []string
 	// TraceParent is the W3C traceparent the application sent with the request; the decision log keeps its trace.
 	TraceParent string
 }
 
+func (r Request) identity() string {
+	if r.IdentityClaim == "" {
+		return defaultIdentityClaim
+	}
+	return r.IdentityClaim
+}
+
 // CredentialQuery is one credential a request asks for.
 type CredentialQuery struct {
 	CredentialType string
-	// Claims are the top-level claim names the holder is asked to disclose, besides the email that identifies them. The type and issuer are always
+	// Claims are the top-level claim names the holder is asked to disclose, besides the identity claim. The type and issuer are always
 	// established. Respond requires every one of them to be disclosed.
 	Claims []string
 }
 
-// asked lists every claim name a credential query asks for: its Claims and the identifying email, each once.
-func (q CredentialQuery) asked() []string {
+// asked lists every claim name a credential query asks for: its Claims and the identity claim, each once.
+func (q CredentialQuery) asked(identity string) []string {
 	asked := []string{}
-	for _, name := range append(append([]string{}, q.Claims...), identityClaim) {
+	for _, name := range append(append([]string{}, q.Claims...), identity) {
 		if !slices.Contains(asked, name) {
 			asked = append(asked, name)
 		}
@@ -66,10 +75,13 @@ func (q CredentialQuery) asked() []string {
 	return asked
 }
 
-// Subject identifies the person who presented a credential: the email address the issuer vouches for.
+// Subject identifies the holder who presented a credential: the value of the identity claim, which the issuer vouches for.
 type Subject struct {
 	Issuer string
-	Email  string
+	// ID is the value of the identity claim.
+	ID string
+	// Claim names the identity claim; it is email unless the request named another.
+	Claim string
 }
 
 // Presented is a presentation that verified.
@@ -87,7 +99,7 @@ type PresentedCredential struct {
 	Issuer string
 	// Type is the credential's own type, which matches the requested one.
 	Type string
-	// Claims are the disclosed claims that were asked for, the email included; anything else the wallet disclosed is dropped.
+	// Claims are the disclosed claims that were asked for, the identity claim included; anything else the wallet disclosed is dropped.
 	Claims map[string]any
 }
 
@@ -152,7 +164,7 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 	queries := make([]any, 0, len(r.Credentials))
 	for i, q := range r.Credentials {
 		claims := make([]map[string]any, 0)
-		for _, name := range q.asked() {
+		for _, name := range q.asked(r.identity()) {
 			claims = append(claims, map[string]any{"path": []string{name}})
 		}
 		queries = append(queries, map[string]any{
@@ -219,8 +231,9 @@ func (v *Verifier) Respond(ctx context.Context, id string, form url.Values) (*Pr
 		return nil, invalid("expected one presentation for each of %d credential queries", len(queries))
 	}
 
+	identity := sess.request.identity()
 	var presented []PresentedCredential
-	var emails []string
+	var ids []string
 	for i, q := range queries {
 		id := queryIDOf(i)
 		if len(vpToken[id]) != 1 {
@@ -246,26 +259,27 @@ func (v *Verifier) Respond(ctx context.Context, id string, form url.Values) (*Pr
 			return nil, &Rejected{Request: sess.request, Err: fmt.Errorf("%w: the %s credential: %w", ErrInvalidPresentation, q.CredentialType, err)}
 		}
 		claims := map[string]any{}
-		for _, name := range q.asked() {
+		for _, name := range q.asked(identity) {
 			value, ok := verified.Claims[name]
 			if !ok {
 				return nil, invalid("the %q claim of the %s credential was not disclosed", name, q.CredentialType)
 			}
 			claims[name] = value
 		}
-		email, _ := claims[identityClaim].(string)
-		if email == "" {
-			return nil, invalid("the %q claim that identifies the holder is not a text", identityClaim)
+		holder, _ := claims[identity].(string)
+		if holder == "" {
+			return nil, invalid("the %q claim that identifies the holder is not a text", identity)
 		}
-		emails = append(emails, email)
+		ids = append(ids, holder)
 		presented = append(presented, PresentedCredential{Issuer: verified.Issuer, Type: verified.Type, Claims: claims})
 	}
-	for _, email := range emails[1:] {
-		if !strings.EqualFold(email, emails[0]) {
-			return nil, invalid("the credentials are not of the same person")
+	for _, other := range ids[1:] {
+		// An email address has no case; any other identifier, such as a SPIFFE ID, does.
+		if other != ids[0] && (identity != defaultIdentityClaim || !strings.EqualFold(other, ids[0])) {
+			return nil, invalid("the credentials are not of the same holder")
 		}
 	}
-	return &Presented{Request: sess.request, Subject: Subject{Issuer: presented[0].Issuer, Email: emails[0]}, Credentials: presented}, nil
+	return &Presented{Request: sess.request, Subject: Subject{Issuer: presented[0].Issuer, ID: ids[0], Claim: identity}, Credentials: presented}, nil
 }
 
 // Complete records the decision on request id for Outcome to return.

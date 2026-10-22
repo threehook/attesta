@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -35,8 +36,10 @@ type Presenter interface {
 type presentationRequest struct {
 	Resource string `json:"resource"`
 	PolicyID string `json:"policyId"`
-	// Credentials are what the holder must present, each of a type of its own; the first identifies the person.
+	// Credentials are what the holder must present, each of a type of its own; the first identifies the holder.
 	Credentials []credentialRequest `json:"credentials"`
+	// IdentityClaim is the claim that identifies the holder in every credential. Empty means email.
+	IdentityClaim string `json:"identityClaim"`
 	// CredentialType and Claims ask for a single credential; they are shorthand for Credentials with one entry and cannot be combined with it.
 	CredentialType string   `json:"credentialType"`
 	Claims         []string `json:"claims"`
@@ -68,6 +71,12 @@ func (r presentationRequest) credentials() ([]presentation.CredentialQuery, stri
 	return queries, ""
 }
 
+// identityClaimName limits the identity claim to a plain top-level claim name.
+var identityClaimName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
+
+// reservedClaims are set by the issuer or the token format and cannot say who the holder is: with iss, every credential of one issuer would be of one holder.
+var reservedClaims = []string{"iss", "vct", "cnf", "status", "iat", "exp", "nbf", "jti"}
+
 type presentationRequestResponse struct {
 	RequestID string `json:"requestId"`
 	// AuthorizationRequest is the `openid4vp://` link the application hands to the user's wallet.
@@ -94,13 +103,17 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadRequest, problem)
 		return
 	}
+	if req.IdentityClaim != "" && (!identityClaimName.MatchString(req.IdentityClaim) || slices.Contains(reservedClaims, req.IdentityClaim)) {
+		writeError(w, http.StatusBadRequest, "identityClaim is not a claim that can identify the holder")
+		return
+	}
 	if _, ok := s.Policies.Get(req.PolicyID); !ok {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", req.PolicyID))
 		return
 	}
 
 	id, link, err := s.Presenter.NewRequest(presentation.Request{
-		Resource: req.Resource, PolicyID: req.PolicyID, Credentials: queries,
+		Resource: req.Resource, PolicyID: req.PolicyID, Credentials: queries, IdentityClaim: req.IdentityClaim,
 		UserRoles: parseUserRoles(r.Header.Get(userRolesHeader)), TraceParent: traceParent(r),
 	})
 	if err != nil {
@@ -162,7 +175,7 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 
 	first := presented.Credentials[0]
 	d := decisionFor(id, presented.Request)
-	d.SubjectID, d.Issuer, d.Claims = presented.Subject.Email, first.Issuer, policyClaims(first.Claims)
+	d.SubjectID, d.Issuer, d.Claims = presented.Subject.ID, first.Issuer, policyClaims(first.Claims)
 	for _, c := range presented.Credentials[1:] {
 		d.Also = append(d.Also, adl.Credential{Type: c.Type, Issuer: c.Issuer, Claims: policyClaims(c.Claims)})
 	}
@@ -295,7 +308,9 @@ func statementsResponse(statements []authz.Statement) []statementResponse {
 
 type subjectResponse struct {
 	Issuer string `json:"issuer"`
-	Email  string `json:"email"`
+	// ID is the value of the identity claim. Email is the same value, and only when the identity claim is email.
+	ID    string `json:"id"`
+	Email string `json:"email,omitempty"`
 }
 
 // handlePresentationOutcome lets the application that started a request fetch the decision once the wallet has answered.
@@ -316,7 +331,10 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 	resp := presentationOutcomeResponse{Status: "done", Decision: string(outcome.Decision), Reason: outcome.Reason,
 		Obligations: statementsResponse(outcome.Obligations), Advice: statementsResponse(outcome.Advice)}
 	if outcome.Subject != nil {
-		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, Email: outcome.Subject.Email}
+		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, ID: outcome.Subject.ID}
+		if outcome.Subject.Claim == "email" {
+			resp.Subject.Email = outcome.Subject.ID
+		}
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
