@@ -56,6 +56,18 @@ Two kinds, each with a title and description (never asked in a form; the title i
 
 Both answer `{ "entitlementId": ..., "mailedTo": ... }`. A verifier that needs an Employee and a diploma asks for both in one request.
 
+### Workloads
+
+A system, such as a pipeline or a service, has a credential of its own: **Workload**, with the claims `workload` (its SPIFFE ID, which identifies it), `owner` and
+`environment`, and a title that is always visible. It is switched on by `ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN`.
+
+- Staff enroll a system with `POST /workloads` (`spiffeId`, `owner`, `environment`), list the enrolled ones with `GET /workloads` and end an enrollment with `DELETE /workloads/{id}`,
+  which also revokes the credentials already made for it. All three need the staff sign-in. A SPIFFE ID is enrolled once at a time.
+- The system asks for its credential with `POST /workloads/offer` and the header `Authorization: Bearer <JWT-SVID>`. The issuer checks the token (the audience, the expiry, a key of the
+  trust bundle and the trust domain), finds the enrolled system and answers `{ "offer": "openid-credential-offer://..." }`. The link works for five minutes; the system's wallet takes the
+  credential from it as from any other offer. Every request makes a new entitlement, so each credential ends by itself, and no QR code is mailed.
+- The endpoint is not on the Ingress. The trust bundle is read from the SPIFFE Workload API, so the pod needs SPIRE's socket (`k8s/local/issuer/api-spiffe-patch.yaml`).
+
 ### Roles
 
 The roles an employee can be given are rows of the table `roles` (a name without comma, not blank), not code. A deployment starts with `laadpalen-aanvrager`.
@@ -113,6 +125,8 @@ Without `ATTESTA_ISSUER_OIDC_ISSUER` the API refuses to start. `ATTESTA_ISSUER_A
 | `ATTESTA_ISSUER_GUI_LISTEN_PORT`, `ATTESTA_ISSUER_API_URL` | Pages only: their port (4000) and where the API is (`http://localhost:4001`). |
 | `ATTESTA_BACKEND_URL`, `ATTESTA_BACKEND_ADMIN_TOKEN` | Pages only: the Attesta backend and its admin token, for the Policy Editor and Policy Tester. Without them those pages answer that the check is not set up. In the cluster: `http://attesta-backend:8080` and the Secret `attesta-backend`, key `admin-token`. |
 | `ATTESTA_ISSUER_QR_LIFETIME_SECONDS`, `ATTESTA_ISSUER_RENEWAL_COOLDOWN` | How long a QR code works, and the minimum time between renewed codes. |
+| `ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN`, `_SPIFFE_SOCKET`, `_SPIFFE_AUDIENCE` | Workloads: the only trust domain accepted (empty leaves the workload endpoints out), the SPIFFE Workload API address (default: `SPIFFE_ENDPOINT_SOCKET`) and the audience a JWT-SVID must name (default: the public URL). |
+| `ATTESTA_ISSUER_WORKLOAD_LIFETIME` | How long a workload's credential lasts (1h). |
 
 ## Run and test
 

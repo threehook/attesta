@@ -25,9 +25,9 @@ const qrSize = 480
 
 type Store interface {
 	Create(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error)
-	FindOpenByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
-	FindIssuedByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
-	FindActiveByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	FindOpenFor(ctx context.Context, subject entitlement.Subject) ([]entitlement.Entitlement, error)
+	FindIssuedFor(ctx context.Context, subject entitlement.Subject) ([]entitlement.Entitlement, error)
+	FindActiveFor(ctx context.Context, subject entitlement.Subject) ([]entitlement.Entitlement, error)
 	FindActive(ctx context.Context) ([]entitlement.Entitlement, error)
 	Find(ctx context.Context, id string) (entitlement.Entitlement, error)
 	Revoke(ctx context.Context, id string) (bool, error)
@@ -189,7 +189,7 @@ func (s *Service) typeOf(def credential.Type, values map[string]string) (entitle
 		}
 		claims[f.Key] = v
 	}
-	return entitlement.New{Email: claims["email"], Type: def.Type, Claims: claims, ValidUntil: end}, nil
+	return entitlement.New{Subject: entitlement.PersonOf(claims["email"]), Type: def.Type, Claims: claims, ValidUntil: end}, nil
 }
 
 func (s *Service) employeeOf(ctx context.Context, in EmployeeInput) (entitlement.New, error) {
@@ -219,7 +219,7 @@ func (s *Service) employeeOf(ctx context.Context, in EmployeeInput) (entitlement
 		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "department": in.Department, "organisation": in.Organisation,
 		"roles": strings.Join(roles, ", "),
 	}
-	return entitlement.New{Email: in.Email, Type: credential.Employee, Claims: claims}, nil
+	return entitlement.New{Subject: entitlement.PersonOf(in.Email), Type: credential.Employee, Claims: claims}, nil
 }
 
 // NotFoundError is a credential that does not exist or is no longer there to revoke.
@@ -234,12 +234,38 @@ type Replacement struct {
 	Roles  []string
 }
 
+// correct builds the corrected entitlement of a credential from a Replacement.
+type correct func(ctx context.Context, r Replacement) (entitlement.New, error)
+
+// correction is how a credential of the type is corrected: an Employee has fixed fields, any other type has its form.
+func (s *Service) correction(typeName string) correct {
+	fixed := map[string]correct{
+		credential.Employee: func(ctx context.Context, r Replacement) (entitlement.New, error) {
+			v := r.Values
+			return s.employeeOf(ctx, EmployeeInput{Name: v["name"], Email: v["email"], Department: v["department"], Organisation: v["organisation"], Roles: r.Roles})
+		},
+	}
+	if c, ok := fixed[typeName]; ok {
+		return c
+	}
+	return func(ctx context.Context, r Replacement) (entitlement.New, error) {
+		def, err := s.types.Find(ctx, typeName)
+		if errors.Is(err, credtype.ErrNotFound) {
+			return entitlement.New{}, fmt.Errorf("unknown credential type %q", typeName)
+		}
+		if err != nil {
+			return entitlement.New{}, err
+		}
+		return s.typeOf(def, r.Values)
+	}
+}
+
 // Active lists the credentials of the person that can be revoked: waiting to be fetched, or issued, and not ended.
 func (s *Service) Active(ctx context.Context, email string) ([]entitlement.Entitlement, error) {
 	if !emailPattern.MatchString(email) {
 		return nil, InvalidError{"email is not an email address"}
 	}
-	return s.store.FindActiveByEmail(ctx, email)
+	return s.store.FindActiveFor(ctx, entitlement.PersonOf(email))
 }
 
 // AllActive lists the credentials of everyone that can be revoked, newest first.
@@ -273,23 +299,12 @@ func (s *Service) Replace(ctx context.Context, id string, r Replacement) (entitl
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
-	var n entitlement.New
-	if old.Type == credential.Employee {
-		v := r.Values
-		n, err = s.employeeOf(ctx, EmployeeInput{Name: v["name"], Email: v["email"], Department: v["department"], Organisation: v["organisation"], Roles: r.Roles})
-	} else {
-		var def credential.Type
-		if def, err = s.types.Find(ctx, old.Type); errors.Is(err, credtype.ErrNotFound) {
-			err = fmt.Errorf("unknown credential type %q", old.Type)
-		} else if err == nil {
-			n, err = s.typeOf(def, r.Values)
-		}
-	}
+	n, err := s.correction(old.Type)(ctx, r)
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
 	// The email address is the person: another address is a credential for someone else, which is revoked and recorded anew, not corrected.
-	if !strings.EqualFold(strings.TrimSpace(n.Email), old.Email) {
+	if n.Subject != old.Subject {
 		return entitlement.Entitlement{}, InvalidError{"het e-mailadres van een credential kan niet worden gewijzigd; trek het credential in en maak een nieuw credential aan"}
 	}
 	if err := s.stands(ctx, n, id); err != nil {
@@ -381,7 +396,7 @@ func (s *Service) record(ctx context.Context, n entitlement.New) (entitlement.En
 // stands reports the credential of the person's that stands in the way of n: one of the same type that is issued, or waiting with other data.
 // The one with the id except does not count, and neither does one waiting with the same data, which Create gives back.
 func (s *Service) stands(ctx context.Context, n entitlement.New, except string) error {
-	open, err := s.store.FindOpenByEmail(ctx, n.Email)
+	open, err := s.store.FindOpenFor(ctx, n.Subject)
 	if err != nil {
 		return err
 	}
@@ -394,7 +409,7 @@ func (s *Service) stands(ctx context.Context, n entitlement.New, except string) 
 		}
 		return AlreadyWaitingError{}
 	}
-	issued, err := s.store.FindIssuedByEmail(ctx, n.Email)
+	issued, err := s.store.FindIssuedFor(ctx, n.Subject)
 	if err != nil {
 		return err
 	}
@@ -423,7 +438,7 @@ func (s *Service) MailQRCode(ctx context.Context, e entitlement.Entitlement) err
 	}
 	htmlWhere := html.EscapeString(where)
 	err = s.mailer.Send(ctx, mail.Message{
-		To:      e.Email,
+		To:      e.Subject.Email,
 		Subject: "Uw credential staat klaar" + where,
 		Text: fmt.Sprintf("Er staat een credential voor u klaar%s.\n\nSla de bijlage (credential.png) op. Kies in uw wallet \"QR-code uploaden\" en kies dat bestand; de rest gaat vanzelf.\n\n"+
 			"De QR-code is %d uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.\nVerwachtte u dit niet? Dan kunt u dit bericht negeren.\n", where, hours),
@@ -435,6 +450,6 @@ func (s *Service) MailQRCode(ctx context.Context, e entitlement.Entitlement) err
 	if err != nil {
 		return fmt.Errorf("mail the QR code: %w", err)
 	}
-	s.cfg.Log.Info(fmt.Sprintf("mailed a QR code for the %s credential to %s", e.Type, e.Email))
+	s.cfg.Log.Info(fmt.Sprintf("mailed a QR code for the %s credential to %s", e.Type, e.Subject.Email))
 	return nil
 }

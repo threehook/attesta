@@ -74,7 +74,7 @@ func (f *fake) Revoke(_ context.Context, id string) error {
 
 func (f *fake) Replace(_ context.Context, id string, r service.Replacement) (entitlement.Entitlement, error) {
 	f.replaced, f.replacement = id, r
-	return entitlement.Entitlement{ID: "id-3", Email: strings.ToLower(r.Values["email"])}, f.revokeErr
+	return entitlement.Entitlement{ID: "id-3", Subject: entitlement.PersonOf(r.Values["email"])}, f.revokeErr
 }
 
 var laadpalen = credtype.Type{
@@ -87,7 +87,7 @@ var laadpalen = credtype.Type{
 
 func (f *fake) RecordType(_ context.Context, d credential.Type, in map[string]string) (entitlement.Entitlement, error) {
 	f.recorded, f.recordedType = in, d.Type
-	return entitlement.Entitlement{ID: "id-1", Email: strings.ToLower(in["email"])}, f.recordErr
+	return entitlement.Entitlement{ID: "id-1", Subject: entitlement.PersonOf(in["email"])}, f.recordErr
 }
 
 func (f *fake) Types(context.Context) ([]credtype.Type, error) {
@@ -125,7 +125,7 @@ func (f *fake) DeleteType(_ context.Context, id string) error {
 
 func (f *fake) RecordEmployee(_ context.Context, in service.EmployeeInput) (entitlement.Entitlement, error) {
 	f.employee = in
-	return entitlement.Entitlement{ID: "id-2", Email: strings.ToLower(in.Email)}, f.recordErr
+	return entitlement.Entitlement{ID: "id-2", Subject: entitlement.PersonOf(in.Email)}, f.recordErr
 }
 
 func (f *fake) Roles(context.Context) ([]string, error) {
@@ -434,5 +434,21 @@ func TestAnswersWhyARoleCouldNotBeChanged(t *testing.T) {
 		if code != want {
 			t.Errorf("%v: %d %v", err, code, body)
 		}
+	}
+}
+
+func TestServesTheWorkloadEndpointsOnlyWhenGivenThem(t *testing.T) {
+	workloads := http.NewServeMux()
+	workloads.HandleFunc("POST /workloads/offer", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("offered")) })
+	workloads.HandleFunc("GET /workloads", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("listed")) })
+	with := httpapi.Handler(httpapi.Config{Protocol: http.NewServeMux(), Workloads: workloads}, &fake{})
+	for _, c := range []struct{ method, path string }{{"POST", "/workloads/offer"}, {"GET", "/workloads"}} {
+		if code, _ := call(with, c.method, c.path, ""); code != http.StatusOK {
+			t.Errorf("with workloads, %s %s: %d", c.method, c.path, code)
+		}
+	}
+	without := httpapi.Handler(httpapi.Config{Protocol: http.NewServeMux()}, &fake{})
+	if code, _ := call(without, "POST", "/workloads/offer", ""); code != http.StatusNotFound {
+		t.Errorf("without workloads, POST /workloads/offer: %d, want 404", code)
 	}
 }

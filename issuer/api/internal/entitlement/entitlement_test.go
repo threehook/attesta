@@ -40,7 +40,7 @@ func start(t *testing.T) fixture {
 func (f fixture) create(t *testing.T, edit func(*entitlement.New)) entitlement.Entitlement {
 	t.Helper()
 	n := employee
-	n.Email = f.email
+	n.Subject = entitlement.PersonOf(f.email)
 	if edit != nil {
 		edit(&n)
 	}
@@ -68,7 +68,7 @@ func must[T any](v T, err error) T {
 
 func expectIDs(t *testing.T, f fixture, want ...string) {
 	t.Helper()
-	got := ids(must(f.store.FindOpenByEmail(context.Background(), f.email)))
+	got := ids(must(f.store.FindOpenFor(context.Background(), entitlement.PersonOf(f.email))))
 	if fmt.Sprint(got) != fmt.Sprint(append([]string{}, want...)) {
 		t.Fatalf("open entitlements %v, want %v", got, want)
 	}
@@ -77,15 +77,18 @@ func expectIDs(t *testing.T, f fixture, want ...string) {
 func TestKeepsWhatItWasGivenAndFindsItByEmailInAnyCase(t *testing.T) {
 	f := start(t)
 	created := f.create(t, nil)
-	upper := f.create(t, func(n *entitlement.New) { n.Email = strings.ToUpper(f.email); n.Type = "Diploma" })
+	upper := f.create(t, func(n *entitlement.New) {
+		n.Subject = entitlement.PersonOf(strings.ToUpper(f.email))
+		n.Type = "Diploma"
+	})
 
-	if created.Email != f.email || upper.Email != f.email {
-		t.Fatalf("emails %q %q, want %q", created.Email, upper.Email, f.email)
+	if created.Subject.Email != f.email || upper.Subject.Email != f.email {
+		t.Fatalf("emails %q %q, want %q", created.Subject.Email, upper.Subject.Email, f.email)
 	}
 	if created.Type != "Employee" || created.Claims["name"] != "Jerry Smith" || created.Status != entitlement.Open || created.IssuedAt != nil {
 		t.Fatalf("created %+v", created)
 	}
-	found := must(f.store.FindOpenByEmail(context.Background(), strings.ToUpper(f.email)))
+	found := must(f.store.FindOpenFor(context.Background(), entitlement.PersonOf(strings.ToUpper(f.email))))
 	if len(found) != 2 {
 		t.Fatalf("found %d, want 2", len(found))
 	}
@@ -109,7 +112,7 @@ func TestFindsByIDWhateverItsStatus(t *testing.T) {
 
 func TestFindsOnlyTheEntitlementsOfThatPerson(t *testing.T) {
 	f := start(t)
-	f.create(t, func(n *entitlement.New) { n.Email = "other-" + f.email })
+	f.create(t, func(n *entitlement.New) { n.Subject = entitlement.PersonOf("other-" + f.email) })
 	expectIDs(t, f)
 }
 
@@ -253,7 +256,7 @@ func TestTheSamePersonAndDataAtTheSameMomentGivesOneEntitlement(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e, err := f.store.Create(context.Background(), entitlement.New{Email: f.email, Type: employee.Type, Claims: employee.Claims})
+			e, err := f.store.Create(context.Background(), entitlement.New{Subject: entitlement.PersonOf(f.email), Type: employee.Type, Claims: employee.Claims})
 			if err != nil {
 				t.Error(err)
 			}
@@ -352,7 +355,7 @@ func TestListsEveryoneWhoseCredentialCanStillBeRevokedNewestFirst(t *testing.T) 
 	first := f.create(t, nil)
 	second := f.create(t, func(n *entitlement.New) { n.Type = "Diploma" })
 	n := employee
-	n.Email = uuid.NewString() + "@example.com"
+	n.Subject = entitlement.PersonOf(uuid.NewString() + "@example.com")
 	other := must(f.store.Create(ctx, n))
 
 	all := ids(must(f.store.FindActive(ctx)))
@@ -362,5 +365,89 @@ func TestListsEveryoneWhoseCredentialCanStillBeRevokedNewestFirst(t *testing.T) 
 	}
 	if position(second.ID) > position(first.ID) {
 		t.Fatalf("the older credential comes first: %v", all)
+	}
+}
+
+const agent = "spiffe://corp.test/ns/cicd/sa/agent"
+
+func workloadEntitlement(claims map[string]string) entitlement.New {
+	return entitlement.New{Subject: entitlement.WorkloadOf(agent), Type: "Workload", Claims: claims}
+}
+
+func TestAnEntitlementIsForAPersonOrAWorkload(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	for name, n := range map[string]entitlement.New{
+		"both":    {Subject: entitlement.Subject{Kind: entitlement.Person, Email: f.email, SPIFFEID: agent}, Type: "Workload", Claims: map[string]string{}},
+		"neither": {Type: "Workload", Claims: map[string]string{}},
+	} {
+		if _, err := f.store.Create(ctx, n); err == nil {
+			t.Errorf("%s: an entitlement without a valid subject was recorded", name)
+		}
+	}
+}
+
+func TestAWorkloadGetsAnEntitlementPerRunAndRetriesGetTheSameOne(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	first, err := f.store.Create(ctx, workloadEntitlement(map[string]string{"expiresAt": "2026-10-22T10:00:00Z"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.Subject != entitlement.WorkloadOf(agent) || first.Type != "Workload" {
+		t.Fatalf("entitlement = %+v, want the workload and no email", first)
+	}
+	again, err := f.store.Create(ctx, workloadEntitlement(map[string]string{"expiresAt": "2026-10-22T10:00:00Z"}))
+	if err != nil || again.ID != first.ID {
+		t.Errorf("the same data while unissued gave %v, %v; want the entitlement there is", again.ID, err)
+	}
+	next, err := f.store.Create(ctx, workloadEntitlement(map[string]string{"expiresAt": "2026-10-22T11:00:00Z"}))
+	if err != nil || next.ID == first.ID {
+		t.Errorf("a later run gave %v, %v; want an entitlement of its own", next.ID, err)
+	}
+}
+
+func TestWorkloadEntitlementsStayOutOfThePeoplesLists(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	if _, err := f.store.Create(ctx, workloadEntitlement(map[string]string{"expiresAt": "x"})); err != nil {
+		t.Fatal(err)
+	}
+	person := f.create(t, nil)
+	all, err := f.store.FindActive(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range all {
+		if e.Subject.Kind == entitlement.Workload {
+			t.Fatalf("FindActive gave the workload entitlement %s", e.ID)
+		}
+	}
+	if !slices.Contains(ids(all), person.ID) {
+		t.Errorf("FindActive left out the person's entitlement")
+	}
+}
+
+func TestRevokeAllWithdrawsItsEntitlementsOnly(t *testing.T) {
+	f := start(t)
+	ctx := context.Background()
+	mine, err := f.store.Create(ctx, workloadEntitlement(map[string]string{"expiresAt": "a"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := f.store.Create(ctx, entitlement.New{Subject: entitlement.WorkloadOf("spiffe://corp.test/ns/other/sa/x"), Type: "Workload", Claims: map[string]string{"expiresAt": "a"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	person := f.create(t, nil)
+	n, err := f.store.RevokeAll(ctx, entitlement.WorkloadOf(agent))
+	if err != nil || n != 1 {
+		t.Fatalf("RevokeAll = %d, %v, want 1", n, err)
+	}
+	for id, want := range map[string]entitlement.Status{mine.ID: entitlement.Revoked, other.ID: entitlement.Open, person.ID: entitlement.Open} {
+		got, err := f.store.Find(ctx, id)
+		if err != nil || got.Status != want {
+			t.Errorf("entitlement %s is %q (%v), want %q", id, got.Status, err, want)
+		}
 	}
 }

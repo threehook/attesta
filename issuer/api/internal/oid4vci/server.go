@@ -31,7 +31,7 @@ const (
 // Entitlements is what the credential is made from.
 type Entitlements interface {
 	Find(ctx context.Context, id string) (entitlement.Entitlement, error)
-	FindOpenByEmail(ctx context.Context, email string) ([]entitlement.Entitlement, error)
+	FindOpenFor(ctx context.Context, subject entitlement.Subject) ([]entitlement.Entitlement, error)
 	Claim(ctx context.Context, id string) (bool, error)
 	MarkIssued(ctx context.Context, id string) (bool, error)
 }
@@ -104,7 +104,12 @@ func (s *Server) Handler() http.Handler {
 
 // Offer makes a QR code's session and gives the link the code holds (the standard calls it a credential offer).
 func (s *Server) Offer(ctx context.Context, e entitlement.Entitlement) (string, error) {
-	session, err := s.sessions.Create(ctx, NewSession{EntitlementID: e.ID, ConfigurationID: e.Type, Lifetime: s.cfg.OfferLifetime}, s.cfg.Now())
+	return s.OfferFor(ctx, e, s.cfg.OfferLifetime)
+}
+
+// OfferFor is Offer with a lifetime of its own, for a link that goes straight to a system and is used at once.
+func (s *Server) OfferFor(ctx context.Context, e entitlement.Entitlement, lifetime time.Duration) (string, error) {
+	session, err := s.sessions.Create(ctx, NewSession{EntitlementID: e.ID, ConfigurationID: e.Type, Lifetime: lifetime}, s.cfg.Now())
 	if err != nil {
 		return "", err
 	}
@@ -187,6 +192,11 @@ func (s *Server) offer(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	// A system's link goes straight to it: when it ran out, the system asks for a new one, and no QR code is mailed.
+	if e, err := s.entitlements.Find(r.Context(), session.EntitlementID); err == nil && !e.Subject.Mailable() {
+		writeError(w, http.StatusGone, "offer_expired", "the offer has expired or was used; ask for a new one")
+		return
+	}
 	if session.State != stateOffer || !s.stillOpen(r.Context(), session.EntitlementID) {
 		writeError(w, http.StatusGone, "qr_gone", "Dit credential is al opgehaald of ingetrokken.")
 		return
@@ -216,7 +226,7 @@ func (s *Server) stillOpen(ctx context.Context, id string) bool {
 	if err != nil {
 		return false
 	}
-	open, err := s.entitlements.FindOpenByEmail(ctx, e.Email)
+	open, err := s.entitlements.FindOpenFor(ctx, e.Subject)
 	if err != nil {
 		return false
 	}

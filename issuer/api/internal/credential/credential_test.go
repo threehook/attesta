@@ -289,3 +289,46 @@ func TestChecksTheBoundsOfANumberField(t *testing.T) {
 		}
 	}
 }
+
+var agent = map[string]string{
+	"workload": "spiffe://corp.test/ns/cicd/sa/agent", "owner": "platform", "environment": "staging", credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
+}
+
+func TestWorkloadHoldsItsIdentityOwnerAndEnvironmentAndEndsAtTheMoment(t *testing.T) {
+	c, err := credential.Content(credential.WorkloadType, agent, "Gemeente Vlierdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Type != "Workload" || !c.ExpiresAt.Equal(time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC)) {
+		t.Fatalf("content %+v", c)
+	}
+	for _, name := range []string{"workload", "owner", "environment", "description"} {
+		if _, ok := c.Disclosable[name]; !ok {
+			t.Errorf("%s is not disclosable", name)
+		}
+	}
+	if _, ok := c.Disclosable[credential.ExpiresAtKey]; ok {
+		t.Error("expiresAt is a claim of the credential; it only sets the end")
+	}
+	if _, ok := c.Disclosable["email"]; ok {
+		t.Error("a Workload has no email")
+	}
+}
+
+func TestAWorkloadCredentialNeedsItsClaimsAndAMoment(t *testing.T) {
+	for _, missing := range []string{"workload", "owner", "environment", credential.ExpiresAtKey} {
+		claims := map[string]string{}
+		for k, v := range agent {
+			if k != missing {
+				claims[k] = v
+			}
+		}
+		if _, err := credential.Content(credential.WorkloadType, claims, ""); err == nil {
+			t.Errorf("a Workload without %s was built", missing)
+		}
+	}
+	claims := map[string]string{"workload": "w", "owner": "o", "environment": "e", credential.ExpiresAtKey: "tomorrow"}
+	if _, err := credential.Content(credential.WorkloadType, claims, ""); err == nil {
+		t.Error("a Workload with a moment that is not RFC 3339 was built")
+	}
+}

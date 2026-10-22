@@ -100,7 +100,7 @@ var employeeClaims = map[string]string{
 
 func (e *env) entitle(edit func(*entitlement.New)) entitlement.Entitlement {
 	e.t.Helper()
-	n := entitlement.New{Email: uuid.NewString() + "@example.com", Type: "Employee", Claims: employeeClaims}
+	n := entitlement.New{Subject: entitlement.PersonOf(uuid.NewString() + "@example.com"), Type: "Employee", Claims: employeeClaims}
 	if edit != nil {
 		edit(&n)
 	}
@@ -599,5 +599,68 @@ func TestEveryCredentialPointsToItsOwnPlaceInTheStatusList(t *testing.T) {
 			t.Fatalf("status %+v after %v", v.Status, seen)
 		}
 		seen[v.Status.Index] = true
+	}
+}
+
+const agentID = "spiffe://corp.test/ns/cicd/sa/agent"
+
+func (e *env) entitleWorkload() entitlement.Entitlement {
+	e.t.Helper()
+	ent, err := e.store.Create(context.Background(), entitlement.New{Subject: entitlement.WorkloadOf(agentID), Type: "Workload", Claims: map[string]string{
+		"workload": agentID, "owner": "platform", "environment": "staging", "expiresAt": e.now.Add(time.Hour).Format(time.RFC3339),
+	}})
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	return ent
+}
+
+func TestGivesAWorkloadItsCredentialThroughAShortLivedOffer(t *testing.T) {
+	e := newEnv(t, 0)
+	ent := e.entitleWorkload()
+	link, err := e.server.OfferFor(context.Background(), ent, 2*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newEd25519Holder()
+	token := e.accessToken(link)
+	credential := issuedCredential(t, e.credential(token, request("Workload", e.goodProof(h))))
+
+	v, err := e.show(t, credential, h, "workload")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Type != "Workload" || v.Claims["workload"] != agentID || v.Claims["issuer_name"] != "Gemeente Vlierdam" {
+		t.Fatalf("verified %+v", v)
+	}
+	if _, shown := v.Claims["owner"]; shown {
+		t.Fatal("owner was shown")
+	}
+	if e.status(ent.ID) != entitlement.Issued {
+		t.Fatalf("entitlement is %s", e.status(ent.ID))
+	}
+}
+
+func TestAWorkloadOfferThatRanOutSendsNoMail(t *testing.T) {
+	e := newEnv(t, 0)
+	ent := e.entitleWorkload()
+	link, err := e.server.OfferFor(context.Background(), ent, 2*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.now = e.now.Add(3 * time.Minute)
+	res := e.fetchOffer(link)
+	if res.status != http.StatusGone || res.errorCode() != "offer_expired" || len(e.renewed) != 0 {
+		t.Fatalf("%d %v renewed %v", res.status, res.body, e.renewed)
+	}
+}
+
+func TestTheMetadataOffersTheWorkloadCredential(t *testing.T) {
+	e := newEnv(t, 0)
+	res := get(t, e.http.URL+"/oid4vci/.well-known/openid-credential-issuer")
+	configs, _ := res.body["credential_configurations_supported"].(map[string]any)
+	workload, _ := configs["Workload"].(map[string]any)
+	if workload["format"] != "dc+sd-jwt" || workload["vct"] != "Workload" {
+		t.Fatalf("configurations %v", configs)
 	}
 }

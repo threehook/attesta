@@ -24,6 +24,20 @@ type Config struct {
 	Database        Database
 	SMTP            SMTP
 	Auth            Auth
+	// SPIFFE switches on the endpoints for workloads when it names a trust domain.
+	SPIFFE SPIFFE
+}
+
+// SPIFFE is how the issuer recognizes a workload by its JWT-SVID.
+type SPIFFE struct {
+	// TrustDomain is the only trust domain whose workloads are accepted; empty leaves the workload endpoints out.
+	TrustDomain string
+	// Socket is the SPIFFE Workload API address the trust bundle is read from; empty means the SPIFFE_ENDPOINT_SOCKET variable.
+	Socket string
+	// Audience is what a JWT-SVID must name; it is the public URL unless set.
+	Audience string
+	// CredentialLifetime is how long a workload's credential lasts.
+	CredentialLifetime time.Duration
 }
 
 // Auth is the OpenID Connect server the staff sign in at. Disabled leaves the forms open and is for tests and local development only.
@@ -100,6 +114,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil || cooldown <= 0 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_RENEWAL_COOLDOWN must be a duration such as 10m or 500ms, got %q", str("RENEWAL_COOLDOWN", ""))
 	}
+	workloadLifetime, err := time.ParseDuration(str("WORKLOAD_LIFETIME", "1h"))
+	if err != nil || workloadLifetime <= 0 {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_WORKLOAD_LIFETIME must be a duration such as 1h or 30m, got %q", str("WORKLOAD_LIFETIME", ""))
+	}
 	dbHost := str("DB_HOST", "")
 	if dbHost == "" {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_DB_HOST is required")
@@ -125,5 +143,9 @@ func Load(getenv func(string) string) (Config, error) {
 			TLS: tls, From: str("MAIL_FROM", "credentials@attesta.local"),
 		},
 		Auth: auth,
+		SPIFFE: SPIFFE{
+			TrustDomain: str("SPIFFE_TRUST_DOMAIN", ""), Socket: str("SPIFFE_SOCKET", ""),
+			Audience: str("SPIFFE_AUDIENCE", str("PUBLIC_URL", fmt.Sprintf("http://localhost:%d", port))), CredentialLifetime: workloadLifetime,
+		},
 	}, nil
 }

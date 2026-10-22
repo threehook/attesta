@@ -175,7 +175,7 @@ func TestLogsThatItMailedAQRCodeAndToWhom(t *testing.T) {
 	e, _ := f.svc.RecordEmployee(context.Background(), employee())
 	f.svc.MailQRCode(context.Background(), e)
 
-	if want := "mailed a QR code for the Employee credential to " + e.Email; !strings.Contains(f.logged.String(), want) {
+	if want := "mailed a QR code for the Employee credential to " + e.Subject.Email; !strings.Contains(f.logged.String(), want) {
 		t.Fatalf("log %q lacks %q", f.logged.String(), want)
 	}
 }
@@ -188,7 +188,7 @@ func TestKeepsTheEntitlementWhenTheMailCannotBeSent(t *testing.T) {
 	if err := f.svc.MailQRCode(context.Background(), e); err == nil {
 		t.Fatal("no error")
 	}
-	if open, _ := f.store.FindOpenByEmail(context.Background(), e.Email); len(open) != 1 {
+	if open, _ := f.store.FindOpenFor(context.Background(), e.Subject); len(open) != 1 {
 		t.Fatalf("%d open entitlements", len(open))
 	}
 }
@@ -211,7 +211,7 @@ func TestRecordsAnEmployeeWithTheClaimsOnFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if e.Type != "Employee" || e.Email != strings.ToLower(in.Email) || e.Status != entitlement.Open {
+	if e.Type != "Employee" || e.Subject.Email != strings.ToLower(in.Email) || e.Status != entitlement.Open {
 		t.Fatalf("entitlement %+v", e)
 	}
 	if e.Claims["validUntil"] != "" || e.Claims["roles"] != "laadpalen-aanvrager" || e.Claims["diploma"] != "" || e.Claims["department"] != "burgerzaken" || e.Claims["title"] != "" || e.Claims["description"] != "" {
@@ -267,7 +267,7 @@ func TestRecordsADiploma(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if e.Type != "Diploma Laadpalen Management" || e.Email != "j@example.com" || e.ValidUntil == nil || e.Claims["validUntil"] != "2099-12-31" || e.Claims["course"] != "" || e.Claims["email"] != "j@example.com" || e.Claims["title"] != "" {
+	if e.Type != "Diploma Laadpalen Management" || e.Subject.Email != "j@example.com" || e.ValidUntil == nil || e.Claims["validUntil"] != "2099-12-31" || e.Claims["course"] != "" || e.Claims["email"] != "j@example.com" || e.Claims["title"] != "" {
 		t.Fatalf("entitlement %+v", e)
 	}
 }
@@ -335,7 +335,7 @@ func TestAllowsACredentialOnceTheOldOneHasEnded(t *testing.T) {
 	f := newFixture(t, nil)
 	ctx := context.Background()
 	soon := time.Now().Add(500 * time.Millisecond)
-	old, err := f.store.Create(ctx, entitlement.New{Email: "ended@example.com", Type: "Employee", Claims: map[string]string{"name": "A"}, ValidUntil: &soon})
+	old, err := f.store.Create(ctx, entitlement.New{Subject: entitlement.PersonOf("ended@example.com"), Type: "Employee", Claims: map[string]string{"name": "A"}, ValidUntil: &soon})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -529,7 +529,7 @@ func TestRecordsAnyTypeFromItsFieldsAndLeavesOutWhatIsNotAField(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]string{"email": "pat@example.com", "colour": "red", "since": "2020-02-01"}
-	if e.Type != "Badge" || e.Email != "pat@example.com" || e.ValidUntil != nil || len(e.Claims) != 4 || e.Claims["price"] != "12.50" || e.Claims["email"] != want["email"] || e.Claims["colour"] != "red" || e.Claims["since"] != want["since"] {
+	if e.Type != "Badge" || e.Subject.Email != "pat@example.com" || e.ValidUntil != nil || len(e.Claims) != 4 || e.Claims["price"] != "12.50" || e.Claims["email"] != want["email"] || e.Claims["colour"] != "red" || e.Claims["since"] != want["since"] {
 		t.Fatalf("%+v", e)
 	}
 }

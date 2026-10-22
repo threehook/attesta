@@ -13,7 +13,11 @@ import (
 	sdjwt "github.com/threehook/sdjwt-go"
 )
 
-const Employee = "Employee"
+const (
+	Employee = "Employee"
+	// Workload is the credential of a system, such as a pipeline or a service, instead of a person.
+	Workload = "Workload"
+)
 
 var Departments = []string{"burgerzaken", "secretariaat"}
 
@@ -21,6 +25,12 @@ var Departments = []string{"burgerzaken", "secretariaat"}
 const (
 	employeeTitle       = "Medewerker afdeling & rollen"
 	employeeDescription = "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt en welke rollen je hebt"
+)
+
+// workloadTitle and workloadDescription are fixed like the Employee's.
+const (
+	workloadTitle       = "Systeem en eigenaar"
+	workloadDescription = "Deze credential laat zien welk systeem dit is, wie de eigenaar is en in welke omgeving het draait"
 )
 
 // Field kinds a credential type's form offers. Every claim is a string.
@@ -57,10 +67,21 @@ type Type struct {
 	Title       string
 	Description string
 	Fields      []Field
+	// profile builds the claims; nil means the claims come from Fields.
+	profile profile
 }
 
 // EmployeeType is the Employee credential. Its fields are fixed in code, not in Fields.
-var EmployeeType = Type{Type: Employee, Path: "employee", Title: employeeTitle, Description: employeeDescription}
+var EmployeeType = Type{Type: Employee, Path: "employee", Title: employeeTitle, Description: employeeDescription, profile: employeeProfile{}}
+
+// WorkloadType is the Workload credential. Its claims are fixed in code, and staff enroll a system instead of filling in a form.
+var WorkloadType = Type{Type: Workload, Path: "workload", Title: workloadTitle, Description: workloadDescription, profile: workloadProfile{}}
+
+// BuiltIn are the types that are fixed in code; staff cannot define a type with their name or path.
+var BuiltIn = []Type{EmployeeType, WorkloadType}
+
+// ExpiresAtKey is the claim of a Workload entitlement that holds the moment its credential ends, as RFC 3339 text.
+const ExpiresAtKey = "expiresAt"
 
 // ValidUntilKey is the date field that ends the credential.
 const ValidUntilKey = "validUntil"
@@ -264,8 +285,12 @@ func EndOfDay(day time.Time) time.Time {
 	return time.Date(day.Year(), day.Month(), day.Day(), 23, 59, 59, 0, time.UTC)
 }
 
+// profile fills in the claims of a credential and when it ends.
+type profile interface {
+	fill(def Type, claims map[string]string, c *sdjwt.Credential) error
+}
+
 // Content builds the credential of this type from an entitlement's claims. The holder's key is set by the caller.
-// A credential ends at the end of the day in its `validUntil` claim; an Employee does not end.
 func Content(def Type, claims map[string]string, issuerName string) (sdjwt.Credential, error) {
 	c := sdjwt.Credential{Type: def.Type, Claims: map[string]any{}, Disclosable: map[string]any{}}
 	if issuerName != "" {
@@ -274,36 +299,86 @@ func Content(def Type, claims map[string]string, issuerName string) (sdjwt.Crede
 	// The title only names the credential, so it is always visible; the description is for the holder to read.
 	c.Claims["title"] = def.Title
 	c.Disclosable["description"] = def.Description
-	if def.Type == Employee {
-		for _, name := range []string{"name", "email", "department", "organisation"} {
-			value, ok := claims[name]
-			if !ok {
-				return sdjwt.Credential{}, fmt.Errorf("%s credential has no %s", def.Type, name)
-			}
-			c.Disclosable[name] = value
-		}
-		// An Employee always has the claim, an empty list when staff gave no roles, so a verifier that asks for the roles gets an answer.
-		c.Disclosable["roles"] = SplitRoles(claims["roles"])
-	} else {
-		for _, f := range def.Fields {
-			value := claims[f.Key]
-			if value == "" {
-				if f.Required {
-					return sdjwt.Credential{}, fmt.Errorf("%s credential has no %s", def.Type, f.Key)
-				}
-				continue
-			}
-			if f.Key != ValidUntilKey {
-				c.Disclosable[f.Key] = value
-			}
-		}
+	p := def.profile
+	if p == nil {
+		p = formProfile{}
 	}
-	if claims["validUntil"] != "" {
-		day, err := ParseDate(claims["validUntil"])
-		if err != nil {
-			return sdjwt.Credential{}, fmt.Errorf("validUntil: %w", err)
-		}
-		c.ExpiresAt = EndOfDay(day)
+	if err := p.fill(def, claims, &c); err != nil {
+		return sdjwt.Credential{}, err
 	}
 	return c, nil
+}
+
+// require copies claims that must be there into the disclosable claims.
+func require(def Type, claims map[string]string, c *sdjwt.Credential, names ...string) error {
+	for _, name := range names {
+		value, ok := claims[name]
+		if !ok {
+			return fmt.Errorf("%s credential has no %s", def.Type, name)
+		}
+		c.Disclosable[name] = value
+	}
+	return nil
+}
+
+// endOfValidUntil ends the credential at the end of the day in its `validUntil` claim, if it has one.
+func endOfValidUntil(claims map[string]string, c *sdjwt.Credential) error {
+	if claims[ValidUntilKey] == "" {
+		return nil
+	}
+	day, err := ParseDate(claims[ValidUntilKey])
+	if err != nil {
+		return fmt.Errorf("%s: %w", ValidUntilKey, err)
+	}
+	c.ExpiresAt = EndOfDay(day)
+	return nil
+}
+
+// employeeProfile: fixed claims; an Employee ends at its `validUntil` if it has one.
+type employeeProfile struct{}
+
+func (employeeProfile) fill(def Type, claims map[string]string, c *sdjwt.Credential) error {
+	if err := require(def, claims, c, "name", "email", "department", "organisation"); err != nil {
+		return err
+	}
+	// An Employee always has the claim, an empty list when staff gave no roles, so a verifier that asks for the roles gets an answer.
+	c.Disclosable["roles"] = SplitRoles(claims["roles"])
+	return endOfValidUntil(claims, c)
+}
+
+// workloadProfile: fixed claims; a Workload ends at the moment in its `expiresAt` claim.
+type workloadProfile struct{}
+
+func (workloadProfile) fill(def Type, claims map[string]string, c *sdjwt.Credential) error {
+	for _, name := range []string{"workload", "owner", "environment"} {
+		if claims[name] == "" {
+			return fmt.Errorf("%s credential has no %s", def.Type, name)
+		}
+		c.Disclosable[name] = claims[name]
+	}
+	at, err := time.Parse(time.RFC3339, claims[ExpiresAtKey])
+	if err != nil {
+		return fmt.Errorf("%s: %w", ExpiresAtKey, err)
+	}
+	c.ExpiresAt = at.UTC()
+	return nil
+}
+
+// formProfile: the claims are the fields of the type's form; the credential ends at the end of the day in `validUntil`.
+type formProfile struct{}
+
+func (formProfile) fill(def Type, claims map[string]string, c *sdjwt.Credential) error {
+	for _, f := range def.Fields {
+		value := claims[f.Key]
+		if value == "" {
+			if f.Required {
+				return fmt.Errorf("%s credential has no %s", def.Type, f.Key)
+			}
+			continue
+		}
+		if f.Key != ValidUntilKey {
+			c.Disclosable[f.Key] = value
+		}
+	}
+	return endOfValidUntil(claims, c)
 }

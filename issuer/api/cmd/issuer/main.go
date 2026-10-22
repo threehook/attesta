@@ -14,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
+
 	"attesta/issuer/internal/auth"
 	"attesta/issuer/internal/config"
 	"attesta/issuer/internal/credtype"
@@ -26,6 +28,8 @@ import (
 	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 	"attesta/issuer/internal/statuslist"
+	"attesta/issuer/internal/svid"
+	"attesta/issuer/internal/workload"
 )
 
 func main() {
@@ -71,6 +75,25 @@ func run() error {
 		slog.Warn("sign-in is switched off: anyone who reaches the forms can record entitlements")
 	} else {
 		httpCfg.Protect = auth.New(auth.Options{Issuer: cfg.Auth.Issuer, DiscoveryURL: cfg.Auth.DiscoveryURL, ClientID: cfg.Auth.ClientID, Role: cfg.Auth.Role}).Protect
+	}
+
+	if cfg.SPIFFE.TrustDomain != "" {
+		var options []workloadapi.JWTSourceOption
+		if cfg.SPIFFE.Socket != "" {
+			options = append(options, workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.SPIFFE.Socket)))
+		}
+		bundles, err := workloadapi.NewJWTSource(ctx, options...)
+		if err != nil {
+			return fmt.Errorf("read the SPIFFE trust bundle: %w", err)
+		}
+		defer bundles.Close()
+		verifier, err := svid.New(bundles, cfg.SPIFFE.TrustDomain, cfg.SPIFFE.Audience)
+		if err != nil {
+			return err
+		}
+		workloads := workload.NewService(workload.Config{CredentialLifetime: cfg.SPIFFE.CredentialLifetime}, workload.NewStore(pool), store, verifier, protocol)
+		httpCfg.Workloads = workload.Handler(workloads, httpCfg.Protect)
+		slog.Info("workloads are recognized in the SPIFFE trust domain " + cfg.SPIFFE.TrustDomain)
 	}
 
 	server := &http.Server{

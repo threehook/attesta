@@ -46,6 +46,8 @@ type Config struct {
 	Protocol http.Handler
 	// Status serves the status list; nil leaves it out.
 	Status http.Handler
+	// Workloads serves the endpoints for workloads and the staff's enrollment of them; nil leaves them out. It protects its own staff endpoints.
+	Workloads http.Handler
 	// Protect wraps what only staff may use; nil leaves it open.
 	Protect func(http.Handler) http.Handler
 }
@@ -56,6 +58,10 @@ func Handler(cfg Config, svc Service) http.Handler {
 	mux.Handle("/", cfg.Protocol)
 	if cfg.Status != nil {
 		mux.Handle(statuslist.Path, cfg.Status)
+	}
+	if cfg.Workloads != nil {
+		mux.Handle("/workloads", cfg.Workloads)
+		mux.Handle("/workloads/", cfg.Workloads)
 	}
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	staff := http.NewServeMux()
@@ -397,7 +403,7 @@ func grant(w http.ResponseWriter, r *http.Request, svc Service, e entitlement.En
 		})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"entitlementId": e.ID, "mailedTo": e.Email})
+	writeJSON(w, http.StatusOK, map[string]string{"entitlementId": e.ID, "mailedTo": e.Subject.Email})
 }
 
 func decode(w http.ResponseWriter, r *http.Request, into any) bool {

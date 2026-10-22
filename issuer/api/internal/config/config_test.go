@@ -54,6 +54,8 @@ func TestRejectsBadSettings(t *testing.T) {
 		"qr lifetime":       {"ATTESTA_ISSUER_QR_LIFETIME_SECONDS": "0"},
 		"cooldown text":     {"ATTESTA_ISSUER_RENEWAL_COOLDOWN": "soon"},
 		"cooldown zero":     {"ATTESTA_ISSUER_RENEWAL_COOLDOWN": "0s"},
+		"workload lifetime": {"ATTESTA_ISSUER_WORKLOAD_LIFETIME": "soon"},
+		"workload zero":     {"ATTESTA_ISSUER_WORKLOAD_LIFETIME": "0s"},
 	}
 	for name, extra := range cases {
 		vars := map[string]string{}
@@ -68,5 +70,27 @@ func TestRejectsBadSettings(t *testing.T) {
 		if _, err := Load(env(vars)); err == nil {
 			t.Errorf("%s: no error", name)
 		}
+	}
+}
+
+func TestWorkloadsAreOffUntilATrustDomainIsSet(t *testing.T) {
+	base := map[string]string{"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example"}
+	c, err := Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SPIFFE.TrustDomain != "" || c.SPIFFE.Audience != "https://issuer.example" || c.SPIFFE.CredentialLifetime != time.Hour {
+		t.Fatalf("defaults %+v", c.SPIFFE)
+	}
+	base["ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN"] = "corp.test"
+	base["ATTESTA_ISSUER_SPIFFE_SOCKET"] = "unix:///run/spire/agent.sock"
+	base["ATTESTA_ISSUER_SPIFFE_AUDIENCE"] = "issuer"
+	base["ATTESTA_ISSUER_WORKLOAD_LIFETIME"] = "30m"
+	c, err = Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SPIFFE != (SPIFFE{TrustDomain: "corp.test", Socket: "unix:///run/spire/agent.sock", Audience: "issuer", CredentialLifetime: 30 * time.Minute}) {
+		t.Fatalf("settings %+v", c.SPIFFE)
 	}
 }

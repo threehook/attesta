@@ -1,10 +1,11 @@
-// Package credtype keeps the credential types staff define besides Employee.
+// Package credtype keeps the credential types staff define besides Employee and Workload.
 package credtype
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -106,10 +107,12 @@ func (s *Store) List(ctx context.Context) ([]Type, error) {
 	return types, rows.Err()
 }
 
-// Find finds the credential type by the name verifiers know it by; Employee is always there.
+// Find finds the credential type by the name verifiers know it by; Employee and Workload are always there.
 func (s *Store) Find(ctx context.Context, typeName string) (credential.Type, error) {
-	if typeName == credential.Employee {
-		return credential.EmployeeType, nil
+	for _, t := range credential.BuiltIn {
+		if t.Type == typeName {
+			return t, nil
+		}
 	}
 	t, err := scan(s.pool.QueryRow(ctx, "SELECT "+columns+" FROM credential_types WHERE type = $1 AND deleted_at IS NULL", typeName))
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -127,10 +130,13 @@ func (s *Store) FindByPath(ctx context.Context, path string) (Type, error) {
 	return t, err
 }
 
-// Names lists the credential types wallets can get: Employee first, then the others.
+// Names lists the credential types wallets can get: Employee and Workload first, then the others.
 func (s *Store) Names(ctx context.Context) ([]string, error) {
 	types, err := s.List(ctx)
-	names := []string{credential.Employee}
+	var names []string
+	for _, t := range credential.BuiltIn {
+		names = append(names, t.Type)
+	}
 	for _, t := range types {
 		names = append(names, t.Type.Type)
 	}
@@ -144,8 +150,10 @@ func (s *Store) Create(ctx context.Context, in Input) (Type, error) {
 		return Type{}, err
 	}
 	path := credential.Slug(in.Title)
-	if path == "" || path == credential.EmployeeType.Path || strings.EqualFold(in.Title, credential.Employee) {
-		return Type{}, InvalidError{"de titel bevat letters of cijfers en is niet Employee"}
+	if path == "" || slices.ContainsFunc(credential.BuiltIn, func(t credential.Type) bool {
+		return t.Path == path || strings.EqualFold(t.Type, in.Title)
+	}) {
+		return Type{}, InvalidError{"de titel bevat letters of cijfers en is niet Employee of Workload"}
 	}
 	fields, _ := json.Marshal(in.Fields)
 	t, err := scan(s.pool.QueryRow(ctx, "INSERT INTO credential_types (type, path, title, description, fields) VALUES ($1, $2, $1, $3, $4::jsonb) RETURNING "+columns,

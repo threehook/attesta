@@ -1,11 +1,10 @@
-// Package entitlement keeps the lasting right of one person (by email) to one credential.
+// Package entitlement keeps the lasting right of one subject, a person (by email) or a workload (by SPIFFE ID), to one credential.
 package entitlement
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -28,8 +27,8 @@ var ErrNotFound = errors.New("entitlement not found")
 
 type Entitlement struct {
 	ID string
-	// Email is lowercase and identifies the person to the issuer.
-	Email string
+	// Subject is who holds the right.
+	Subject Subject
 	// Type is the credential type to issue.
 	Type   string
 	Claims map[string]string
@@ -44,7 +43,7 @@ type Entitlement struct {
 }
 
 type New struct {
-	Email      string
+	Subject    Subject
 	Type       string
 	Claims     map[string]string
 	ValidUntil *time.Time
@@ -67,19 +66,26 @@ func NewStore(pool *pgxpool.Pool, lease time.Duration) *Store {
 const claimable = `(status = 'open' OR (status = 'claimed' AND claimed_at + make_interval(secs => $1::double precision) <= now()))
   AND (valid_until IS NULL OR valid_until > now())`
 
-// insert records an entitlement; one that is waiting with the same person, type and data is returned instead.
-const insert = `INSERT INTO entitlements (id, email, type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4)
-  ON CONFLICT (email, type, claims) WHERE status IN ('open', 'claimed') DO UPDATE SET email = EXCLUDED.email RETURNING ` + columns
+// inserts records an entitlement per kind of subject; one that is waiting with the same subject, type and data is returned instead.
+var inserts = map[SubjectKind]string{Person: insert("email"), Workload: insert("workload")}
 
-const columns = "id, email, type, claims, valid_until, status, created_at, claimed_at, issued_at, status_index"
+func insert(column string) string {
+	return "INSERT INTO entitlements (id, " + column + ", type, claims, valid_until) VALUES (gen_random_uuid(), $1, $2, $3, $4) " +
+		"ON CONFLICT (" + column + ", type, claims) WHERE " + column + " IS NOT NULL AND status IN ('open', 'claimed') " +
+		"DO UPDATE SET " + column + " = EXCLUDED." + column + " RETURNING " + columns
+}
+
+const columns = "id, COALESCE(email, ''), COALESCE(workload, ''), type, claims, valid_until, status, created_at, claimed_at, issued_at, status_index"
 
 func scan(row pgx.Row) (Entitlement, error) {
 	var e Entitlement
 	var claims []byte
-	err := row.Scan(&e.ID, &e.Email, &e.Type, &claims, &e.ValidUntil, &e.Status, &e.CreatedAt, &e.ClaimedAt, &e.IssuedAt, &e.StatusIndex)
+	var email, spiffeID string
+	err := row.Scan(&e.ID, &email, &spiffeID, &e.Type, &claims, &e.ValidUntil, &e.Status, &e.CreatedAt, &e.ClaimedAt, &e.IssuedAt, &e.StatusIndex)
 	if err != nil {
 		return Entitlement{}, err
 	}
+	e.Subject = subjectOf(email, spiffeID)
 	return e, json.Unmarshal(claims, &e.Claims)
 }
 
@@ -96,15 +102,22 @@ func scanAll(rows pgx.Rows) ([]Entitlement, error) {
 	return out, rows.Err()
 }
 
-// Create records the entitlement. A person has one unissued entitlement per type and data: asking again, also at the same moment, gives the one there is.
+// Create records the entitlement. A subject has one unissued entitlement per type and data: asking again, also at the same moment, gives the one there is.
 func (s *Store) Create(ctx context.Context, n New) (Entitlement, error) {
+	return create(ctx, s.pool, n)
+}
+
+func create(ctx context.Context, q interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}, n New) (Entitlement, error) {
+	if err := n.Subject.Validate(); err != nil {
+		return Entitlement{}, err
+	}
 	claims, err := json.Marshal(n.Claims)
 	if err != nil {
 		return Entitlement{}, err
 	}
-	return scan(s.pool.QueryRow(ctx,
-		insert,
-		strings.ToLower(n.Email), n.Type, claims, n.ValidUntil))
+	return scan(q.QueryRow(ctx, inserts[n.Subject.Kind], n.Subject.key(), n.Type, claims, n.ValidUntil))
 }
 
 func (s *Store) Find(ctx context.Context, id string) (Entitlement, error) {
@@ -115,38 +128,38 @@ func (s *Store) Find(ctx context.Context, id string) (Entitlement, error) {
 	return e, err
 }
 
-// FindOpenByEmail returns the person's entitlements that can still be claimed, oldest first.
-func (s *Store) FindOpenByEmail(ctx context.Context, email string) ([]Entitlement, error) {
+// FindOpenFor returns the subject's entitlements that can still be claimed, oldest first.
+func (s *Store) FindOpenFor(ctx context.Context, subject Subject) ([]Entitlement, error) {
 	rows, err := s.pool.Query(ctx,
-		"SELECT "+columns+" FROM entitlements WHERE email = $2 AND "+claimable+" ORDER BY created_at",
-		s.lease.Seconds(), strings.ToLower(email))
+		"SELECT "+columns+" FROM entitlements WHERE "+subject.column()+" = $2 AND "+claimable+" ORDER BY created_at",
+		s.lease.Seconds(), subject.key())
 	if err != nil {
 		return nil, err
 	}
 	return scanAll(rows)
 }
 
-// FindIssuedByEmail returns the credentials issued to the person that have not ended, oldest first.
-func (s *Store) FindIssuedByEmail(ctx context.Context, email string) ([]Entitlement, error) {
-	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE email = $1 AND status = 'issued' AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", strings.ToLower(email))
+// FindIssuedFor returns the credentials issued to the subject that have not ended, oldest first.
+func (s *Store) FindIssuedFor(ctx context.Context, subject Subject) ([]Entitlement, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE "+subject.column()+" = $1 AND status = 'issued' AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", subject.key())
 	if err != nil {
 		return nil, err
 	}
 	return scanAll(rows)
 }
 
-// FindActiveByEmail returns the person's entitlements that were not revoked and have not ended, issued or not, oldest first.
-func (s *Store) FindActiveByEmail(ctx context.Context, email string) ([]Entitlement, error) {
-	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE email = $1 AND status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", strings.ToLower(email))
+// FindActiveFor returns the subject's entitlements that were not revoked and have not ended, issued or not, oldest first.
+func (s *Store) FindActiveFor(ctx context.Context, subject Subject) ([]Entitlement, error) {
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE "+subject.column()+" = $1 AND status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at", subject.key())
 	if err != nil {
 		return nil, err
 	}
 	return scanAll(rows)
 }
 
-// FindActive returns the entitlements of everyone that were not revoked and have not ended, issued or not, newest first.
+// FindActive returns the entitlements of every person that were not revoked and have not ended, issued or not, newest first.
 func (s *Store) FindActive(ctx context.Context) ([]Entitlement, error) {
-	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at DESC, id")
+	rows, err := s.pool.Query(ctx, "SELECT "+columns+" FROM entitlements WHERE email IS NOT NULL AND status IN ('open', 'claimed', 'issued') AND (valid_until IS NULL OR valid_until > now()) ORDER BY created_at DESC, id")
 	if err != nil {
 		return nil, err
 	}
@@ -168,10 +181,6 @@ func (s *Store) MarkIssued(ctx context.Context, id string) (bool, error) {
 
 // Replace withdraws an entitlement and records n in its place, or neither. It gives ErrNotFound when there is nothing to withdraw.
 func (s *Store) Replace(ctx context.Context, id string, n New) (Entitlement, error) {
-	claims, err := json.Marshal(n.Claims)
-	if err != nil {
-		return Entitlement{}, err
-	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Entitlement{}, err
@@ -184,9 +193,7 @@ func (s *Store) Replace(ctx context.Context, id string, n New) (Entitlement, err
 	if tag.RowsAffected() != 1 {
 		return Entitlement{}, ErrNotFound
 	}
-	e, err := scan(tx.QueryRow(ctx,
-		insert,
-		strings.ToLower(n.Email), n.Type, claims, n.ValidUntil))
+	e, err := create(ctx, tx, n)
 	if err != nil {
 		return Entitlement{}, err
 	}
@@ -197,6 +204,12 @@ func (s *Store) Replace(ctx context.Context, id string, n New) (Entitlement, err
 func (s *Store) Revoke(ctx context.Context, id string) (bool, error) {
 	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE id = $1 AND status IN ('open', 'claimed', 'issued')", id)
 	return tag.RowsAffected() == 1, err
+}
+
+// RevokeAll withdraws every entitlement of the subject that is not withdrawn yet, so the credentials made from them show as revoked. It gives how many.
+func (s *Store) RevokeAll(ctx context.Context, subject Subject) (int64, error) {
+	tag, err := s.pool.Exec(ctx, "UPDATE entitlements SET status = 'revoked' WHERE "+subject.column()+" = $1 AND status IN ('open', 'claimed', 'issued')", subject.key())
+	return tag.RowsAffected(), err
 }
 
 // StatusIndexes gives the status index of every revoked credential, and how many positions the list needs (one past the highest index given out).
