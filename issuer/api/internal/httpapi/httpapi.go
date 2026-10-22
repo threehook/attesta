@@ -48,6 +48,10 @@ type Config struct {
 	Status http.Handler
 	// Workloads serves the endpoints for workloads and the staff's enrollment of them; nil leaves them out. It protects its own staff endpoints.
 	Workloads http.Handler
+	// WorkloadApprovals serves the endpoints a workload parks an action with; nil leaves them out. It is mounted inside /workloads.
+	WorkloadApprovals http.Handler
+	// Approvals serves the endpoints people approve parked actions with; nil leaves them out. It protects its own endpoints.
+	Approvals http.Handler
 	// Mandates serves the endpoints people approve mandates with; nil leaves them out. It protects its own endpoints.
 	Mandates http.Handler
 	// Protect wraps what only staff may use; nil leaves it open.
@@ -60,6 +64,14 @@ func Handler(cfg Config, svc Service) http.Handler {
 	mux.Handle("/", cfg.Protocol)
 	if cfg.Status != nil {
 		mux.Handle(statuslist.Path, cfg.Status)
+	}
+	if cfg.WorkloadApprovals != nil {
+		mux.Handle("/workloads/approvals", cfg.WorkloadApprovals)
+		mux.Handle("/workloads/approvals/", cfg.WorkloadApprovals)
+	}
+	if cfg.Approvals != nil {
+		mux.Handle("/approvals", cfg.Approvals)
+		mux.Handle("/approvals/", cfg.Approvals)
 	}
 	if cfg.Workloads != nil {
 		mux.Handle("/workloads", cfg.Workloads)

@@ -16,6 +16,7 @@ import (
 
 	"github.com/spiffe/go-spiffe/v2/workloadapi"
 
+	"attesta/issuer/internal/approval"
 	"attesta/issuer/internal/auth"
 	"attesta/issuer/internal/config"
 	"attesta/issuer/internal/credtype"
@@ -104,7 +105,14 @@ func run() error {
 		if approvers != nil {
 			protectApprovers = approvers.Protect
 		}
-		httpCfg.Mandates = mandate.Handler(mandates, protectApprovers, func(r *http.Request) string { return auth.Email(r.Context()) })
+		approver := func(r *http.Request) string { return auth.Email(r.Context()) }
+		approvals := approval.NewService(approval.Config{
+			Required: cfg.SPIFFE.Approvals.Required, RequestLifetime: cfg.SPIFFE.Approvals.RequestLifetime, CredentialLifetime: cfg.SPIFFE.Approvals.CredentialLifetime,
+			PublicURL: cfg.PublicURL, Notify: cfg.SPIFFE.Approvals.Notify,
+		}, approval.NewStore(pool), verifier, registry, store, protocol, mail.NewSMTP(cfg.SMTP))
+		httpCfg.WorkloadApprovals = approval.WorkloadHandler(approvals)
+		httpCfg.Approvals = approval.PeopleHandler(approvals, protectApprovers, approver)
+		httpCfg.Mandates = mandate.Handler(mandates, protectApprovers, approver)
 		slog.Info("workloads are recognized in the SPIFFE trust domain " + cfg.SPIFFE.TrustDomain)
 	}
 

@@ -19,6 +19,8 @@ const (
 	Workload = "Workload"
 	// Mandate is what named people allow a system to do: a resource pattern, the people who approved, and until when.
 	Mandate = "Mandate"
+	// Approval is the approval of named people for one action of a workload, used once: the exact resource, the approvers, and a short end.
+	Approval = "Approval"
 )
 
 var Departments = []string{"burgerzaken", "secretariaat"}
@@ -33,6 +35,12 @@ const (
 const (
 	mandateTitle       = "Mandaat van personen voor een systeem"
 	mandateDescription = "Deze credential laat zien welke personen een systeem toestemming gaven voor welke handeling, en tot wanneer"
+)
+
+// approvalTitle and approvalDescription are fixed like the Employee's.
+const (
+	approvalTitle       = "Eenmalige goedkeuring door personen"
+	approvalDescription = "Deze credential laat zien welke personen één handeling van een systeem hebben goedgekeurd, en tot wanneer"
 )
 
 // workloadTitle and workloadDescription are fixed like the Employee's.
@@ -88,8 +96,11 @@ var WorkloadType = Type{Type: Workload, Path: "workload", Title: workloadTitle, 
 // MandateType is the Mandate credential. Its claims are fixed in code; people approve a mandate on a page of its own instead of filling in a form.
 var MandateType = Type{Type: Mandate, Path: "mandate", Title: mandateTitle, Description: mandateDescription, profile: mandateProfile{}}
 
+// ApprovalType is the Approval credential. It has the claims of a Mandate; its resource is the exact resource and not a pattern.
+var ApprovalType = Type{Type: Approval, Path: "approval", Title: approvalTitle, Description: approvalDescription, profile: mandateProfile{}}
+
 // BuiltIn are the types that are fixed in code; staff cannot define a type with their name or path.
-var BuiltIn = []Type{EmployeeType, WorkloadType, MandateType}
+var BuiltIn = []Type{EmployeeType, WorkloadType, MandateType, ApprovalType}
 
 // ExpiresAtKey is the claim of a Workload entitlement that holds the moment its credential ends, as RFC 3339 text.
 const ExpiresAtKey = "expiresAt"

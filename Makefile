@@ -38,7 +38,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-enroll cicd-api-key cicd-delete cicd-logs
+	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-enroll cicd-api-key cicd-delete cicd-logs
 
 build:
 	cd backend && go build ./...
@@ -214,6 +214,13 @@ k8s-spire:
 # Lets the issuer recognize workloads by their JWT-SVID. Needs SPIRE (k8s-spire); k8s-issuer-apply does the same when SPIRE is installed.
 k8s-issuer-spiffe:
 	kubectl --context $(KUBE_CONTEXT) patch deployment/attesta-issuer-api -n $(NAMESPACE) --patch-file k8s/local/issuer/api-spiffe-patch.yaml
+
+# Who is mailed when a workload asks for approval of an action: make k8s-issuer-approval-mail APPROVAL_NOTIFY=<address>[,<address>]. The mail goes through the issuer's mail server
+# (k8s-issuer-mail), so the addresses must be real mailboxes. An empty list sends no mail.
+APPROVAL_NOTIFY ?=
+k8s-issuer-approval-mail:
+	kubectl --context $(KUBE_CONTEXT) set env deployment/attesta-issuer-api -n $(NAMESPACE) ATTESTA_ISSUER_APPROVAL_NOTIFY="$(APPROVAL_NOTIFY)"
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-api -n $(NAMESPACE)
 
 # The CI/CD agent example (examples/cicd-agent): the agent, its wallet and an attesta, in one pod. It needs the issuer (k8s-issuer-apply) with SPIRE
 # (k8s-spire), and its workload enrolled (cicd-enroll).

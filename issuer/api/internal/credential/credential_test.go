@@ -368,3 +368,16 @@ func TestAMandateNeedsItsClaimsAnApproverAndAMoment(t *testing.T) {
 		}
 	}
 }
+
+func TestApprovalHoldsTheExactResourceAndTheApprovers(t *testing.T) {
+	claims := map[string]string{
+		"workload": "spiffe://corp.test/ns/cicd/sa/agent", "resource": "deploy:prod:v2.0.0", "approvers": "anna@corp.test,bob@corp.test", credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
+	}
+	c, err := credential.Content(credential.ApprovalType, claims, "Gemeente Vlierdam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Type != "Approval" || c.Disclosable["resource"] != "deploy:prod:v2.0.0" || !reflect.DeepEqual(c.Disclosable["approvers"], []string{"anna@corp.test", "bob@corp.test"}) {
+		t.Fatalf("content %+v", c)
+	}
+}

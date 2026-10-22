@@ -13,6 +13,9 @@ spec:
             # What a workload's JWT-SVID must name; the workload asks SPIRE for exactly this audience.
             - name: ATTESTA_ISSUER_SPIFFE_AUDIENCE
               value: attesta-issuer
+            # How long the Approval credential lasts after people approved an action; the page Goedkeuringen shows it.
+            - name: ATTESTA_ISSUER_APPROVAL_LIFETIME
+              value: 15m
           volumeMounts:
             - name: spiffe-workload-api
               mountPath: /spiffe-workload-api

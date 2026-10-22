@@ -90,7 +90,43 @@ func TestWorkloadsAreOffUntilATrustDomainIsSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.SPIFFE != (SPIFFE{TrustDomain: "corp.test", Socket: "unix:///run/spire/agent.sock", Audience: "issuer", CredentialLifetime: 30 * time.Minute}) {
+	if s := c.SPIFFE; s.TrustDomain != "corp.test" || s.Socket != "unix:///run/spire/agent.sock" || s.Audience != "issuer" || s.CredentialLifetime != 30*time.Minute {
 		t.Fatalf("settings %+v", c.SPIFFE)
+	}
+}
+
+func TestApprovalsHaveDefaultsAndCanBeSet(t *testing.T) {
+	base := map[string]string{
+		"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_DB_PASSWORD": "x", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example",
+	}
+	c, err := Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := c.SPIFFE.Approvals
+	if a.Required != 2 || a.RequestLifetime != 24*time.Hour || a.CredentialLifetime != 15*time.Minute || len(a.Notify) != 0 {
+		t.Fatalf("defaults %+v", a)
+	}
+	base["ATTESTA_ISSUER_APPROVALS_REQUIRED"] = "3"
+	base["ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME"] = "12h"
+	base["ATTESTA_ISSUER_APPROVAL_LIFETIME"] = "5m"
+	base["ATTESTA_ISSUER_APPROVAL_NOTIFY"] = " a@corp.test, ,b@corp.test"
+	c, err = Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a = c.SPIFFE.Approvals
+	if a.Required != 3 || a.RequestLifetime != 12*time.Hour || a.CredentialLifetime != 5*time.Minute || len(a.Notify) != 2 || a.Notify[0] != "a@corp.test" || a.Notify[1] != "b@corp.test" {
+		t.Fatalf("settings %+v", a)
+	}
+	for name, value := range map[string]string{"ATTESTA_ISSUER_APPROVALS_REQUIRED": "0", "ATTESTA_ISSUER_APPROVAL_LIFETIME": "soon", "ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME": "-1h"} {
+		bad := map[string]string{}
+		for k, v := range base {
+			bad[k] = v
+		}
+		bad[name] = value
+		if _, err := Load(env(bad)); err == nil {
+			t.Errorf("%s=%s was accepted", name, value)
+		}
 	}
 }

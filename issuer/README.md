@@ -79,6 +79,16 @@ the parts), `approvers` (a list of emails) and the end. A system has one mandate
 - `POST /workloads/offer` answers `{ "offer": ..., "mandate": ... }`; `mandate` is the link for a Mandate credential with the approvers at that moment, and is left out when no mandate is active.
   A Mandate credential ends at the end of the mandate or after the Workload credential's lifetime, whichever comes first.
 
+### Approvals
+
+An action that no mandate covers waits here until people approve it. Then the workload takes an **Approval** credential: the claims of a Mandate, but `resource` is the exact resource, and it lasts 15 minutes.
+
+- The workload parks an action with `POST /workloads/approvals` (`resource`, `action`) and a JWT-SVID. A request that waits already for the same resource is the same request. The addresses in
+  `ATTESTA_ISSUER_APPROVAL_NOTIFY` (locally: `make k8s-issuer-approval-mail APPROVAL_NOTIFY=<address>`) get a mail with a link to the page **Goedkeuringen**; a mail that fails is logged and does not stop the request.
+- People with the role `release-manager` approve there or reject: `GET /approvals`, `POST /approvals/{id}/approvals`, `DELETE /approvals/{id}`. A request waits `ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME` (24h).
+- `POST /workloads/approvals/{id}/offer` answers `202` while fewer than `ATTESTA_ISSUER_APPROVALS_REQUIRED` (2) different people approved, `410` for a request that was rejected, handed out or has run out,
+  and otherwise `{ "offer": ... }`, once. `ATTESTA_ISSUER_APPROVAL_LIFETIME` (15m) is how long the credential lasts; the page Goedkeuringen shows it. `GET /workloads/approvals/{id}` gives the state.
+
 ### Roles
 
 The roles an employee can be given are rows of the table `roles` (a name without comma, not blank), not code. A deployment starts with `laadpalen-aanvrager`.

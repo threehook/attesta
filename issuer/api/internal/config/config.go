@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,20 @@ type SPIFFE struct {
 	Audience string
 	// CredentialLifetime is how long a workload's credential lasts.
 	CredentialLifetime time.Duration
+	// Approvals are the settings of the requests a workload parks.
+	Approvals Approvals
+}
+
+// Approvals are the requests of a workload for an action that no mandate covers.
+type Approvals struct {
+	// Required is how many different people must approve a request.
+	Required int
+	// RequestLifetime is how long a request waits for approval.
+	RequestLifetime time.Duration
+	// CredentialLifetime is how long the Approval credential lasts.
+	CredentialLifetime time.Duration
+	// Notify are the addresses that get a mail for a new request.
+	Notify []string
 }
 
 // Auth is the OpenID Connect server the staff sign in at. Disabled leaves the forms open and is for tests and local development only.
@@ -120,6 +135,18 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil || workloadLifetime <= 0 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_WORKLOAD_LIFETIME must be a duration such as 1h or 30m, got %q", str("WORKLOAD_LIFETIME", ""))
 	}
+	requestLifetime, err := time.ParseDuration(str("APPROVAL_REQUEST_LIFETIME", "24h"))
+	if err != nil || requestLifetime <= 0 {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME must be a duration such as 24h or 30m, got %q", str("APPROVAL_REQUEST_LIFETIME", ""))
+	}
+	approvalLifetime, err := time.ParseDuration(str("APPROVAL_LIFETIME", "15m"))
+	if err != nil || approvalLifetime <= 0 {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVAL_LIFETIME must be a duration such as 15m or 1h, got %q", str("APPROVAL_LIFETIME", ""))
+	}
+	approvalsRequired, err := number("APPROVALS_REQUIRED", 2)
+	if err != nil || approvalsRequired < 1 {
+		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVALS_REQUIRED must be a number of people, 1 or more")
+	}
 	dbHost := str("DB_HOST", "")
 	if dbHost == "" {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_DB_HOST is required")
@@ -148,6 +175,21 @@ func Load(getenv func(string) string) (Config, error) {
 		SPIFFE: SPIFFE{
 			TrustDomain: str("SPIFFE_TRUST_DOMAIN", ""), Socket: str("SPIFFE_SOCKET", ""),
 			Audience: str("SPIFFE_AUDIENCE", str("PUBLIC_URL", fmt.Sprintf("http://localhost:%d", port))), CredentialLifetime: workloadLifetime,
+			Approvals: Approvals{
+				Required: approvalsRequired, RequestLifetime: requestLifetime, CredentialLifetime: approvalLifetime,
+				Notify: addresses(str("APPROVAL_NOTIFY", "")),
+			},
 		},
 	}, nil
+}
+
+// addresses reads a comma-separated list without blanks.
+func addresses(text string) []string {
+	var out []string
+	for _, a := range strings.Split(text, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
 }
