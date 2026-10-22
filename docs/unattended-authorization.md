@@ -90,7 +90,6 @@ Without Anna's approval there is no mandate, and the policy answers Deny with th
 | A user clicks a link on a page we do not own | The click only starts the pipeline. The gate and the machine wallet decide, as at night. |
 | An AI agent | The agent's harness owns the machine wallet. Every tool call passes the gate. The agent has only our own tools, no shell. The key and the mandate stay out of the model's reach. |
 | A service called by another service | Each service has its own machine wallet and shows its own identity. If a person stands behind the call, their mandate is shown too. |
-| A server, kiosk or IoT device | Its wallet keeps the key in a TPM or secure element. The issuer issues after the device proves what it is. |
 | A person with a CLI or mobile app | They use their own wallet. |
 | Two people must agree | Two mandates from two people, held by the same machine wallet. One policy rule counts them. |
 | A system is compromised or retired | The issuer revokes its credential. Short lifetimes limit the time before the revocation shows. |
@@ -98,11 +97,10 @@ Without Anna's approval there is no mandate, and the policy answers Deny with th
 
 ## 5. Decisions
 
-- **First system:** a Python service in Kubernetes that uses the Claude Agent SDK, with identity from SPIFFE/SPIRE. A GitHub Actions pipeline follows the
-  same design. Other platforms are added to the issuer's list of accepted proofs.
+- **First system:** a Python service in Kubernetes that uses the Claude Agent SDK, with identity from SPIFFE/SPIRE. Systems live in Kubernetes.
 - **Agent host:** the Agent SDK in the pod. Managed Agents with self-hosted sandboxes is an alternative: Claude runs at Anthropic and our worker in the pod
   executes custom tools. The gate sits where a tool executes, so the host can be exchanged.
-- **Proof of what runs:** a CI token (repository, ref, environment) or a JWT-SVID. The issuer accepts proofs only from a configured list of platforms.
+- **Proof of what runs:** a JWT-SVID. The issuer accepts only those of its configured trust domain.
 - **Keys:** one machine wallet per pipeline, with its key in a KMS. The runner may use the key only when the platform proof shows it is that pipeline. A
   mandate approved earlier needs this stable key, because a key made fresh at run time did not exist yet. Without a KMS, a system gets identity only, with a
   key made at start, and no mandates. The holder's key binding accepts EdDSA and ES256.
@@ -127,12 +125,11 @@ Each phase ends with a review of the open points in section 7.
 | Phase | Content | Done when |
 |---|---|---|
 | **0 Prove it** | A headless wallet presents with nobody there; the gate hands a link to the local wallet; the Python gate and the Agent SDK wiring work. | Verified, see section 7. |
-| **1 Machine identity** | Issuer: a workload credential, an endpoint that checks the JWT-SVID or CI token and returns a short-lived credential offer, enrollment of a workload, owner claim. A generic holder identifier next to `email` in the backend, the entitlements and the credential forms. Wallet: unattended mode for registered verifiers. Gate as a Python module, a CLI and a GitHub Action. SPIRE in `k8s/local`. | A pipeline or pod gets Permit or Deny from policy with nobody present. |
+| **1 Machine identity** | Issuer: a workload credential, an endpoint that checks the JWT-SVID and returns a short-lived credential offer, enrollment of a workload, owner claim. A generic holder identifier next to `email` in the backend, the entitlements and the credential forms. Wallet: unattended mode for registered verifiers. Gate as a Python module. SPIRE in `k8s/local`. | A pipeline or pod gets Permit or Deny from policy with nobody present. |
 | **2 Mandates** | The mandate credential and a page where named people approve it, for one exact item or by a glob. Revocable. | A production release needs two named people and still runs at night. |
 | **3 Agents and services** | The gate as an agent hook and as service middleware. Key custody outside the model. The concrete action goes into the policy input (`action` in the request, `input.action` in the policy, `action_details` in the decision log). | An agent works a night shift inside its mandate and is stopped outside it. |
 | **4 Parked approvals** | An uncovered action waits. The approvers get an https link, approve, and the issuer issues a one-time Approval. The system continues. | An unforeseen action waits for the morning and then proceeds. |
-| **5 Devices and hosted wallet** | Devices prove what they are (TPM, secure element). The hosted wallet from [architecture.md](architecture.md) serves people away from their desktop. | A device and a phone both work. |
-| **6 Enrolment page** | An issuer page where staff add a system (SPIFFE ID, owner, environment), see the enrolled systems and revoke one. It calls the staff API that exists (`POST`, `GET` and `DELETE /workloads`). | A customer enrols a system without database access. |
+| **5 Enrolment page** | An issuer page where staff add a system (SPIFFE ID, owner, environment), see the enrolled systems and revoke one. It calls the staff API that exists (`POST`, `GET` and `DELETE /workloads`). | A customer enrols a system without database access. |
 
 ## 7. Verified facts and open points
 
@@ -154,4 +151,3 @@ Each phase ends with a review of the open points in section 7.
 | An agent must not reach its own key or approve its own mandate | Built and tested | The wallet is a separate container that only the harness calls. The model has our two tools and a hook refuses any other; approving a mandate needs a person's sign-in at the issuer. |
 | The issuer has to verify a JWT-SVID against a SPIFFE trust bundle | Tested in the local cluster | The issuer reads the bundle from the SPIFFE Workload API. A CI proof goes on the same list when a pipeline is the first system. |
 | Delay between a revocation and the moment the status list shows it | Covered | Short lifetimes. An unreadable list already means Deny. |
-| Offline devices cannot reach Attesta or the status list | Not checked | Phase 5. |
