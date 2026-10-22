@@ -21,6 +21,8 @@ export interface Auth {
   guard: RequestHandler
   /** The signed-in person's access token, renewed when it is about to expire; undefined when the session is over. */
   token(req: Request): Promise<string | undefined>
+  /** The signed-in person's name for the pages: the user name the login server knows, else the email address. */
+  user(req: Request): string | undefined
 }
 
 interface Session {
@@ -28,12 +30,16 @@ interface Session {
   refreshToken?: string
   expiresAt: number
   idToken?: string
+  user?: string
 }
 
 interface Pending {
   verifier: string
   nonce: string
 }
+
+const nameOf = (claims?: Record<string, unknown>): string | undefined =>
+  [claims?.["preferred_username"], claims?.["email"]].find((v): v is string => typeof v === 'string' && v !== '')
 
 const COOKIE = 'attesta_issuer_session'
 const LOGIN_COOKIE = 'attesta_issuer_login'
@@ -111,6 +117,7 @@ export async function createOidcAuth(options: OidcOptions): Promise<Auth> {
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + (tokens.expires_in ?? 60) * 1000,
       idToken: tokens.id_token,
+      user: nameOf(tokens.claims()),
     })
     set(res, COOKIE, id)
     res.redirect('/')
@@ -153,5 +160,10 @@ export async function createOidcAuth(options: OidcOptions): Promise<Auth> {
     res.redirect('/login')
   }
 
-  return { routes, guard, token }
+  const user = (req: Request) => {
+    const id = cookieOf(req, COOKIE)
+    return id ? sessions.get(id)?.user : undefined
+  }
+
+  return { routes, guard, token, user }
 }

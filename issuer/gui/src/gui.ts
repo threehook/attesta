@@ -21,6 +21,7 @@ import {
   type TypeInfo,
 } from './page.js'
 import { renderCredentials } from './credentials.js'
+import { renderMandates } from './mandates.js'
 import { renderPolicyEditor } from './policy-editor.js'
 import { renderPolicyTester } from './policy-tester.js'
 import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
@@ -42,6 +43,8 @@ interface Info {
   departments: string[]
   roles: string[]
   types: TypeInfo[]
+  /** Not from the API: who is signed in at the pages. */
+  user?: string
 }
 
 // A form sends one chosen role as text and several as a list; the API takes a list, and none when nothing was chosen.
@@ -63,9 +66,9 @@ export async function startGui(options: GuiOptions) {
   const info = async (req: express.Request): Promise<Info> => {
     const res = await fetch(`${api}/info`, { headers: await asStaff(req) })
     if (!res.ok) throw new Error(`the issuer API answered ${res.status}`)
-    return (await res.json()) as Info
+    return { ...((await res.json()) as Info), user: options.auth?.user(req) }
   }
-  const chromeOf = ({ issuerName, did, types }: Info): Chrome => ({ issuerName, did, types, signOut: !!options.auth })
+  const chromeOf = ({ issuerName, did, types, user }: Info): Chrome => ({ issuerName, did, types, signOut: !!options.auth, user })
 
   // Express 5 passes a rejected handler to the error handler below. The logo stays open: the login page and the probes use it.
   app.get('/logo.svg', (_req, res) => {
@@ -212,6 +215,16 @@ export async function startGui(options: GuiOptions) {
   app.post('/credential-types', forward('POST', '/credential-types'))
   app.put('/credential-types/:id', forward('PUT', '/credential-types/:id'))
   app.delete('/credential-types/:id', forward('DELETE', '/credential-types/:id'))
+
+  // Mandates: the page asks for the list and the enrolled systems as JSON and sends approvals; the API checks the role of the person.
+  app.get('/mandates', async (req, res) => {
+    res.type('html').send(renderMandates(chromeOf(await info(req))))
+  })
+  app.get('/mandates/data', forward('GET', '/mandates'))
+  app.get('/workloads/data', forward('GET', '/workloads'))
+  app.post('/mandates', forward('POST', '/mandates'))
+  app.post('/mandates/:id/approvals', forward('POST', '/mandates/:id/approvals'))
+  app.delete('/mandates/:id', forward('DELETE', '/mandates/:id'))
 
   // Policy editor and tester: Monaco is served from the package; the check and the test of a policy are the backend's, which the GUI asks with its own token.
   app.use('/vendor/monaco', express.static(join(dirname(createRequire(import.meta.url).resolve('monaco-editor/package.json')), 'min')))

@@ -48,6 +48,7 @@ header .app{display:flex;align-items:center;gap:8px;position:absolute;right:32px
 .crumbs li+li::before{content:"/";margin-right:6px}
 .crumbs a{color:inherit;text-decoration:none}.crumbs a:hover{text-decoration:underline}
 .crumbs [aria-current]{color:var(--brand-text)}
+header .app .user{text-transform:none;letter-spacing:0;font-size:13px;padding-left:12px;border-left:1px solid var(--brand-muted)}
 header .extra{position:absolute;right:32px;bottom:12px}
 header h1{margin:6px 0 0;font-size:24px;line-height:1.25;font-weight:600}
 nav.menu{grid-area:menu;background:var(--surface);border-right:1px solid var(--border);padding:20px 12px}
@@ -192,6 +193,8 @@ export interface Page {
   headerExtra?: string
   /** Adds a sign-out link below the menu. */
   signOut?: boolean
+  /** Who is signed in, shown at the top right of the header. */
+  user?: string
 }
 
 export function renderPage(page: Page): string {
@@ -209,7 +212,7 @@ export function renderPage(page: Page): string {
   const footer = page.footer ? `<footer title="${escape(page.footer)}">${escape(page.footer)}</footer>` : '<footer>&nbsp;</footer>'
   return `<!doctype html><html lang="nl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${APP_NAME}</title><style>${theme}</style>
-<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div>${page.headerExtra ? `<div class="extra">${page.headerExtra}</div>` : ''}</header>
+<header><div class="logo">${page.logo ? `<img src="${escape(page.logo.src)}" alt="${escape(page.logo.alt)}">` : ''}</div><div class="title"><div class="app">${APP_MARK}${APP_NAME}${page.user ? `<span class="user" title="Aangemeld als ${escape(page.user)}">${escape(page.user)}</span>` : ''}</div><nav class="crumbs" aria-label="Kruimelpad"><ol>${crumbs}</ol></nav><h1>${escape(page.title)}</h1></div>${page.headerExtra ? `<div class="extra">${page.headerExtra}</div>` : ''}</header>
 <nav class="menu" aria-label="Menu">${menu}${signOut}</nav>
 <main>${page.body}</main>
 ${footer}`

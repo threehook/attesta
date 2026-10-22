@@ -19,7 +19,7 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 20
 const idToken = (nonce: string) => {
   const head = b64(JSON.stringify({ alg: 'RS256', kid: 'k' }))
   const now = Math.floor(Date.now() / 1000)
-  const body = b64(JSON.stringify({ iss: loginUrl, aud: 'issuer-gui', sub: 'u', nonce, iat: now, exp: now + 60 }))
+  const body = b64(JSON.stringify({ iss: loginUrl, aud: 'issuer-gui', sub: 'u', preferred_username: 'anna<b>', email: 'anna@attesta.local', nonce, iat: now, exp: now + 60 }))
   return `${head}.${body}.${createSign('RSA-SHA256').update(`${head}.${body}`).sign(privateKey).toString('base64url')}`
 }
 
@@ -140,6 +140,13 @@ describe('signing in', () => {
     expect(await res.text()).toContain('Afmelden')
     expect(bearers).toEqual(['Bearer access-1'])
     expect(tokenRequests[0].get('code_verifier')).toBeTruthy()
+  })
+
+  it('shows who is signed in at the top right of the header, escaped', async () => {
+    const html = await (await browse(`${base}/employee`)).res.text()
+
+    expect(html).toContain('<span class="user" title="Aangemeld als anna&#60;b&#62;">anna&#60;b&#62;</span>')
+    expect(html).not.toContain('anna<b>')
   })
 
   it('refuses a return that this browser did not start', async () => {

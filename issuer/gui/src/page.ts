@@ -11,6 +11,8 @@ export interface Chrome {
   types: TypeInfo[]
   /** Whether the pages offer a way to sign out. */
   signOut?: boolean
+  /** Who is signed in. */
+  user?: string
 }
 
 const signOutOf = ({ signOut }: Chrome) => signOut
@@ -49,6 +51,13 @@ export const CREDENTIAL_TYPES: MenuItem = {
   description: 'Maak eigen credential forms. Elk formulier krijgt een menu-item onder Verifiable Credentials.',
 }
 
+export const MANDATES: MenuItem = {
+  id: 'mandates',
+  label: 'Mandaten',
+  href: '/mandates',
+  description: 'Geef een systeem toestemming voor een handeling, of keur een mandaat goed dat een collega aanmaakte. Een mandaat kan op elk moment worden beëindigd.',
+}
+
 export const POLICY_EDITOR: MenuItem = {
   id: 'policy-editor',
   label: 'Policy Editor',
@@ -65,7 +74,7 @@ export const POLICY_TESTER: MenuItem = {
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES] },
+  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, MANDATES] },
   { label: 'Tools', items: [POLICY_EDITOR, POLICY_TESTER] },
 ]
 
@@ -76,7 +85,7 @@ export const home: Crumb[] = [{ label: 'Home', href: '/' }]
 
 // What every page shares: the menu, the logo, the footer and the way to sign out.
 export const shell = (chrome: Chrome, page: Pick<Page, 'title' | 'crumbs' | 'active' | 'body' | 'headerExtra'>): string =>
-  renderPage({ ...page, menu: menuOf(chrome), footer: footerOf(chrome), logo: logoOf(chrome), signOut: signOutOf(chrome) })
+  renderPage({ ...page, menu: menuOf(chrome), footer: footerOf(chrome), logo: logoOf(chrome), signOut: signOutOf(chrome), user: chrome.user })
 
 // Lets a drop-down with check boxes show what is chosen, and close when the page is clicked elsewhere.
 const MULTI_SELECT = `document.querySelectorAll('details.multi').forEach((d) => {

@@ -58,6 +58,12 @@ beforeEach(async () => {
         res.end(refuse ? JSON.stringify({ error: refuse }) : req.method === 'DELETE' ? undefined : '{}')
         return
       }
+      if (req.url?.startsWith('/mandates') || req.url?.startsWith('/workloads')) {
+        changed.push(`${req.method} ${req.url} ${raw}`.trim())
+        res.statusCode = req.method === 'DELETE' ? 204 : 200
+        res.end(req.method === 'DELETE' ? undefined : req.url === '/mandates' && req.method === 'GET' ? '[]' : '{}')
+        return
+      }
       if (req.url?.startsWith('/roles')) {
         if (req.method === 'GET') {
           res.end(JSON.stringify({ roles: [{ id: 'r-1', name: 'laadpalen-aanvrager', inUse: true }, { id: 'r-2', name: 'reader', inUse: false }] }))
@@ -113,6 +119,27 @@ describe('issuer pages', () => {
     expect(html).toContain('<li aria-current="page">Home</li>')
     expect(html).toContain('<nav class="menu" aria-label="Menu"><ul><li><a href="/" aria-current="page">Home</a></li></ul><h2>')
     expect(html).toContain(`Uitgever: Gemeente Utrecht · ${DID}`)
+  })
+
+  it('has a page for the mandates under Beheer, with a form to approve one', async () => {
+    const html = await (await fetch(`${baseUrl}/mandates`)).text()
+    expect(html).toContain('<a href="/mandates" aria-current="page">Mandaten</a>')
+    expect(html).toContain('id="mandate-form"')
+  })
+
+  it('passes the mandates, the approvals and the systems on to the API', async () => {
+    await fetch(`${baseUrl}/mandates/data`)
+    await fetch(`${baseUrl}/workloads/data`)
+    await fetch(`${baseUrl}/mandates`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workload: 'w', resource: 'deploy:prod:*', expiresAt: '2026-10-23T10:00:00Z' }) })
+    await fetch(`${baseUrl}/mandates/m-1/approvals`, { method: 'POST' })
+    await fetch(`${baseUrl}/mandates/m-1`, { method: 'DELETE' })
+    expect(changed).toEqual([
+      'GET /mandates',
+      'GET /workloads',
+      'POST /mandates {"workload":"w","resource":"deploy:prod:*","expiresAt":"2026-10-23T10:00:00Z"}',
+      'POST /mandates/m-1/approvals {}',
+      'DELETE /mandates/m-1',
+    ])
   })
 
   it('serves the logo that the header shows', async () => {
