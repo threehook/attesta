@@ -8,6 +8,40 @@ import (
 const demoIssuer = "did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA"
 
 // The example policies are run as shipped, so a change to one that breaks its decisions is caught here.
+// A denial that people can undo says so with the advice request_approval; one that they cannot does not.
+func TestCICDPolicyAdvisesOnlyWhereAnApprovalCouldHelp(t *testing.T) {
+	source, err := os.ReadFile("../../../examples/cicd-agent/policies/cicd.rego")
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent := "spiffe://attesta.local/ns/attesta/sa/cicd-agent"
+	workload := Credential{Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "owner": "platform", "environment": "staging"}}
+	mandate := func(resource, approvers string) Credential {
+		return Credential{Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "resource": resource, "approvers": approvers}}
+	}
+	both := `["anna@corp.test","bob@corp.test"]`
+	for name, tc := range map[string]struct {
+		in     Input
+		advice bool
+	}{
+		"no mandate":                    {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": workload}}, true},
+		"a mandate for another version": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": workload, "Mandate": mandate("deploy:prod:v1.*", both)}}, true},
+		"a mandate with one approver":   {Input{Resource: "deploy:prod:v1.4.2", Credentials: map[string]Credential{"Workload": workload, "Mandate": mandate("deploy:prod:v1.*", `["anna@corp.test"]`)}}, false},
+		"another system":                {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {Issuer: demoIssuer, Claims: map[string]string{"workload": "spiffe://attesta.local/ns/x/sa/y"}}}}, false},
+		"an unknown resource":           {Input{Resource: "format-disk", Credentials: map[string]Credential{"Workload": workload}}, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got, err := NewOPA().Evaluate(string(source), tc.in)
+			if err != nil || got.Decision != Deny {
+				t.Fatalf("got %+v, %v, want Deny", got, err)
+			}
+			if advised := len(got.Advice) == 1 && got.Advice[0].ID == "request_approval"; advised != tc.advice {
+				t.Errorf("advice = %+v, want request_approval: %v", got.Advice, tc.advice)
+			}
+		})
+	}
+}
+
 func TestExamplePolicies(t *testing.T) {
 	vm := NewOPA()
 
@@ -45,6 +79,11 @@ func TestExamplePolicies(t *testing.T) {
 	mandated := func(resource, approvers string) func(*Input) {
 		return func(in *Input) {
 			in.Credentials["Mandate"] = Credential{Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "resource": resource, "approvers": approvers}}
+		}
+	}
+	approved := func(resource, approvers string) func(*Input) {
+		return func(in *Input) {
+			in.Credentials["Approval"] = Credential{Issuer: demoIssuer, Claims: map[string]string{"workload": agent, "resource": resource, "approvers": approvers}}
 		}
 	}
 	const prod = "cicd-agent/policies/cicd.rego"
@@ -101,6 +140,14 @@ func TestExamplePolicies(t *testing.T) {
 			mandated("deploy:prod:v1.4.2", `["anna@corp.test","bob@corp.test"]`)(in)
 			in.Credentials["Mandate"] = Credential{Issuer: "did:key:z6Mkother", Claims: in.Credentials["Mandate"].Claims}
 		}), false, "Uitgever van het mandaat niet vertrouwd: did:key:z6Mkother"},
+		{"cicd, production with an approval of two", prod, cicd("deploy:prod:v2.0.0", approved("deploy:prod:v2.0.0", `["anna@corp.test","bob@corp.test"]`)), true, "Toegestaan voor productie met eenmalige goedkeuring van anna@corp.test, bob@corp.test"},
+		{"cicd, an approval of one", prod, cicd("deploy:prod:v2.0.0", approved("deploy:prod:v2.0.0", `["anna@corp.test"]`)), false, "Productie vraagt een mandaat"},
+		{"cicd, an approval for another version", prod, cicd("deploy:prod:v2.0.0", approved("deploy:prod:v2.0.1", `["anna@corp.test","bob@corp.test"]`)), false, "Productie vraagt een mandaat"},
+		{"cicd, an approval does not stretch to a pattern", prod, cicd("deploy:prod:v2.0.1", approved("deploy:prod:v2.0.*", `["anna@corp.test","bob@corp.test"]`)), false, "Productie vraagt een mandaat"},
+		{"cicd, an approval from an untrusted issuer", prod, cicd("deploy:prod:v2.0.0", func(in *Input) {
+			approved("deploy:prod:v2.0.0", `["anna@corp.test","bob@corp.test"]`)(in)
+			in.Credentials["Approval"] = Credential{Issuer: "did:key:z6Mkother", Claims: in.Credentials["Approval"].Claims}
+		}), false, "Productie vraagt een mandaat"},
 		{"cicd, a mandate does not widen staging", prod, cicd("deploy:other:v1", mandated("deploy:prod:*", `["anna@corp.test","bob@corp.test"]`)), false, "Onbekende bron: deploy:other:v1"},
 
 		{"sign in", "laadpalen/policies/sign_in.rego", signIn(nil), true, "Aangemeld"},

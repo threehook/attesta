@@ -16,7 +16,13 @@ def main() -> None:
         svid=spiffe_jwt_source(os.environ.get("CICD_SPIFFE_AUDIENCE", "attesta-issuer")),
         renew_after=float(os.environ.get("CICD_CREDENTIAL_RENEW_SECONDS", "1800")),
     )
-    gate = Gate(os.environ.get("ATTESTA_URL", "http://127.0.0.1:8080"), wallet, identity, policy_id=os.environ.get("CICD_POLICY_ID", "cicd"))
+    gate = Gate(
+        os.environ.get("ATTESTA_URL", "http://127.0.0.1:8080"),
+        wallet,
+        identity,
+        policy_id=os.environ.get("CICD_POLICY_ID", "cicd"),
+        approval_wait=float(os.environ.get("CICD_APPROVAL_WAIT_SECONDS", "0")),
+    )
     serve(gate, LoggingRunner(), int(os.environ.get("CICD_PORT", "8090")))
 
 

@@ -50,6 +50,28 @@ class WorkloadIdentity:
         with self._lock:
             self._obtain()
 
+    def park(self, resource: str, action: dict[str, str]) -> dict:
+        """Asks the issuer for people's approval of an action that no mandate covers. The same open request is given when it is asked for again."""
+        try:
+            return call("POST", f"{self._issuer}/workloads/approvals", {"resource": resource, "action": action}, token=self._svid())
+        except (HttpError, KeyError, OSError) as error:
+            raise IdentityError(f"no approval requested: {error!r}") from error
+
+    def take_approval(self, request_id: str) -> str:
+        """Takes the Approval credential into the wallet when enough people approved. Gives "ready", "waiting" or "gone" (rejected, handed out or run out)."""
+        try:
+            answer = call("POST", f"{self._issuer}/workloads/approvals/{request_id}/offer", token=self._svid())
+            if "offer" not in answer:
+                return "waiting"
+            call("POST", f"{self._wallet}/credentials", {"offer": answer["offer"]})
+            return "ready"
+        except HttpError as error:
+            if error.status in (404, 410):
+                return "gone"
+            raise IdentityError(f"no approval: {error}") from error
+        except OSError as error:
+            raise IdentityError(f"no approval: {error!r}") from error
+
     def _obtain(self) -> None:
         try:
             offers = call("POST", f"{self._issuer}/workloads/offer", token=self._svid())

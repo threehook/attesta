@@ -6,6 +6,18 @@ class Identity:
         self.calls = 0
         self.renewed = 0
         self.fail = fail
+        self.parked = []
+        self.approval_states = ["waiting"]
+
+    parked: list = []
+    approval_states = ["waiting"]
+
+    def park(self, resource, action):
+        self.parked.append((resource, action))
+        return {"id": "r-1", "status": "open", "approvals": 0, "required": 2}
+
+    def take_approval(self, request_id):
+        return self.approval_states.pop(0) if len(self.approval_states) > 1 else self.approval_states[0]
 
     def ensure(self):
         self.calls += 1
@@ -66,7 +78,7 @@ def test_a_wallet_without_the_mandate_is_a_denial(server):
     gate, _, wallet, _ = make(server)
     wallet.routes["POST /present"] = (409, {"error": "the wallet holds no credential that answers the request"})
     decision = gate.authorize("deploy:prod:v1", mandate=True)
-    assert not decision.permit and decision.decision == "Deny" and "mandate is needed" in decision.reason
+    assert not decision.permit and decision.decision == "Deny" and "no credential" in decision.reason
 
 
 def test_deny_carries_the_reason(server):
@@ -132,3 +144,71 @@ def test_no_renewal_when_the_policy_itself_said_deny(server):
     gate, attesta, wallet, identity = make(server)
     attesta.routes["GET /v1/authorize/requests/r1"] = (200, {"status": "done", "decision": "Deny", "reason": "Productie vraagt een mandaat"})
     assert not gate.authorize("deploy:prod").permit and identity.renewed == 0
+
+
+def needs_approval(attesta, advice=({"id": "request_approval"},)):
+    answers = iter([
+        (200, {"status": "done", "decision": "Deny", "reason": "Productie vraagt een mandaat", "advice": list(advice)}),
+        (200, {"status": "done", "decision": "Permit", "reason": "Toegestaan met goedkeuring", "subject": {"id": "spiffe://corp/agent"}}),
+    ])
+    attesta.routes["GET /v1/authorize/requests/r1"] = lambda _request: next(answers)
+
+
+def asked_credentials(attesta):
+    return [[c["credentialType"] for c in r["body"]["credentials"]] for r in attesta.requests if r["method"] == "POST"]
+
+
+def test_a_denial_people_can_undo_parks_the_action_and_says_it_waits(server):
+    gate, attesta, _, identity = make(server)
+    needs_approval(attesta)
+    decision = gate.authorize("deploy:prod:v2", mandate=True, action={"version": "v2"})
+    assert not decision.permit and decision.decision == "Pending" and "request r-1" in decision.reason
+    assert identity.parked == [("deploy:prod:v2", {"version": "v2"})]
+    assert asked_credentials(attesta) == [["Workload", "Mandate"]]
+
+
+def test_an_approval_that_arrives_is_shown_in_place_of_the_mandate(server):
+    gate, attesta, _, identity = make(server)
+    needs_approval(attesta)
+    identity.approval_states = ["ready"]
+    decision = gate.authorize("deploy:prod:v2", mandate=True)
+    assert decision.permit and decision.subject == "spiffe://corp/agent"
+    assert asked_credentials(attesta) == [["Workload", "Mandate"], ["Workload", "Approval"]]
+
+
+def test_it_waits_for_the_approval_as_long_as_it_is_told_to(server):
+    attesta, wallet = server(), server()
+    attesta.routes["POST /v1/authorize/requests"] = (200, {"requestId": "r1", "authorizationRequest": "openid4vp://?x=1"})
+    wallet.routes["POST /present"] = (200, {"status": 200})
+    needs_approval(attesta)
+    identity = Identity()
+    identity.approval_states = ["waiting", "waiting", "ready"]
+    sleeps = []
+    gate = Gate(attesta.url, wallet.url, identity, sleep=sleeps.append, approval_wait=60, approval_poll=7)
+    assert gate.authorize("deploy:prod:v2", mandate=True).permit
+    assert [s for s in sleeps if s == 7] == [7, 7]
+
+
+def test_a_rejected_request_is_a_denial(server):
+    gate, attesta, _, identity = make(server)
+    needs_approval(attesta)
+    identity.approval_states = ["gone"]
+    decision = gate.authorize("deploy:prod:v2", mandate=True)
+    assert not decision.permit and decision.decision == "Deny" and "rejected" in decision.reason
+
+
+def test_a_denial_without_the_advice_is_not_parked(server):
+    gate, attesta, _, identity = make(server)
+    needs_approval(attesta, advice=())
+    decision = gate.authorize("deploy:prod:v2", mandate=True)
+    assert not decision.permit and decision.decision == "Deny" and identity.parked == []
+
+
+def test_a_wallet_without_a_mandate_lets_the_policy_say_what_is_missing(server):
+    gate, attesta, wallet, identity = make(server)
+    needs_approval(attesta)
+    presented = iter([(409, {"error": "no"}), (409, {"error": "no"}), (200, {"status": 200}), (200, {"status": 200})])
+    wallet.routes["POST /present"] = lambda _request: next(presented)
+    decision = gate.authorize("deploy:prod:v2", mandate=True)
+    assert decision.decision == "Pending" and identity.parked
+    assert asked_credentials(attesta)[:3] == [["Workload", "Mandate"], ["Workload", "Mandate"], ["Workload"]]

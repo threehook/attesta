@@ -10,6 +10,9 @@ and every tool it has asks Attesta first. The design is in [`docs/unattended-aut
 - `src/cicd_agent/gate.py` asks Attesta whether an action may happen, hands the request to the wallet and reads the decision. Anything that goes wrong is a denial, with the reason.
 - `src/cicd_agent/tools.py` is all the agent has: `run_tests` and `deploy`, as tools of the SDK, with none of the built-in tools (no shell, no files). A `PreToolUse` hook asks the gate before every
   tool call, so a tool runs only after Permit, and refuses any other tool. `LoggingRunner` only records the actions; a runner that builds and deploys takes its place.
+  When the policy denies a production deploy with the advice `request_approval` (no mandate, or one that does not cover it), the gate parks the action at the issuer. It then waits
+  `CICD_APPROVAL_WAIT_SECONDS` (default 0) for two people to approve it on the issuer's page Goedkeuringen; without waiting it answers Pending, and the next ask finds the approval.
+  The gate asks again with the Approval in place of the Mandate. The Approval is for the exact resource and lasts 15 minutes.
 - `src/cicd_agent/actions.py` says what each tool is to the gate: the resource (`deploy:<environment>:<version>`), the concrete action (`application`, `version`, `environment`, which the policy sees as
   `input.action`) and whether a mandate is needed. `src/cicd_agent/guard.py` turns a tool name and its arguments into that question, for any host: the hook uses it, and so can a worker of Managed Agents.
   A name or arguments it does not know are denied without asking.
@@ -50,6 +53,7 @@ curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resour
 
 ## Limits
 
+- An Approval is handed out once and lasts 15 minutes; a second deployment of the same version needs a new approval. Attesta itself keeps no state, so the use-once is the issuer's.
 - A system has one mandate at a time, so a second release waits for the first to end or be covered by its pattern (`deploy:prod:v1.4.*`).
 - The wallet keeps its key and credential in memory, so a new pod gets a new credential. Every request for one makes an entitlement and a position in the issuer's status list.
 - `cicd-enroll` writes the enrollment into the issuer's database; the staff API (`POST /workloads`) needs a staff sign-in that only the issuer's pages have.

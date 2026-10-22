@@ -68,3 +68,30 @@ def test_hands_the_mandate_offer_to_the_wallet_too(server):
     issuer.routes["POST /workloads/offer"] = (200, {"offer": "openid-credential-offer://?x=1", "mandate": "openid-credential-offer://?x=2"})
     identity.ensure()
     assert [r["body"] for r in wallet.requests] == [{"offer": "openid-credential-offer://?x=1"}, {"offer": "openid-credential-offer://?x=2"}]
+
+
+def test_parks_an_action_with_the_svid(server):
+    identity, issuer, _ = make(server)
+    issuer.routes["POST /workloads/approvals"] = (200, {"id": "r-1", "status": "open", "approvals": 0, "required": 2})
+    assert identity.park("deploy:prod:v2", {"version": "v2"})["id"] == "r-1"
+    assert issuer.requests[0]["authorization"] == "Bearer svid-token"
+    assert issuer.requests[0]["body"] == {"resource": "deploy:prod:v2", "action": {"version": "v2"}}
+
+
+def test_takes_the_approval_into_the_wallet_once_it_is_ready(server):
+    identity, issuer, wallet = make(server)
+    issuer.routes["POST /workloads/approvals/r-1/offer"] = (202, {"status": "open", "approvals": 1, "required": 2})
+    assert identity.take_approval("r-1") == "waiting" and wallet.requests == []
+    issuer.routes["POST /workloads/approvals/r-1/offer"] = (200, {"offer": "openid-credential-offer://?x=9"})
+    assert identity.take_approval("r-1") == "ready"
+    assert wallet.requests[0]["body"] == {"offer": "openid-credential-offer://?x=9"}
+
+
+def test_a_request_that_is_gone_is_said_so(server):
+    identity, issuer, _ = make(server)
+    for status in (404, 410):
+        issuer.routes["POST /workloads/approvals/r-1/offer"] = (status, {"error": "gone"})
+        assert identity.take_approval("r-1") == "gone"
+    issuer.routes["POST /workloads/approvals/r-1/offer"] = (500, {"error": "no"})
+    with pytest.raises(IdentityError):
+        identity.take_approval("r-1")
