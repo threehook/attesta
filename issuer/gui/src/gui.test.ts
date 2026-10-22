@@ -121,6 +121,24 @@ describe('issuer pages', () => {
     expect(html).toContain(`Uitgever: Gemeente Utrecht · ${DID}`)
   })
 
+  it('has a page for the systems under Beheer, with a form to enrol one', async () => {
+    const html = await (await fetch(`${baseUrl}/workloads`)).text()
+    expect(html).toContain('<a href="/workloads" aria-current="page">Systemen</a>')
+    expect(html).toContain('id="workload-form"')
+    expect(html).toContain('id="workloads-body"')
+  })
+
+  it('passes the enrolment and the withdrawal of a system on to the API', async () => {
+    await fetch(`${baseUrl}/workloads/data`)
+    await fetch(`${baseUrl}/workloads`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spiffeId: 'spiffe://x/y', owner: 'platform', environment: 'staging' }) })
+    await fetch(`${baseUrl}/workloads/w-1`, { method: 'DELETE' })
+    expect(changed).toEqual([
+      'GET /workloads',
+      'POST /workloads {"spiffeId":"spiffe://x/y","owner":"platform","environment":"staging"}',
+      'DELETE /workloads/w-1',
+    ])
+  })
+
   it('has a page for the mandates under Beheer, with a form to approve one', async () => {
     const html = await (await fetch(`${baseUrl}/mandates`)).text()
     expect(html).toContain('<a href="/mandates" aria-current="page">Mandaten</a>')

@@ -51,6 +51,13 @@ export const CREDENTIAL_TYPES: MenuItem = {
   description: 'Maak eigen credential forms. Elk formulier krijgt een menu-item onder Verifiable Credentials.',
 }
 
+export const WORKLOADS: MenuItem = {
+  id: 'workloads',
+  label: 'Systemen',
+  href: '/workloads',
+  description: 'Geef een systeem het recht om een credential te krijgen. Een systeem dat hier niet staat, krijgt er geen en wordt overal geweigerd. Intrekken beëindigt ook de credentials die het al kreeg.',
+}
+
 export const MANDATES: MenuItem = {
   id: 'mandates',
   label: 'Mandaten',
@@ -81,7 +88,7 @@ export const POLICY_TESTER: MenuItem = {
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, MANDATES, APPROVALS] },
+  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, WORKLOADS, MANDATES, APPROVALS] },
   { label: 'Tools', items: [POLICY_EDITOR, POLICY_TESTER] },
 ]
 

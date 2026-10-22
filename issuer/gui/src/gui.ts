@@ -23,6 +23,7 @@ import {
 import { renderCredentials } from './credentials.js'
 import { renderApprovals } from './approvals.js'
 import { renderMandates } from './mandates.js'
+import { renderWorkloads } from './workloads.js'
 import { renderPolicyEditor } from './policy-editor.js'
 import { renderPolicyTester } from './policy-tester.js'
 import { renderPreview, renderTypeEditor, renderTypes, type ManagedType } from './types.js'
@@ -216,6 +217,13 @@ export async function startGui(options: GuiOptions) {
   app.post('/credential-types', forward('POST', '/credential-types'))
   app.put('/credential-types/:id', forward('PUT', '/credential-types/:id'))
   app.delete('/credential-types/:id', forward('DELETE', '/credential-types/:id'))
+
+  // Systems: the page asks for the enrolled systems as JSON and sends the changes; the API checks the staff sign-in.
+  app.get('/workloads', async (req, res) => {
+    res.type('html').send(renderWorkloads(chromeOf(await info(req))))
+  })
+  app.post('/workloads', forward('POST', '/workloads'))
+  app.delete('/workloads/:id', forward('DELETE', '/workloads/:id'))
 
   // Mandates: the page asks for the list and the enrolled systems as JSON and sends approvals; the API checks the role of the person.
   app.get('/mandates', async (req, res) => {
