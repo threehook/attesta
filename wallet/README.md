@@ -14,7 +14,7 @@ it.
 
 ## The wallet of a system
 
-`pnpm serve` (`src/serve-cli.ts`) is the wallet of a system such as a pod or a pipeline job. It keeps its credentials in a temporary folder, encrypted with a key that only exists in memory, with their keys made at start (in OpenBao when `ATTESTA_WALLET_KMS_URL` and `ATTESTA_WALLET_KMS_TOKEN` are set: P-256 keys that sign there), and answers by itself: nobody
+`pnpm serve` (`src/serve-cli.ts`) is the wallet of a system such as a pod or a pipeline job. It keeps its credentials in a temporary folder, encrypted with a key that only exists in memory, with their keys made at start (in OpenBao when `ATTESTA_WALLET_KMS_URL`, `ATTESTA_WALLET_KMS_TOKEN` and `ATTESTA_WALLET_KMS_PREFIX` are set: P-256 keys that sign there, named after the prefix, and the keys of an earlier wallet with that prefix are deleted at start), and answers by itself: nobody
 confirms anything. It listens on 127.0.0.1 only.
 
 | Call | What it does |

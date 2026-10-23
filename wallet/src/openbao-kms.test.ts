@@ -10,6 +10,7 @@ import { OpenBaoKms } from './openbao-kms.js'
 const container = 'attesta-wallet-openbao-test'
 const url = 'http://127.0.0.1:18200'
 const token = 'test-token'
+const prefix = 'agent-a'
 
 function docker(...args: string[]) {
   return execFileSync('docker', args, { stdio: ['ignore', 'pipe', 'ignore'] }).toString()
@@ -51,7 +52,7 @@ describe.skipIf(!hasDocker)('a wallet whose holder key is in OpenBao', () => {
   })
 
   it('presents with a key binding OpenBao signed, and discloses only what was asked', async () => {
-    const openbao = new OpenBaoKms({ url, token })
+    const openbao = new OpenBaoKms({ url, token, prefix })
     const agent = new Agent({
       config: {},
       dependencies: agentDependencies,
@@ -64,7 +65,7 @@ describe.skipIf(!hasDocker)('a wallet whose holder key is in OpenBao', () => {
     try {
       const issuerKey = await agent.kms.createKey({ type: { kty: 'OKP', crv: 'Ed25519' }, backend: 'askar' })
       const holderKey = await agent.kms.createKey({ type: { kty: 'EC', crv: 'P-256' } })
-      expect(holderKey.keyId).toMatch(/^[0-9a-f-]{36}$/)
+      expect(holderKey.keyId).toMatch(/^agent-a-[0-9a-f-]{36}$/)
 
       const did = await agent.dids.create({ method: 'key', options: { keyId: issuerKey.keyId } } as never)
       const issued = await agent.sdJwtVc.sign({
@@ -87,9 +88,24 @@ describe.skipIf(!hasDocker)('a wallet whose holder key is in OpenBao', () => {
       expect(claims.email).toBeUndefined()
 
       // The key lives in OpenBao: a second adapter, which has never seen it, finds it by its id.
-      expect(await new OpenBaoKms({ url, token }).getPublicKey(undefined, holderKey.keyId)).toMatchObject({ kty: 'EC', crv: 'P-256' })
+      expect(await new OpenBaoKms({ url, token, prefix }).getPublicKey(undefined, holderKey.keyId)).toMatchObject({ kty: 'EC', crv: 'P-256' })
     } finally {
       await agent.shutdown()
     }
   }, 60_000)
+
+  it('deletes the keys under its own prefix and leaves those of another system', async () => {
+    const gone = new OpenBaoKms({ url, token, prefix: 'agent-gone' })
+    const other = new OpenBaoKms({ url, token, prefix: 'agent-other' })
+    const context = undefined
+    const left = ((await gone.createKey()) as { keyId: string }).keyId
+    await gone.createKey()
+    const kept = ((await other.createKey()) as { keyId: string }).keyId
+
+    expect(await new OpenBaoKms({ url, token, prefix: 'agent-gone' }).deleteLeftovers()).toBe(2)
+
+    expect(await new OpenBaoKms({ url, token, prefix: 'agent-gone' }).getPublicKey(context, left)).toBeNull()
+    expect(await new OpenBaoKms({ url, token, prefix: 'agent-other' }).getPublicKey(context, kept)).not.toBeNull()
+    expect(await new OpenBaoKms({ url, token, prefix: 'agent-gone' }).getPublicKey(context, kept)).toBeNull()
+  }, 30_000)
 })

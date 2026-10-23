@@ -85,6 +85,8 @@ spec:
             # The wallet's key is made in OpenBao and signs there.
             - name: ATTESTA_WALLET_KMS_URL
               value: http://openbao:8200
+            - name: ATTESTA_WALLET_KMS_PREFIX
+              value: cicd-agent
             - name: ATTESTA_WALLET_KMS_TOKEN
               valueFrom:
                 secretKeyRef:

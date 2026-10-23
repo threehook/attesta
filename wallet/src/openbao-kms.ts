@@ -8,12 +8,20 @@ export interface OpenBaoOptions {
   token: string
   /** Where the Transit engine is mounted. */
   mount?: string
+  /** Names this wallet's keys, `<prefix>-<id>`, so it can find and delete its own and no other wallet's. */
+  prefix: string
   fetch?: typeof fetch
 }
 
 interface Held {
   name: string
   publicJwk: Kms.KmsJwkPublic
+}
+
+class OpenBaoError extends Error {
+  constructor(readonly status: number, message: string) {
+    super(message)
+  }
 }
 
 /** Keeps the holder keys in OpenBao's Transit engine: only signatures come out. Keys are ES256 (P-256). */
@@ -41,7 +49,7 @@ export class OpenBaoKms implements Kms.KeyManagementService {
   }
 
   async createKey() {
-    const name = randomUUID()
+    const name = `${this.options.prefix}-${randomUUID()}`
     await this.call('POST', `/keys/${name}`, { type: 'ecdsa-p256' })
     const publicJwk = await this.readPublicJwk(name)
     const held = { name, publicJwk }
@@ -49,6 +57,20 @@ export class OpenBaoKms implements Kms.KeyManagementService {
     // Credo looks a holder key up by an id it derives from the public key in the credential, so that id must find the key too.
     this.held.set(Kms.legacyKeyIdFromPublicJwk(Kms.PublicJwk.fromUnknown(publicJwk)), held)
     return { keyId: name, publicJwk } as never
+  }
+
+  /** Deletes every key under this wallet's prefix. A wallet that starts with an empty store holds none of them, so they belong to a wallet that is gone. */
+  async deleteLeftovers(): Promise<number> {
+    const { keys } = await this.call<{ keys: string[] }>('GET', '/keys?list=true').catch((error: unknown) => {
+      if (error instanceof OpenBaoError && error.status === 404) return { keys: [] }
+      throw error
+    })
+    const mine = keys.filter((name) => name.startsWith(`${this.options.prefix}-`))
+    for (const name of mine) {
+      await this.call('POST', `/keys/${name}/config`, { deletion_allowed: true })
+      await this.call('DELETE', `/keys/${name}`)
+    }
+    return mine.length
   }
 
   async importKey(): Promise<never> {
@@ -97,7 +119,7 @@ export class OpenBaoKms implements Kms.KeyManagementService {
   private async find(keyId: string): Promise<Held | null> {
     const known = this.held.get(keyId)
     if (known) return known
-    if (!/^[0-9a-f-]{36}$/.test(keyId)) return null
+    if (!keyId.startsWith(`${this.options.prefix}-`) || !/^[0-9a-zA-Z-]+$/.test(keyId)) return null
     try {
       const held = { name: keyId, publicJwk: await this.readPublicJwk(keyId) }
       this.held.set(keyId, held)
@@ -119,7 +141,7 @@ export class OpenBaoKms implements Kms.KeyManagementService {
       headers: { 'X-Vault-Token': this.options.token, 'Content-Type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     })
-    if (!response.ok) throw new Error(`OpenBao answered ${response.status} to ${method} ${path}: ${await response.text()}`)
+    if (!response.ok) throw new OpenBaoError(response.status, `OpenBao answered ${response.status} to ${method} ${path}: ${await response.text()}`)
     const text = await response.text()
     return (text === '' ? {} : (JSON.parse(text) as { data: T }).data) as T
   }

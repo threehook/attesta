@@ -2,6 +2,9 @@
 path "transit/keys/*" {
   capabilities = ["create", "read", "update", "delete"]
 }
+path "transit/keys" {
+  capabilities = ["list"]
+}
 path "transit/sign/*" {
   capabilities = ["update"]
 }
