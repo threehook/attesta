@@ -38,7 +38,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs
+	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs
 
 build:
 	cd backend && go build ./...
@@ -231,8 +231,22 @@ docker-build-cicd-agent:
 docker-build-cicd-wallet:
 	docker build -f wallet/Dockerfile -t $(CICD_WALLET_IMAGE) .
 
-cicd: docker-build docker-build-cicd-agent docker-build-cicd-wallet
+# OpenBao (dev mode) as the KMS that holds the wallets' keys: Transit engine on, a policy for wallets, and a token for them in the Secret openbao-wallet.
+# Run it again after OpenBao restarted, then restart the wallets: it keeps nothing on disk.
+openbao:
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
+	@kubectl --context $(KUBE_CONTEXT) get secret openbao-root -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(KUBE_CONTEXT) create secret generic openbao-root -n $(NAMESPACE) --from-literal=token=$$(openssl rand -hex 24)
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/openbao/openbao.yaml
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/openbao -n $(NAMESPACE)
+	@bao() { kubectl --context $(KUBE_CONTEXT) exec -i -n $(NAMESPACE) deploy/openbao -- sh -c 'BAO_ADDR=http://127.0.0.1:8200 BAO_TOKEN=$$BAO_DEV_ROOT_TOKEN_ID bao "$$@"' bao "$$@"; }; \
+		bao secrets list | grep -q '^transit/' || bao secrets enable transit; \
+		bao policy write attesta-wallet - < k8s/local/openbao/wallet-policy.hcl; \
+		token=$$(bao token create -orphan -policy=attesta-wallet -period=768h -field=token) && \
+		kubectl --context $(KUBE_CONTEXT) create secret generic openbao-wallet -n $(NAMESPACE) --from-literal=token=$$token --dry-run=client -o yaml | \
+		kubectl --context $(KUBE_CONTEXT) apply -f -
+
+cicd: docker-build docker-build-cicd-agent docker-build-cicd-wallet openbao
 	$(MAKE) cicd-secret cicd-policies
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/cicd
 	kubectl --context $(KUBE_CONTEXT) set image deployment/cicd-agent cicd-agent=$(CICD_AGENT_IMAGE) cicd-wallet=$(CICD_WALLET_IMAGE) cicd-attesta=$(IMAGE) -n $(NAMESPACE)

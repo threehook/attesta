@@ -82,6 +82,14 @@ spec:
             # The issuer's public name resolves to 127.0.0.1 inside the cluster, so it is reached at its Service.
             - name: ATTESTA_WALLET_HOSTS
               value: https://issuer.attesta.corbencreatives.nl=http://attesta-issuer-api:4001
+            # The wallet's key is made in OpenBao and signs there.
+            - name: ATTESTA_WALLET_KMS_URL
+              value: http://openbao:8200
+            - name: ATTESTA_WALLET_KMS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: openbao-wallet
+                  key: token
           # The wallet listens on 127.0.0.1 only, which the kubelet cannot reach, so it asks from inside.
           readinessProbe:
             exec:

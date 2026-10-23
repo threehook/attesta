@@ -37,7 +37,7 @@ pnpm -r typecheck && pnpm -r test                # all TS packages
 pnpm --filter @attesta/wallet-desktop test:e2e   # the real Electron app against the Go issuer (needs Docker and Go: Postgres and Mailpit in containers) and a stand-in verifier
 ATTESTA_BACKEND_URL=http://localhost:8080 ATTESTA_ADMIN_TOKEN=<token> ATTESTA_E2E_ISSUER_PORT=4099 pnpm --filter @attesta/wallet-desktop exec playwright test backend.spec.ts   # that backend needs ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/
 make k8s-apply k8s-issuer-apply                  # build and deploy
-make k8s-spire cicd                              # SPIRE, then the CI/CD agent example; enrol its SPIFFE ID on the issuer's page Systemen (needs the issuer); k8s-issuer-apply adds SPIFFE to the issuer once SPIRE is there
+make k8s-spire cicd                              # SPIRE, then the CI/CD agent example (its wallet's key is in OpenBao, `make openbao`, run by cicd); enrol its SPIFFE ID on the issuer's page Systemen (needs the issuer); k8s-issuer-apply adds SPIFFE to the issuer once SPIRE is there
 make laadpalen                                   # the laadpalen app + its Attesta sidecar (page https://laadpalen.attesta.corbencreatives.nl, wallet posts to https://api.attesta.corbencreatives.nl); laadpalen-policies hot-deploys its policy
 ```
 

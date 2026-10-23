@@ -1,7 +1,7 @@
 # cicd-agent
 
 A CI/CD agent (Python, [Claude Agent SDK](https://docs.claude.com/en/api/agent-sdk/overview)) that no person is at the screen for. It has a SPIFFE identity, a wallet of its own and an Attesta beside it,
-and every tool it has asks Attesta first. The design is in [`docs/unattended-authorization.md`](../../docs/unattended-authorization.md).
+and every tool it has asks Attesta first. The design is in [`docs/unattended-authorization.md`](../../docs/architecture/unattended-authorization.md).
 
 ## What's here
 
@@ -55,5 +55,5 @@ curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resour
 
 - An Approval is handed out once and lasts 15 minutes; a second deployment of the same version needs a new approval. Attesta itself keeps no state, so the use-once is the issuer's.
 - A system has one mandate at a time, so a second release waits for the first to end or be covered by its pattern (`deploy:prod:v1.4.*`).
-- The wallet keeps its key and credential in memory, so a new pod gets a new credential. Every request for one makes an entitlement and a position in the issuer's status list.
+- The wallet keeps its credential in memory, so a new pod gets a new credential, with a new key in OpenBao (`make openbao`, dev mode: restarting OpenBao loses the keys, run it again and restart the pod). Every request for one makes an entitlement and a position in the issuer's status list.
 - Any pod that has the token can send tasks to the agent.
