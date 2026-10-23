@@ -144,3 +144,20 @@ func TestThePeopleEndpoints(t *testing.T) {
 		t.Errorf("went through the protection %d times, want 7", protected)
 	}
 }
+
+func TestEndForEndsTheMandateOfAWorkload(t *testing.T) {
+	f := &fakes{enrolled: true}
+	s := mandate.NewService(f, f, f)
+	if err := s.EndFor(context.Background(), agent); err != nil {
+		t.Fatalf("a workload without a mandate gave %v", err)
+	}
+	if _, err := s.Create(context.Background(), "anna@corp.test", mandate.Input{Workload: agent, Resource: "deploy:prod:v1.*"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EndFor(context.Background(), agent); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.list) != 0 || len(f.revoked) != 1 {
+		t.Errorf("mandates left %v, revoked %v; want none and its credentials withdrawn", f.list, f.revoked)
+	}
+}

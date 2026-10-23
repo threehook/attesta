@@ -67,6 +67,18 @@ func (s *Service) End(ctx context.Context, id string) error {
 	return err
 }
 
+// EndFor ends the active mandate of a workload, if it has one.
+func (s *Service) EndFor(ctx context.Context, spiffeID string) error {
+	m, err := s.mandates.ActiveFor(ctx, spiffeID)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.End(ctx, m.ID)
+}
+
 // GrantFor gives what the workload's active mandate allows, if it has one.
 func (s *Service) GrantFor(ctx context.Context, spiffeID string) (workload.Grant, bool, error) {
 	m, err := s.mandates.ActiveFor(ctx, spiffeID)

@@ -43,9 +43,10 @@ type Grant struct {
 	EndsAt    time.Time
 }
 
-// Grants gives the active mandate of a workload, if it has one.
+// Grants gives the active mandate of a workload, if it has one, and ends it.
 type Grants interface {
 	GrantFor(ctx context.Context, spiffeID string) (Grant, bool, error)
+	EndFor(ctx context.Context, spiffeID string) error
 }
 
 // Offerer makes the link a wallet takes a credential from.
@@ -143,10 +144,13 @@ func (s *Service) Enroll(ctx context.Context, in Input) (Workload, error) {
 
 func (s *Service) List(ctx context.Context) ([]Workload, error) { return s.registry.List(ctx) }
 
-// Revoke ends the enrollment and withdraws the credentials already made, so a verifier that reads the status list learns of it.
+// Revoke ends the enrollment and the workload's mandate, and withdraws the credentials already made, so a verifier that reads the status list learns of it.
 func (s *Service) Revoke(ctx context.Context, id string) error {
 	w, err := s.registry.Revoke(ctx, id)
 	if err != nil {
+		return err
+	}
+	if err := s.grants.EndFor(ctx, w.SpiffeID); err != nil {
 		return err
 	}
 	_, err = s.entitlements.RevokeAll(ctx, entitlement.WorkloadOf(w.SpiffeID))

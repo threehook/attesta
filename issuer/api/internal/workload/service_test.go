@@ -16,13 +16,14 @@ import (
 )
 
 type fakes struct {
-	enrolled   map[string]workload.Workload
-	created    []entitlement.New
-	revoked    []string
-	offered    []time.Duration
-	verifyErr  error
-	verifiedAs string
-	grant      *workload.Grant
+	enrolled     map[string]workload.Workload
+	created      []entitlement.New
+	revoked      []string
+	offered      []time.Duration
+	verifyErr    error
+	verifiedAs   string
+	grant        *workload.Grant
+	mandateEnded []string
 }
 
 func (f *fakes) Enroll(_ context.Context, in workload.Input) (workload.Workload, error) {
@@ -69,6 +70,11 @@ func (f *fakes) Verify(_ context.Context, token string) (string, error) {
 func (f *fakes) OfferFor(_ context.Context, e entitlement.Entitlement, lifetime time.Duration) (string, error) {
 	f.offered = append(f.offered, lifetime)
 	return "openid-credential-offer://?for=" + e.ID, nil
+}
+
+func (f *fakes) EndFor(_ context.Context, spiffeID string) error {
+	f.mandateEnded = append(f.mandateEnded, spiffeID)
+	return nil
 }
 
 func (f *fakes) GrantFor(context.Context, string) (workload.Grant, bool, error) {
@@ -167,6 +173,9 @@ func TestRevokeWithdrawsTheCredentialsAlreadyMade(t *testing.T) {
 	}
 	if len(f.revoked) != 1 || f.revoked[0] != agent {
 		t.Errorf("revoked entitlements of %v, want %s", f.revoked, agent)
+	}
+	if len(f.mandateEnded) != 1 || f.mandateEnded[0] != agent {
+		t.Errorf("ended the mandate of %v, want %s", f.mandateEnded, agent)
 	}
 	if err := newService(f).Revoke(context.Background(), "w-1"); !errors.Is(err, workload.ErrNotFound) {
 		t.Errorf("revoking twice gave %v, want ErrNotFound", err)
