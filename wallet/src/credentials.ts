@@ -112,7 +112,7 @@ export async function acceptPreviewed(agent: WalletAgent, preview: CredentialPre
     await agent.sdJwtVc.store({ record })
     held.push(describe(agent, record))
   }
-  for (const old of replaces) await agent.sdJwtVc.deleteById(old.id)
+  for (const old of replaces) await removeCredential(agent, old.id)
   return held
 }
 
@@ -121,9 +121,11 @@ export async function listCredentials(agent: WalletAgent): Promise<HeldCredentia
   return records.map((record) => describe(agent, record))
 }
 
-/** Removes a held credential. */
+/** Removes a held credential and the key it was bound to. */
 export async function removeCredential(agent: WalletAgent, id: string): Promise<void> {
+  const { credentialInstances } = await agent.sdJwtVc.getById(id)
   await agent.sdJwtVc.deleteById(id)
+  for (const { kmsKeyId } of credentialInstances) if (kmsKeyId !== undefined) await agent.kms.deleteKey({ keyId: kmsKeyId })
 }
 
 function describe(agent: WalletAgent, record: SdJwtVcRecord): HeldCredential {

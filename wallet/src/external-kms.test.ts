@@ -1,10 +1,11 @@
 import 'reflect-metadata'
 import { createPublicKey, generateKeyPairSync, randomBytes, randomUUID, sign, verify, type KeyObject } from 'node:crypto'
 import { AskarModule } from '@credo-ts/askar'
-import { Agent, Kms } from '@credo-ts/core'
+import { Agent, Kms, SdJwtVcRecord } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
 import { describe, expect, it } from 'vitest'
+import { removeCredential } from './credentials.js'
 
 // Stands in for a remote KMS or a TPM: the private keys stay in here and only signatures come out.
 class ExternalKms implements Kms.KeyManagementService {
@@ -106,6 +107,38 @@ describe('a wallet whose holder key is in an external KMS', () => {
       const claims = (verified as unknown as { sdJwtVc: { prettyClaims: Record<string, unknown> } }).sdJwtVc.prettyClaims
       expect(claims.department).toBe('burgerzaken')
       expect(claims.email).toBeUndefined()
+    } finally {
+      await agent.shutdown()
+    }
+  })
+
+  it('deletes the holder key together with the credential', async () => {
+    const external = new ExternalKms()
+    const agent = new Agent({
+      config: {},
+      dependencies: agentDependencies,
+      modules: {
+        askar: new AskarModule({ askar: NativeAskar, store: { id: 'external-kms-remove', key: 'a-key', database: { type: 'sqlite', config: { inMemory: true } } } }),
+        kms: new Kms.KeyManagementModule({ backends: [external], defaultBackend: 'external' }),
+      },
+    })
+    await agent.initialize()
+    try {
+      const issuerKey = await agent.kms.createKey({ type: { kty: 'OKP', crv: 'Ed25519' }, backend: 'askar' })
+      const holderKey = await agent.kms.createKey({ type: { kty: 'EC', crv: 'P-256' } })
+      const did = await agent.dids.create({ method: 'key', options: { keyId: issuerKey.keyId } } as never)
+      const issued = await agent.sdJwtVc.sign({
+        payload: { vct: 'Employee', email: 'a@corp.test' },
+        holder: { method: 'jwk', jwk: Kms.PublicJwk.fromUnknown({ ...holderKey.publicJwk, kid: holderKey.keyId }) },
+        issuer: { method: 'did', didUrl: did.didState.didDocument!.verificationMethod![0]!.id },
+      } as never)
+      const record = new SdJwtVcRecord({ credentialInstances: [{ compactSdJwtVc: issued.compact, kmsKeyId: holderKey.keyId }] })
+      await agent.sdJwtVc.store({ record })
+
+      await removeCredential(agent as never, record.id)
+
+      expect(await agent.sdJwtVc.getAll()).toHaveLength(0)
+      expect(await external.getPublicKey(undefined, holderKey.keyId)).toBeNull()
     } finally {
       await agent.shutdown()
     }
