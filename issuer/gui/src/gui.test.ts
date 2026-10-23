@@ -139,7 +139,7 @@ describe('issuer pages', () => {
     ])
   })
 
-  it('has a page for the mandates under Beheer, with a form to approve one', async () => {
+  it('has a page for the mandates under Machtigingen, with a form to approve one', async () => {
     const html = await (await fetch(`${baseUrl}/mandates`)).text()
     expect(html).toContain('<a href="/mandates" aria-current="page">Mandaten</a>')
     expect(html).toContain('id="mandate-form"')
@@ -160,9 +160,10 @@ describe('issuer pages', () => {
     ])
   })
 
-  it('has a page for the actions that wait for approval, under Beheer', async () => {
+  it('has a page for the actions that wait for approval, under Machtigingen', async () => {
     const html = await (await fetch(`${baseUrl}/approvals`)).text()
     expect(html).toContain('<a href="/approvals" aria-current="page">Goedkeuringen</a>')
+    expect(html).toMatch(/<h2>Machtigingen<\/h2><ul><li><a href="\/mandates"[^>]*>Mandaten<\/a><\/li><li><a href="\/approvals"[^>]*>Goedkeuringen<\/a><\/li><\/ul><h2>Beheer<\/h2>/)
     expect(html).toContain('id="approvals-body"')
   })
 

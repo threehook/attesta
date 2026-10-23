@@ -88,7 +88,8 @@ export const POLICY_TESTER: MenuItem = {
 
 const menuOf = (chrome: Chrome): MenuGroup[] => [
   { label: 'Verifiable Credentials', items: [EMPLOYEE, ...chrome.types.map(typeItem)] },
-  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, WORKLOADS, MANDATES, APPROVALS] },
+  { label: 'Machtigingen', items: [MANDATES, APPROVALS] },
+  { label: 'Beheer', items: [ROLES, CREDENTIALS, CREDENTIAL_TYPES, WORKLOADS] },
   { label: 'Tools', items: [POLICY_EDITOR, POLICY_TESTER] },
 ]
 
