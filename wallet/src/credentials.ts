@@ -13,9 +13,13 @@ export interface HeldCredential {
 }
 
 // Binds each credential to a fresh key held in the agent's key store, so credentials can't be linked through the holder key.
+// A default key store that cannot make Ed25519 keys, such as OpenBao, gets P-256 ones.
 function bindToNewKey(agent: WalletAgent): OpenId4VciCredentialBindingResolver {
   return async () => {
-    const { publicJwk } = await agent.kms.createKey({ type: { kty: 'OKP', crv: 'Ed25519' } })
+    const config = agent.dependencyManager.resolve(Kms.KeyManagementModuleConfig)
+    const ed25519 = { kty: 'OKP', crv: 'Ed25519' } as const
+    const type = !config.defaultBackend.isOperationSupported(undefined as never, { operation: 'createKey', type: ed25519 }) ? ({ kty: 'EC', crv: 'P-256' } as const) : ed25519
+    const { publicJwk } = await agent.kms.createKey({ type })
     return { method: 'jwk', keys: [Kms.PublicJwk.fromPublicJwk(publicJwk)] }
   }
 }

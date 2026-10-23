@@ -2,7 +2,7 @@ import 'reflect-metadata'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { AskarModule } from '@credo-ts/askar'
-import { Agent } from '@credo-ts/core'
+import { Agent, Kms } from '@credo-ts/core'
 import { agentDependencies } from '@credo-ts/node'
 import { OpenId4VcModule } from '@credo-ts/openid4vc'
 import { NativeAskar } from '@openwallet-foundation/askar-nodejs'
@@ -19,6 +19,8 @@ export interface WalletOptions {
   allowInsecureHttp?: boolean
   /** Public addresses that are reached at another address, such as inside a cluster: what is sent to the key goes to its value. */
   hosts?: Record<string, string>
+  /** Holds the holder keys instead of the wallet's own store, such as OpenBao; the key then never leaves it. */
+  kms?: Kms.KeyManagementService
 }
 
 export async function createWalletAgent(options: WalletOptions) {
@@ -40,6 +42,7 @@ export async function createWalletAgent(options: WalletOptions) {
         },
       }),
       openid4vc: new OpenId4VcModule(),
+      ...(options.kms && { kms: new Kms.KeyManagementModule({ backends: [options.kms], defaultBackend: options.kms.backend }) }),
     },
   })
   await agent.initialize()
