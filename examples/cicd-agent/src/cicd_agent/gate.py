@@ -40,6 +40,8 @@ class Gate:
         sleep: Callable[[float], None] = time.sleep,
         approval_wait: float = 0,
         approval_poll: float = 5,
+        signing_retries: int = 3,
+        signing_wait: float = 1,
     ):
         self._attesta = attesta_url.rstrip("/")
         self._wallet = wallet_url.rstrip("/")
@@ -49,6 +51,8 @@ class Gate:
         self._sleep = sleep
         self._approval_wait = approval_wait
         self._approval_poll = approval_poll
+        self._signing_retries = signing_retries
+        self._signing_wait = signing_wait
 
     def authorize(self, resource: str, mandate: bool = False, action: dict[str, str] | None = None) -> Decision:
         """Asks whether the action on the resource may happen. With `mandate` the wallet also shows what people allowed; `action` tells the policy what
@@ -82,6 +86,24 @@ class Gate:
                 return Decision(False, "Pending", f"{denied.reason}; waiting for approval, request {parked['id']}")
             self._sleep(self._approval_poll)
 
+    def _present(self, link: str) -> dict:
+        """Has the wallet answer the request. When the wallet could not sign (502), it tries again up to `signing_retries` times, `signing_wait`
+        seconds apart. When that does not help, say because the key is gone, it gets a new credential with a new key and tries once more."""
+        for retry in range(self._signing_retries + 1):
+            try:
+                return call("POST", f"{self._wallet}/present", {"link": link})
+            except HttpError as error:
+                if error.status != 502:
+                    raise
+                failed = error
+            if retry < self._signing_retries:
+                self._sleep(self._signing_wait)
+        try:
+            self._identity.renew()
+        except Exception:
+            raise failed from None
+        return call("POST", f"{self._wallet}/present", {"link": link})
+
     def _ask(self, resource: str, credentials: list[dict], action: dict[str, str] | None) -> Decision:
         for attempt in (1, 2):
             started = call(
@@ -96,7 +118,7 @@ class Gate:
                 },
             )
             try:
-                answered = call("POST", f"{self._wallet}/present", {"link": started["authorizationRequest"]})
+                answered = self._present(started["authorizationRequest"])
             except HttpError as error:
                 if error.status != 409:
                     raise

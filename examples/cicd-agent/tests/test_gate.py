@@ -212,3 +212,35 @@ def test_a_wallet_without_a_mandate_lets_the_policy_say_what_is_missing(server):
     decision = gate.authorize("deploy:prod:v2", mandate=True)
     assert decision.decision == "Pending" and identity.parked
     assert asked_credentials(attesta)[:3] == [["Workload", "Mandate"], ["Workload", "Mandate"], ["Workload"]]
+
+
+def test_a_wallet_that_could_not_sign_is_asked_again_without_a_new_credential(server):
+    gate, attesta, wallet, identity = make(server)
+    answers = iter([(502, {"error": "OpenBao refused"}), (200, {"status": 200})])
+    wallet.routes["POST /present"] = lambda _request: next(answers)
+    sleeps = []
+    gate._sleep = sleeps.append
+    gate._wait = 1
+    decision = gate.authorize("deploy:staging")
+    assert decision.permit and identity.renewed == 0
+    assert [s for s in sleeps if s == 1] == [1]
+
+
+def test_a_wallet_that_still_cannot_sign_after_the_retries_gets_a_new_credential(server):
+    gate, attesta, wallet, identity = make(server)
+    answers = iter([(502, {"error": "OpenBao refused"})] * 4 + [(200, {"status": 200})])
+    wallet.routes["POST /present"] = lambda _request: next(answers)
+    sleeps = []
+    gate._sleep = sleeps.append
+    gate._wait = 1
+    decision = gate.authorize("deploy:staging")
+    assert decision.permit and identity.renewed == 1
+    assert [s for s in sleeps if s == 1] == [1, 1, 1]
+
+
+def test_a_wallet_that_cannot_sign_even_with_a_new_credential_is_a_denial(server):
+    gate, attesta, wallet, identity = make(server)
+    wallet.routes["POST /present"] = (502, {"error": "OpenBao refused"})
+    decision = gate.authorize("deploy:staging")
+    assert not decision.permit and decision.decision == "Indeterminate"
+    assert identity.renewed == 1 and len([r for r in wallet.requests if r["path"] == "/present"]) == 5
