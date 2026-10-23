@@ -6,28 +6,12 @@ This document describes how the pieces of Attesta fit together, and the design f
 2. [The scenario we design for: the workforce](#2-the-scenario-we-design-for-the-workforce)
 3. [Design: a wallet the organisation runs for its employees](#3-design-a-wallet-the-organisation-runs-for-its-employees)
 
-The diagrams of section 3 are in [`architecture/hosted-wallet.drawio`](architecture/hosted-wallet.drawio) (four pages, editable in draw.io). The images in this
-document and the PDF ([`architecture.pdf`](architecture.pdf)) are rendered from the same model, so they match the file.
+The diagrams of section 3 are in [`architecture/hosted-wallet.drawio`](hosted-wallet.drawio) (four pages, editable in draw.io). The images in this
+document are rendered from the same model, so they match the file.
 
 ## 1. How it works today
 
-```mermaid
-sequenceDiagram
-    participant I as Issuer (`issuer/`)
-    participant W as Wallet (wallet-desktop, Credo agent in wallet/)
-    participant A as Relying application
-    participant B as Backend (Go)
-
-    I->>W: SD-JWT VC credential (OpenID4VCI), once
-    A->>B: 1. POST /v1/authorize/requests
-    B-->>A: request id and openid4vp:// link
-    A->>W: 2. the user pastes the link and confirms
-    W->>B: 3. SD-JWT presentation (direct_post)
-    Note over B: 4. verify issuer signature, disclosures, key binding
-    Note over B: 5. evaluate the policy (resource, user roles, the credentials by type)
-    A->>B: 6. GET /v1/authorize/requests/{id}, polled
-    B-->>A: status, decision, reason, subject
-```
+![How it works today](how-it-works-today.svg)
 
 This is the flow between a relying application, the shared backend and the desktop wallet. It no longer shows the whole solution:
 
@@ -76,7 +60,7 @@ another employee's wallet). The design is built around those two.
 
 ### 3.2 Components
 
-![Components and trust zones](architecture/hosted-wallet-1-containers.svg)
+![Components and trust zones](hosted-wallet-1-containers.svg)
 
 | Component | Responsibility |
 |---|---|
@@ -94,7 +78,7 @@ another employee's wallet). The design is built around those two.
 
 ### 3.3 Presenting a credential
 
-![Presenting a credential](architecture/hosted-wallet-2-presentation.svg)
+![Presenting a credential](hosted-wallet-2-presentation.svg)
 
 The employee uses the laadpalen application. The application asks its Attesta for a request and sends the employee's browser to the wallet. The wallet,
 where the employee is already signed in, shows who asks and what would be shared. The employee approves with a passkey that is tied to this one request.
@@ -109,7 +93,7 @@ Orange arrows are what does not work today and has to change:
 
 ### 3.4 Getting a credential, and what happens when people change
 
-![Issuance and lifecycle](architecture/hosted-wallet-3-lifecycle.svg)
+![Issuance and lifecycle](hosted-wallet-3-lifecycle.svg)
 
 - **Joiner.** The employee opens the wallet and signs in. The wallet asks the issuer for their credential, and the issuer checks who is asking through the
   same SSO session (the standard authorization-code flow of OpenID4VCI) and reads the department and diploma from HR. The credential is **short-lived**
@@ -122,7 +106,7 @@ Orange arrows are what does not work today and has to change:
 
 ### 3.5 One wallet per employee, and what keeps them apart
 
-![Isolation and trust](architecture/hosted-wallet-4-isolation.svg)
+![Isolation and trust](hosted-wallet-4-isolation.svg)
 
 "One wallet per employee" is a **logical** separation: separate storage, separate keys and a tenant context that comes from the identity provider. It is not a process or a
 pod per employee. What stops each threat:
@@ -189,5 +173,5 @@ pod per employee. What stops each threat:
 ## Appendix: the diagram files
 
 `architecture/hosted-wallet.drawio` has four pages: *1 Containers*, *2 Presentation*, *3 Issuance and lifecycle*, *4 Isolation and trust*. Open it with
-draw.io (diagrams.net) to edit. The `.svg` files and the PDF are rendered from the same model; after editing the `.drawio`, export new images from draw.io
+draw.io (diagrams.net) to edit. The `.svg` files are rendered from the same model; after editing the `.drawio`, export new images from draw.io
 if you want them to match.

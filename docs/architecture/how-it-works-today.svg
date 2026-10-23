@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 592" width="960" height="592" role="img" aria-label="How it works today: issuer, wallet, relying application and backend">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b6b5d"/></marker>
+<marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b6b5d"/></marker>
+<style>
+.b { fill: #ffffff; stroke: #9fb3ad; stroke-width: 1.5; }
+.note { fill: #eef5f3; stroke: #9fb3ad; stroke-width: 1; }
+.t { fill: #14201d; font: 600 13px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.l { fill: #14201d; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.nt { fill: #53635e; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.life { stroke: #9fb3ad; stroke-width: 1; stroke-dasharray: 4 4; }
+.arr { stroke: #0b6b5d; stroke-width: 1.8; fill: none; }
+.ret { stroke: #0b6b5d; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+</style></defs>
+<rect width="960" height="592" fill="#ffffff"/>
+<line class="life" x1="135" y1="50" x2="135" y2="582"/>
+<line class="life" x1="345" y1="50" x2="345" y2="582"/>
+<line class="life" x1="555" y1="50" x2="555" y2="582"/>
+<line class="life" x1="765" y1="50" x2="765" y2="582"/>
+<rect class="b" x="50" y="12" width="170" height="40" rx="8"/><text class="t" x="135" y="36">Issuer</text>
+<rect class="b" x="260" y="12" width="170" height="40" rx="8"/><text class="t" x="345" y="36">Wallet</text>
+<rect class="b" x="470" y="12" width="170" height="40" rx="8"/><text class="t" x="555" y="36">Relying application</text>
+<rect class="b" x="680" y="12" width="170" height="40" rx="8"/><text class="t" x="765" y="36">Backend (Go)</text>
+<text class="l" x="240.0" y="90">SD-JWT VC credential (OpenID4VCI), once</text>
+<line class="arr" x1="141" y1="102" x2="339" y2="102" marker-end="url(#ah)"/>
+<text class="l" x="660.0" y="142">1. POST /v1/authorize/requests</text>
+<line class="arr" x1="561" y1="154" x2="759" y2="154" marker-end="url(#ah)"/>
+<text class="l" x="660.0" y="194">request id and openid4vp:// link</text>
+<line class="ret" x1="759" y1="206" x2="561" y2="206" marker-end="url(#ah)"/>
+<text class="l" x="450.0" y="246">2. user pastes the link, confirms</text>
+<line class="arr" x1="549" y1="258" x2="351" y2="258" marker-end="url(#ah)"/>
+<text class="l" x="555.0" y="298">3. SD-JWT presentation (direct_post)</text>
+<line class="arr" x1="351" y1="310" x2="759" y2="310" marker-end="url(#ah)"/>
+<rect class="note" x="600.0" y="338" width="330" height="46" rx="6"/>
+<text class="nt" x="765" y="356">4. verify issuer signature,</text>
+<text class="nt" x="765" y="372">disclosures, key binding</text>
+<rect class="note" x="600.0" y="412" width="330" height="46" rx="6"/>
+<text class="nt" x="765" y="430">5. evaluate the policy (resource, user roles,</text>
+<text class="nt" x="765" y="446">the credentials by type)</text>
+<text class="l" x="660.0" y="498">6. GET /v1/authorize/requests/{id}, polled</text>
+<line class="arr" x1="561" y1="510" x2="759" y2="510" marker-end="url(#ah)"/>
+<text class="l" x="660.0" y="550">status, decision, reason, subject</text>
+<line class="ret" x1="759" y1="562" x2="561" y2="562" marker-end="url(#ah)"/>
+</svg>

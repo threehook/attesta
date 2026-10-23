@@ -12,7 +12,7 @@ This is a monorepo: the backend, a TypeScript client library, a wallet core and 
 
 ## Architecture
 
-How the pieces fit together, with the end-to-end flow and the design of the next steps, is in [docs/architecture.md](docs/architecture.md).
+How the pieces fit together, with the end-to-end flow and the design of the next steps, is in [docs/architecture.md](docs/architecture/architecture.md).
 
 Key design decisions:
 
