@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 662" width="960" height="662" role="img" aria-label="Waiting for approval: the agent stops and a later run finds the approval, or the agent waits within one run">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b6b5d"/></marker>
+<style>
+.b { fill: #ffffff; stroke: #9fb3ad; stroke-width: 1.5; }
+.ok { fill: #ecf6ee; stroke: #2f7d4a; stroke-width: 1.8; }
+.rev { fill: #fdf0ee; stroke: #b3382c; stroke-width: 1.8; }
+.note { fill: #ffffff; stroke: #9fb3ad; stroke-width: 1; stroke-dasharray: 5 4; }
+.lane { fill: #eef5f3; stroke: #c9d8d3; stroke-width: 1; }
+.t { fill: #14201d; font: 600 13px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.h { fill: #14201d; font: 600 14px Helvetica, Arial, sans-serif; }
+.rl { fill: #53635e; font: 600 12px Helvetica, Arial, sans-serif; }
+.l { fill: #14201d; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.nt { fill: #53635e; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.arr { stroke: #0b6b5d; stroke-width: 1.8; fill: none; }
+.dsh { stroke: #53635e; stroke-width: 1.3; fill: none; stroke-dasharray: 4 4; }
+</style></defs>
+<rect width="960" height="662" fill="#ffffff"/>
+<rect class="lane" x="10" y="10" width="940" height="330" rx="10"/>
+<text class="h" x="30" y="36">A. Default: the agent does not wait</text>
+<text class="rl" x="24" y="92">Run 1</text>
+<rect class="b" x="130" y="56" width="190" height="64" rx="8"/>
+<text class="t" x="225.0" y="91.5">1. Run the tests</text>
+<rect class="b" x="340" y="56" width="190" height="64" rx="8"/>
+<text class="t" x="435.0" y="91.5">2. Deploy to staging</text>
+<rect class="b" x="550" y="56" width="190" height="64" rx="8"/>
+<text class="t" x="645.0" y="83.0">3. Deploy to production</text>
+<text class="l" x="645.0" y="100.0">“waiting for approval”</text>
+<rect class="rev" x="760" y="56" width="190" height="64" rx="8"/>
+<text class="t" x="855.0" y="83.0">The agent stops.</text>
+<text class="l" x="855.0" y="100.0">The task ends.</text>
+<line class="arr" x1="320" y1="88" x2="340" y2="88" marker-end="url(#ah)"/>
+<line class="arr" x1="530" y1="88" x2="550" y2="88" marker-end="url(#ah)"/>
+<line class="arr" x1="740" y1="88" x2="760" y2="88" marker-end="url(#ah)"/>
+<line class="arr" x1="645" y1="120" x2="645" y2="146" marker-end="url(#ah)"/>
+<rect class="b" x="340" y="146" width="610" height="52" rx="8"/>
+<text class="l" x="645.0" y="167.0">Goedkeuringen: the request waits up to 24 hours.</text>
+<text class="l" x="645.0" y="184.0">Two different people approve it, at any time.</text>
+<text class="nt" x="450" y="228" style="text-anchor:start">time passes, until a new run starts (within 24 hours)</text>
+<line class="dsh" x1="435" y1="198" x2="435" y2="248" marker-end="url(#ah)"/>
+<text class="rl" x="24" y="286">A new run</text>
+<rect class="b" x="130" y="250" width="190" height="64" rx="8"/>
+<text class="l" x="225.0" y="277.0">Steps 1 and 2</text>
+<text class="l" x="225.0" y="294.0">as before</text>
+<rect class="b" x="340" y="250" width="190" height="64" rx="8"/>
+<text class="t" x="435.0" y="277.0">3. Deploy to production</text>
+<text class="l" x="435.0" y="294.0">finds the approval</text>
+<rect class="ok" x="550" y="250" width="190" height="64" rx="8"/>
+<text class="t" x="645.0" y="268.5">Permit</text>
+<text class="l" x="645.0" y="285.5">exactly this version, once,</text>
+<text class="l" x="645.0" y="302.5">valid for 15 minutes</text>
+<rect class="b" x="760" y="250" width="190" height="64" rx="8"/>
+<text class="t" x="855.0" y="285.5">The deploy runs</text>
+<line class="arr" x1="320" y1="282" x2="340" y2="282" marker-end="url(#ah)"/>
+<line class="arr" x1="530" y1="282" x2="550" y2="282" marker-end="url(#ah)"/>
+<line class="arr" x1="740" y1="282" x2="760" y2="282" marker-end="url(#ah)"/>
+<rect class="lane" x="10" y="352" width="940" height="300" rx="10"/>
+<text class="h" x="30" y="378">B. The agent waits (a wait of, for example, 10 minutes is set)</text>
+<text class="rl" x="24" y="434">One run</text>
+<rect class="b" x="130" y="398" width="190" height="64" rx="8"/>
+<text class="t" x="225.0" y="433.5">1. Run the tests</text>
+<rect class="b" x="340" y="398" width="190" height="64" rx="8"/>
+<text class="t" x="435.0" y="433.5">2. Deploy to staging</text>
+<rect class="b" x="550" y="398" width="190" height="64" rx="8"/>
+<text class="t" x="645.0" y="425.0">3. Deploy to production</text>
+<text class="l" x="645.0" y="442.0">asks every 5 seconds</text>
+<rect class="ok" x="760" y="398" width="190" height="64" rx="8"/>
+<text class="t" x="855.0" y="416.5">Permit as soon as two</text>
+<text class="l" x="855.0" y="433.5">people approved. The</text>
+<text class="l" x="855.0" y="450.5">deploy runs.</text>
+<line class="arr" x1="320" y1="430" x2="340" y2="430" marker-end="url(#ah)"/>
+<line class="arr" x1="530" y1="430" x2="550" y2="430" marker-end="url(#ah)"/>
+<line class="arr" x1="740" y1="430" x2="760" y2="430" marker-end="url(#ah)"/>
+<line class="arr" x1="645" y1="462" x2="645" y2="488" marker-end="url(#ah)"/>
+<rect class="b" x="340" y="488" width="610" height="50" rx="8"/>
+<text class="l" x="645.0" y="508.0">Goedkeuringen: two different people approve</text>
+<text class="l" x="645.0" y="525.0">while the agent waits.</text>
+<text class="rl" x="30" y="600">or</text>
+<rect class="note" x="130" y="570" width="820" height="52" rx="8"/>
+<text class="l" x="540.0" y="591.0">If nobody approves within the wait, the agent stops with “waiting for approval”, as in A:</text>
+<text class="l" x="540.0" y="608.0">a new run finds the approval later.</text>
+</svg>
