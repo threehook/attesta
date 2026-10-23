@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 861" width="900" height="861" role="img" aria-label="One authorization: the wallet answers with the credential, OpenBao signs, Attesta verifies and the policy decides">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0b6b5d"/></marker>
+<style>
+.b { fill: #ffffff; stroke: #9fb3ad; stroke-width: 1.5; }
+.note { fill: #eef5f3; stroke: #9fb3ad; stroke-width: 1; }
+.t { fill: #14201d; font: 600 13px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.l { fill: #14201d; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.nt { fill: #53635e; font: 12px Helvetica, Arial, sans-serif; text-anchor: middle; }
+.life { stroke: #9fb3ad; stroke-width: 1; stroke-dasharray: 4 4; }
+.arr { stroke: #0b6b5d; stroke-width: 1.8; fill: none; }
+.ret { stroke: #0b6b5d; stroke-width: 1.5; fill: none; stroke-dasharray: 5 4; }
+</style></defs>
+<rect width="900" height="861" fill="#ffffff"/>
+<line class="life" x1="135.0" y1="50" x2="135.0" y2="851"/>
+<line class="life" x1="345.0" y1="50" x2="345.0" y2="851"/>
+<line class="life" x1="555.0" y1="50" x2="555.0" y2="851"/>
+<line class="life" x1="765.0" y1="50" x2="765.0" y2="851"/>
+<rect class="b" x="50.0" y="12" width="170" height="40" rx="8"/>
+<text class="t" x="135.0" y="36.0">CI/CD agent</text>
+<rect class="b" x="260.0" y="12" width="170" height="40" rx="8"/>
+<text class="t" x="345.0" y="36.0">Attesta (sidecar)</text>
+<rect class="b" x="470.0" y="12" width="170" height="40" rx="8"/>
+<text class="t" x="555.0" y="36.0">CI/CD agent wallet</text>
+<rect class="b" x="680.0" y="12" width="170" height="40" rx="8"/>
+<text class="t" x="765.0" y="36.0">OpenBao</text>
+<text class="l" x="240.0" y="96">1. may this CI/CD action happen?</text>
+<text class="l" x="240.0" y="111">POST /v1/authorize/requests</text>
+<line class="arr" x1="141.0" y1="128" x2="339.0" y2="128" marker-end="url(#ah)"/>
+<text class="l" x="240.0" y="168">request id and</text>
+<text class="l" x="240.0" y="183">request link</text>
+<line class="ret" x1="339.0" y1="200" x2="141.0" y2="200" marker-end="url(#ah)"/>
+<text class="l" x="345.0" y="240">2. give the request link to the wallet</text>
+<line class="arr" x1="141.0" y1="257" x2="549.0" y2="257" marker-end="url(#ah)"/>
+<rect class="note" x="428.8" y="285" width="252.40000000000003" height="46" rx="6"/>
+<text class="nt" x="555.0" y="303">picks the credential, and shows</text>
+<text class="nt" x="555.0" y="319">only the claims that are asked for</text>
+<text class="l" x="660.0" y="361">3. sign the answer with the private key</text>
+<text class="l" x="660.0" y="376">(proves the wallet owns the credential)</text>
+<line class="arr" x1="561.0" y1="393" x2="759.0" y2="393" marker-end="url(#ah)"/>
+<text class="l" x="660.0" y="433">signature</text>
+<line class="ret" x1="759.0" y1="450" x2="561.0" y2="450" marker-end="url(#ah)"/>
+<text class="l" x="450.0" y="490">4. the answer: the credential</text>
+<text class="l" x="450.0" y="505">with the claims asked for</text>
+<line class="arr" x1="549.0" y1="522" x2="351.0" y2="522" marker-end="url(#ah)"/>
+<rect class="note" x="169.3" y="550" width="351.40000000000003" height="62" rx="6"/>
+<text class="nt" x="345.0" y="568">5. check the issuer's signature, the wallet's</text>
+<text class="nt" x="345.0" y="584">signature (with the public key in the credential)</text>
+<text class="nt" x="345.0" y="600">and that the credential is not revoked</text>
+<rect class="note" x="169.3" y="630" width="351.40000000000003" height="30" rx="6"/>
+<text class="nt" x="345.0" y="648">6. the policy (Rego rules) decides Permit or Deny</text>
+<text class="l" x="240.0" y="690">7. read the outcome</text>
+<text class="l" x="240.0" y="705">GET /v1/authorize/requests/{id}</text>
+<line class="arr" x1="141.0" y1="722" x2="339.0" y2="722" marker-end="url(#ah)"/>
+<text class="l" x="240.0" y="762">Permit or Deny</text>
+<line class="ret" x1="339.0" y1="779" x2="141.0" y2="779" marker-end="url(#ah)"/>
+<rect class="note" x="50.0" y="807" width="170.0" height="30" rx="6"/>
+<text class="nt" x="135.0" y="825">acts only on Permit</text>
+</svg>
