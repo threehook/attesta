@@ -80,10 +80,17 @@ export class OpenBaoKms implements Kms.KeyManagementService {
   async deleteKey(_context: unknown, options: { keyId: string }) {
     const held = await this.find(options.keyId)
     if (!held) return false
-    await this.call('POST', `/keys/${held.name}/config`, { deletion_allowed: true })
-    await this.call('DELETE', `/keys/${held.name}`)
+    // A key that is gone already (deleted by another wallet's cleanup, for example) is what was asked for.
+    const gone = await this.call('POST', `/keys/${held.name}/config`, { deletion_allowed: true }).then(
+      () => false,
+      (error: unknown) => {
+        if (error instanceof OpenBaoError && (error.status === 400 || error.status === 404)) return true
+        throw error
+      },
+    )
+    if (!gone) await this.call('DELETE', `/keys/${held.name}`)
     for (const [id, value] of this.held) if (value === held) this.held.delete(id)
-    return true
+    return !gone
   }
 
   async sign(_context: unknown, options: { keyId: string; data: Uint8Array }) {

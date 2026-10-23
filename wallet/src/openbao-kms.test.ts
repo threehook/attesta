@@ -108,4 +108,12 @@ describe.skipIf(!hasDocker)('a wallet whose holder key is in OpenBao', () => {
     expect(await new OpenBaoKms({ url, token, prefix: 'agent-other' }).getPublicKey(context, kept)).not.toBeNull()
     expect(await new OpenBaoKms({ url, token, prefix: 'agent-gone' }).getPublicKey(context, kept)).toBeNull()
   }, 30_000)
+
+  it('treats a key that is gone already as deleted', async () => {
+    const kms = new OpenBaoKms({ url, token, prefix: 'agent-twice' })
+    const { keyId } = (await kms.createKey()) as { keyId: string }
+    await new OpenBaoKms({ url, token, prefix: 'agent-twice' }).deleteLeftovers()
+
+    expect(await kms.deleteKey(undefined, { keyId })).toBe(false)
+  }, 30_000)
 })
