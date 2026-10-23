@@ -55,5 +55,5 @@ curl -X POST localhost:8090/check -H "authorization: Bearer $TOKEN" -d '{"resour
 
 - An Approval is handed out once and lasts 15 minutes; a second deployment of the same version needs a new approval. Attesta itself keeps no state, so the use-once is the issuer's.
 - A system has one mandate at a time, so a second release waits for the first to end or be covered by its pattern (`deploy:prod:v1.4.*`).
-- The wallet keeps its credential in memory, so a new pod gets a new credential, with a new key in OpenBao (`make openbao`, dev mode: restarting OpenBao loses the keys, run it again and restart the pod). Every request for one makes an entitlement and a position in the issuer's status list.
+- The wallet keeps its credential in a temporary folder of its container, so a new pod gets a new credential, with a new key in OpenBao (`make openbao`, dev mode: restarting OpenBao loses the keys, run it again and restart the pod). Every request for one makes an entitlement and a position in the issuer's status list.
 - Any pod that has the token can send tasks to the agent.

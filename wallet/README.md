@@ -4,7 +4,7 @@ The wallet core: a [Credo](https://github.com/openwallet-foundation/credo-ts) ho
 SD-JWT VC credentials in an encrypted Askar store (SQLite). It has no user interface and imports nothing from Electron; `wallet-desktop` is the desktop app around
 it.
 
-- `createWalletAgent({ storeId, storeKey, path })` opens the store, or keeps it in memory when `path` is omitted.
+- `createWalletAgent({ storeId, storeKey, path })` opens the store, or keeps it in memory when `path` is omitted (a store in memory is lost 30 minutes after it opens, so use a `path` for a wallet that runs longer).
 - `previewCredential(agent, link)` reads a link and reports who gives what without taking it; `acceptPreviewed` then takes it.
 - `acceptCredential(agent, link)` does both in one step, running the pre-authorized code flow and binds each credential to a fresh key held in the agent's key store.
 - `readQrImage(image)` reads the text of the QR code in a PNG or JPEG image: the link to a credential, as an issuer mails it. It throws a readable message when the image holds no QR code.
@@ -14,7 +14,7 @@ it.
 
 ## The wallet of a system
 
-`pnpm serve` (`src/serve-cli.ts`) is the wallet of a system such as a pod or a pipeline job. It keeps its credentials in memory, with their keys made at start (in OpenBao when `ATTESTA_WALLET_KMS_URL` and `ATTESTA_WALLET_KMS_TOKEN` are set: P-256 keys that sign there), and answers by itself: nobody
+`pnpm serve` (`src/serve-cli.ts`) is the wallet of a system such as a pod or a pipeline job. It keeps its credentials in a temporary folder, encrypted with a key that only exists in memory, with their keys made at start (in OpenBao when `ATTESTA_WALLET_KMS_URL` and `ATTESTA_WALLET_KMS_TOKEN` are set: P-256 keys that sign there), and answers by itself: nobody
 confirms anything. It listens on 127.0.0.1 only.
 
 | Call | What it does |

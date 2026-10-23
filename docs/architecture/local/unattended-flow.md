@@ -56,6 +56,6 @@ access to OpenBao.
 
 - OpenBao runs in dev mode and keeps keys in memory. After it restarts the keys are gone, the wallet's credentials point at keys that no longer exist, and every
   request is denied. OpenBao must be installed again (see `examples/cicd-agent/README.md`) and the pod restarted.
-- The wallet keeps its credentials in memory, so a new pod gets new credentials and new keys. The old keys stay in OpenBao. Whether replacing a credential removes its old key has not been checked.
+- The wallet keeps its credentials in a temporary folder of its container, so a new pod gets new credentials and new keys. The old keys stay in OpenBao. Whether replacing a credential removes its old key has not been checked.
 - The wallet reaches OpenBao over plain http inside the cluster.
 - The wallet's token lasts 32 days and is not renewed.

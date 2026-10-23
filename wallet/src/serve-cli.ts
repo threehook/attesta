@@ -1,7 +1,10 @@
-// The wallet of a system, for a pod or a pipeline job: it keeps its credentials in memory, takes a new one when the system asks, and answers the
+// The wallet of a system, for a pod or a pipeline job: it keeps its credentials in a temporary folder, takes a new one when the system asks, and answers the
 // verifiers registered in ATTESTA_WALLET_VERIFIERS by itself. It listens on 127.0.0.1 only. ATTESTA_WALLET_HOSTS maps a public address to the one
 // inside the cluster. With ATTESTA_WALLET_KMS_URL its keys are made in OpenBao and sign there.
 import { randomBytes } from 'node:crypto'
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createServer } from 'node:http'
 import { acceptCredential, createWalletAgent, listCredentials, resolvePresentationRequest, submitPresentation } from './index.js'
 import { parseHosts } from './hosts.js'
@@ -25,6 +28,8 @@ if (kmsUrl && !process.env.ATTESTA_WALLET_KMS_TOKEN) {
 }
 const agent = await createWalletAgent({
   storeId: 'wallet',
+  // A store in memory is lost after 30 minutes; the key is new at every start, so the folder is too.
+  path: mkdtempSync(join(tmpdir(), 'attesta-wallet-')),
   storeKey: randomBytes(32).toString('hex'),
   allowInsecureHttp: process.env.ATTESTA_ALLOW_INSECURE_HTTP === '1',
   hosts: parseHosts(process.env.ATTESTA_WALLET_HOSTS ?? ''),

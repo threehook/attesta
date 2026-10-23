@@ -13,7 +13,7 @@ export interface WalletOptions {
   storeId: string
   /** Encrypts the store. */
   storeKey: string
-  /** Directory that holds the SQLite store file; created if missing. Omit to keep the wallet in memory only. */
+  /** Directory that holds the SQLite store file; created if missing. Omit to keep the wallet in memory only: that store is lost 30 minutes after it opens. */
   path?: string
   /** Accept links and issuers served over plain http, for local development. */
   allowInsecureHttp?: boolean
