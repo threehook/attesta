@@ -13,7 +13,22 @@ permissions:
 
 jobs:
   # The issuer's Postgres tests start a container, which the runner's Docker provides.
+  lint-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter ./examples/laadpalen/gui lint
+
   test-go:
+    needs: [lint-go, lint-typescript]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -28,7 +43,25 @@ jobs:
       - run: go test ./...
         working-directory: ${{ matrix.module }}
 
+  lint-go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [backend, issuer/api, examples/laadpalen/api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.13.2
+          working-directory: ${{ matrix.module }}
+
   test-typescript:
+    needs: [lint-go, lint-typescript]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -45,6 +78,7 @@ jobs:
       - run: pnpm -r test
 
   test-agent:
+    needs: [lint-go, lint-typescript]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -58,6 +92,7 @@ jobs:
 
   # The real Electron wallet against the Go issuer and the Go backend. Docker runs Postgres and Mailpit for the issuer.
   test-e2e:
+    needs: [lint-go, lint-typescript]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

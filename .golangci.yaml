@@ -1,0 +1,95 @@
+---
+# https://golangci-lint.run/usage/configuration/
+# One configuration for every Go module in the repository; run it from a module directory.
+
+version: "2"
+
+linters:
+  default: all
+
+  disable:
+    - containedctx
+    - contextcheck
+    - cyclop
+    - depguard
+    - err113
+    - exhaustive
+    - exhaustruct
+    - exhaustruct_v5
+    - forbidigo
+    - funcorder
+    - funlen
+    - gochecknoglobals
+    - gocognit
+    - gocyclo
+    - goconst
+    - gomodguard
+    - interfacebloat
+    - maintidx
+    - misspell # the user-facing texts are Dutch
+    - mnd
+    - nilnil
+    - nlreturn
+    - noinlineerr
+    - paralleltest
+    - revive
+    - tagalign
+    - tagliatelle
+    - testpackage
+    - thelper
+    - varnamelen
+    - wrapcheck
+    - wsl
+
+  settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        # A failed write to a client that has gone cannot be handled, and a rollback after a commit fails by design.
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - (github.com/jackc/pgx/v5.Tx).Rollback
+
+    gocritic:
+      enable-all: false
+      disable-all: true
+      enabled-checks:
+        - commentedOutCode
+
+    gosec:
+      excludes:
+        - G104 # Errors unhandled
+        - G304 # Potential file inclusion via variable (see https://github.com/golang/go/issues/67002)
+
+    ireturn:
+      allow:
+        - error
+        - empty
+        - stdlib
+        - generic
+        - go.opentelemetry.io/otel/sdk/log.Exporter
+
+    lll:
+      line-length: 149
+      tab-width: 4
+
+    wsl_v5:
+      allow-first-in-block: true
+      allow-whole-block: false
+      branch-max-lines: 2
+
+  exclusions:
+    generated: lax
+    rules:
+      - linters: [errchkjson]
+        text: "Encode.*unsafe type"
+    presets:
+      - std-error-handling
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt
+    - goimports
