@@ -31,5 +31,6 @@ func decideRequest(postcode string, houseNumber int) result {
 	case !a.electricVehicle:
 		return result{Reason: "Geen elektrisch voertuig gevonden op adres"}
 	}
+
 	return result{Granted: true, Reason: "Toegekend"}
 }

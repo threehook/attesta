@@ -1,6 +1,10 @@
 package httpapi
 
 import (
+	"attesta/backend/internal/adl"
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/presentation"
+	"attesta/backend/internal/status"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,11 +14,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-
-	"attesta/backend/internal/adl"
-	"attesta/backend/internal/authz"
-	"attesta/backend/internal/presentation"
-	"attesta/backend/internal/status"
 )
 
 // maxResponseBytes bounds a wallet's answer; an SD-JWT presentation is a few KB.
@@ -63,13 +62,17 @@ func (r presentationRequest) credentials() ([]presentation.CredentialQuery, stri
 	case len(list) == 0:
 		return nil, "at least one credential is required"
 	}
+
 	queries := make([]presentation.CredentialQuery, len(list))
 	for i, c := range list {
-		if c.CredentialType == "" || slices.ContainsFunc(queries[:i], func(q presentation.CredentialQuery) bool { return q.CredentialType == c.CredentialType }) {
+		if c.CredentialType == "" ||
+			slices.ContainsFunc(queries[:i], func(q presentation.CredentialQuery) bool { return q.CredentialType == c.CredentialType }) {
 			return nil, "every credential needs a credentialType of its own"
 		}
+
 		queries[i] = presentation.CredentialQuery{CredentialType: c.CredentialType, Claims: c.Claims}
 	}
+
 	return queries, ""
 }
 
@@ -86,18 +89,21 @@ func checkAction(action map[string]string) string {
 	if len(action) > maxActionEntries {
 		return fmt.Sprintf("an action has at most %d entries", maxActionEntries)
 	}
+
 	for name, value := range action {
 		if !actionName.MatchString(name) || len([]rune(value)) > maxActionValue {
 			return fmt.Sprintf("an action has plain names and values of at most %d characters", maxActionValue)
 		}
 	}
+
 	return ""
 }
 
 // identityClaimName limits the identity claim to a plain top-level claim name.
 var identityClaimName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
 
-// reservedClaims are set by the issuer or the token format and cannot say who the holder is: with iss, every credential of one issuer would be of one holder.
+// reservedClaims are set by the issuer or the token format and cannot say who the holder is: with iss, every credential of one issuer would be of
+// one holder.
 var reservedClaims = []string{"iss", "vct", "cnf", "status", "iat", "exp", "nbf", "jti"}
 
 type presentationRequestResponse struct {
@@ -112,28 +118,34 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotImplemented, "presentations are not configured")
 		return
 	}
+
 	var req presentationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
 	if req.Resource == "" || req.PolicyID == "" {
 		writeError(w, http.StatusBadRequest, "resource and policyId are required")
 		return
 	}
+
 	queries, problem := req.credentials()
 	if problem != "" {
 		writeError(w, http.StatusBadRequest, problem)
 		return
 	}
+
 	if req.IdentityClaim != "" && (!identityClaimName.MatchString(req.IdentityClaim) || slices.Contains(reservedClaims, req.IdentityClaim)) {
 		writeError(w, http.StatusBadRequest, "identityClaim is not a claim that can identify the holder")
 		return
 	}
+
 	if problem := checkAction(req.Action); problem != "" {
 		writeError(w, http.StatusBadRequest, problem)
 		return
 	}
+
 	if _, ok := s.Policies.Get(req.PolicyID); !ok {
 		writeError(w, http.StatusNotFound, fmt.Sprintf("unknown policy %q", req.PolicyID))
 		return
@@ -146,8 +158,10 @@ func (s *Server) handlePresentationRequest(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		s.Logger.Error("creating presentation request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "could not create the request")
+
 		return
 	}
+
 	s.Logger.Info("presentation request", "requestId", id, "resource", req.Resource, "policyId", req.PolicyID, "credentialTypes", typesOf(queries))
 	writeJSON(w, http.StatusOK, presentationRequestResponse{RequestID: id, AuthorizationRequest: link})
 }
@@ -157,6 +171,7 @@ func typesOf(queries []presentation.CredentialQuery) []string {
 	for i, q := range queries {
 		types[i] = q.CredentialType
 	}
+
 	return types
 }
 
@@ -168,7 +183,9 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotImplemented, "presentations are not configured")
 		return
 	}
+
 	id := r.PathValue("id")
+
 	r.Body = http.MaxBytesReader(w, r.Body, maxResponseBytes)
 	if err := r.ParseForm(); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": "the response is not a form"})
@@ -185,54 +202,68 @@ func (s *Server) handlePresentationResponse(w http.ResponseWriter, r *http.Reque
 		return
 	case err != nil:
 		s.Logger.Info("presentation rejected", "requestId", id, "error", err)
-		var rejected *presentation.Rejected
+
+		var rejected *presentation.RejectedError
 		errors.As(err, &rejected)
 		d := decisionFor(id, requestOf(rejected))
 		d.Reason, d.DecidedBy, d.Detail = reasonNotVerified, "attesta", err.Error()
+
 		outcome := presentation.Outcome{Decision: authz.Deny, Reason: reasonOutcomeNotVerified}
 		if errors.Is(err, status.ErrRevoked) {
 			d.Reason, outcome.Reason = reasonRevoked, reasonRevoked
 		}
+
 		if !s.decide(w, r, id, d, outcome) {
 			return
 		}
+
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_request", "error_description": "the presentation did not verify"})
+
 		return
 	}
 
 	first := presented.Credentials[0]
 	d := decisionFor(id, presented.Request)
+
 	d.SubjectID, d.Issuer, d.Claims = presented.Subject.ID, first.Issuer, policyClaims(first.Claims)
 	for _, c := range presented.Credentials[1:] {
 		d.Also = append(d.Also, adl.Credential{Type: c.Type, Issuer: c.Issuer, Claims: policyClaims(c.Claims)})
 	}
+
 	source, ok := s.Policies.Get(presented.Request.PolicyID)
 	if !ok {
 		d.Err = fmt.Errorf("unknown policy %q", presented.Request.PolicyID)
 		if s.decide(w, r, id, d, presentation.Outcome{Decision: authz.NotApplicable, Reason: "unknown policy"}) {
 			writeError(w, http.StatusNotFound, d.Err.Error())
 		}
+
 		return
 	}
+
 	decision, err := s.Authz.Evaluate(source, authz.Input{
-		Resource: presented.Request.Resource, UserRoles: presented.Request.UserRoles, Action: presented.Request.Action, Credentials: credentialsOf(presented.Credentials),
+		Resource: presented.Request.Resource, UserRoles: presented.Request.UserRoles, Action: presented.Request.Action,
+		Credentials: credentialsOf(presented.Credentials),
 	})
 	if err != nil {
 		s.Logger.Error("policy evaluation failed", "requestId", id, "policyId", presented.Request.PolicyID, "error", err)
+
 		d.Err = err
 		if s.decide(w, r, id, d, presentation.Outcome{Decision: authz.Indeterminate, Reason: "policy evaluation failed"}) {
 			writeError(w, http.StatusInternalServerError, "policy evaluation failed")
 		}
+
 		return
 	}
 
 	s.Logger.Info("authorize result", "requestId", id, "issuer", first.Issuer, "resource", presented.Request.Resource, "decision", decision.Decision,
 		"reason", decision.Reason)
 	d.Allow, d.Reason, d.DecidedBy = decision.Decision == authz.Permit, decision.Reason, "policy"
+
 	outcome := presentation.Outcome{Decision: decision.Decision, Reason: decision.Reason, Obligations: decision.Obligations, Advice: decision.Advice}
 	if decision.Decision == authz.Permit {
 		outcome.Subject = &presented.Subject
 	}
+
 	if s.decide(w, r, id, d, outcome) {
 		writeJSON(w, http.StatusOK, struct{}{})
 	}
@@ -244,6 +275,7 @@ func credentialsOf(presented []presentation.PresentedCredential) map[string]auth
 	for _, c := range presented {
 		out[c.Type] = authz.Credential{Issuer: c.Issuer, Claims: policyClaims(c.Claims)}
 	}
+
 	return out
 }
 
@@ -254,10 +286,11 @@ const (
 	reasonRevoked            = "credential has been revoked"
 )
 
-func requestOf(r *presentation.Rejected) presentation.Request {
+func requestOf(r *presentation.RejectedError) presentation.Request {
 	if r == nil {
 		return presentation.Request{}
 	}
+
 	return r.Request
 }
 
@@ -266,6 +299,7 @@ func firstType(r presentation.Request) string {
 	if len(r.Credentials) == 0 {
 		return ""
 	}
+
 	return r.Credentials[0].CredentialType
 }
 
@@ -285,18 +319,22 @@ func (s *Server) decide(w http.ResponseWriter, r *http.Request, id string, d adl
 			s.Logger.Error("decision log failed", "requestId", id, "error", err)
 			s.Presenter.Complete(id, presentation.Outcome{Decision: authz.Indeterminate, Reason: "decision could not be logged"})
 			writeError(w, http.StatusInternalServerError, "decision could not be logged")
+
 			return false
 		}
 	}
+
 	s.Presenter.Complete(id, o)
+
 	return true
 }
 
 // traceParent returns the request's W3C traceparent, or "" when it is missing or malformed.
 func traceParent(r *http.Request) string {
-	if h := r.Header.Get("traceparent"); adl.ValidTraceParent(h) {
+	if h := r.Header.Get("Traceparent"); adl.ValidTraceParent(h) {
 		return h
 	}
+
 	return ""
 }
 
@@ -322,14 +360,16 @@ type attributeResponse struct {
 }
 
 func statementsResponse(statements []authz.Statement) []statementResponse {
-	var out []statementResponse
+	out := make([]statementResponse, 0, len(statements))
 	for _, st := range statements {
 		attrs := make([]attributeResponse, len(st.Attributes))
 		for i, a := range st.Attributes {
 			attrs[i] = attributeResponse{AttributeID: a.ID, Value: a.Value}
 		}
+
 		out = append(out, statementResponse{ID: st.ID, AttributeAssignments: attrs})
 	}
+
 	return out
 }
 
@@ -346,23 +386,29 @@ func (s *Server) handlePresentationOutcome(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotImplemented, "presentations are not configured")
 		return
 	}
+
 	outcome, err := s.Presenter.Outcome(r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+
 	if outcome == nil {
 		writeJSON(w, http.StatusOK, presentationOutcomeResponse{Status: "pending"})
 		return
 	}
-	resp := presentationOutcomeResponse{Status: "done", Decision: string(outcome.Decision), Reason: outcome.Reason,
-		Obligations: statementsResponse(outcome.Obligations), Advice: statementsResponse(outcome.Advice)}
+
+	resp := presentationOutcomeResponse{
+		Status: "done", Decision: string(outcome.Decision), Reason: outcome.Reason,
+		Obligations: statementsResponse(outcome.Obligations), Advice: statementsResponse(outcome.Advice),
+	}
 	if outcome.Subject != nil {
 		resp.Subject = &subjectResponse{Issuer: outcome.Subject.Issuer, ID: outcome.Subject.ID}
 		if outcome.Subject.Claim == "email" {
 			resp.Subject.Email = outcome.Subject.ID
 		}
 	}
+
 	writeJSON(w, http.StatusOK, resp)
 }
 
@@ -378,16 +424,20 @@ const (
 // It returns an empty, non-nil slice when there are none.
 func parseUserRoles(value string) []string {
 	roles := []string{}
-	for _, role := range strings.Split(value, ",") {
+
+	for role := range strings.SplitSeq(value, ",") {
 		role = strings.TrimSpace(role)
 		if role == "" || len(role) > maxUserRoleBytes || slices.Contains(roles, role) {
 			continue
 		}
+
 		if len(roles) == maxUserRoles {
 			break
 		}
+
 		roles = append(roles, role)
 	}
+
 	return roles
 }
 
@@ -399,11 +449,14 @@ func policyClaims(claims map[string]any) map[string]string {
 			out[name] = text
 			continue
 		}
+
 		encoded, err := json.Marshal(value)
 		if err != nil {
 			continue // cannot happen for values that came out of JSON
 		}
+
 		out[name] = string(encoded)
 	}
+
 	return out
 }

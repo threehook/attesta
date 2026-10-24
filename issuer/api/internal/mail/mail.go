@@ -2,13 +2,12 @@
 package mail
 
 import (
+	"attesta/issuer/internal/config"
 	"bytes"
 	"context"
 	"fmt"
 
 	gomail "github.com/wneessen/go-mail"
-
-	"attesta/issuer/internal/config"
 )
 
 type Message struct {
@@ -48,9 +47,11 @@ func (s *SMTP) options() ([]gomail.Option, error) {
 	default:
 		return nil, fmt.Errorf("unknown TLS mode %q", s.cfg.TLS)
 	}
+
 	if s.cfg.User != "" {
 		opts = append(opts, gomail.WithSMTPAuth(gomail.SMTPAuthAutoDiscover), gomail.WithUsername(s.cfg.User), gomail.WithPassword(s.cfg.Password))
 	}
+
 	return opts, nil
 }
 
@@ -59,20 +60,25 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 	if err != nil {
 		return err
 	}
+
 	client, err := gomail.NewClient(s.cfg.Host, opts...)
 	if err != nil {
 		return err
 	}
+
 	msg := gomail.NewMsg()
 	if err := msg.From(s.cfg.From); err != nil {
 		return err
 	}
+
 	if err := msg.To(m.To); err != nil {
 		return err
 	}
+
 	msg.Subject(m.Subject)
 	msg.SetBodyString(gomail.TypeTextPlain, m.Text)
 	msg.AddAlternativeString(gomail.TypeTextHTML, m.HTML)
+
 	if m.Image != nil {
 		err := msg.EmbedReader(m.Image.Filename, bytes.NewReader(m.Image.PNG),
 			gomail.WithFileContentID("<"+m.Image.ContentID+">"), gomail.WithFileContentType(gomail.ContentType("image/png")))
@@ -80,5 +86,6 @@ func (s *SMTP) Send(ctx context.Context, m Message) error {
 			return err
 		}
 	}
+
 	return client.DialAndSendWithContext(ctx, msg)
 }

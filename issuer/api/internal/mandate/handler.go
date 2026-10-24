@@ -57,6 +57,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 	if protect == nil {
 		protect = func(h http.Handler) http.Handler { return h }
 	}
+
 	people := http.NewServeMux()
 	// who answers 401 for a request whose person cannot be told.
 	who := func(w http.ResponseWriter, r *http.Request) (string, bool) {
@@ -64,6 +65,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 		if email == "" {
 			writeError(w, http.StatusUnauthorized, "inloggen is nodig")
 		}
+
 		return email, email != ""
 	}
 	people.HandleFunc("POST /mandates", func(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +73,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 		if !ok {
 			return
 		}
+
 		var in struct {
 			Workload  string    `json:"workload"`
 			Resource  string    `json:"resource"`
@@ -80,11 +83,13 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 			writeError(w, http.StatusBadRequest, "the request is not JSON")
 			return
 		}
+
 		m, err := svc.Create(r.Context(), email, Input{Workload: in.Workload, Resource: in.Resource, ExpiresAt: in.ExpiresAt})
 		if err != nil {
 			fail(w, err, "approved")
 			return
 		}
+
 		writeJSON(w, http.StatusCreated, jsonOf(m, email))
 	})
 	people.HandleFunc("GET /mandates", func(w http.ResponseWriter, r *http.Request) {
@@ -93,11 +98,14 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 			fail(w, err, "read")
 			return
 		}
+
 		me := approver(r)
+
 		out := make([]mandateJSON, len(list))
 		for i, m := range list {
 			out[i] = jsonOf(m, me)
 		}
+
 		writeJSON(w, http.StatusOK, out)
 	})
 	people.HandleFunc("POST /mandates/{id}/approvals", func(w http.ResponseWriter, r *http.Request) {
@@ -105,11 +113,13 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 		if !ok {
 			return
 		}
+
 		m, err := svc.Approve(r.Context(), r.PathValue("id"), email)
 		if err != nil {
 			fail(w, err, "approved")
 			return
 		}
+
 		writeJSON(w, http.StatusOK, jsonOf(m, email))
 	})
 	people.HandleFunc("DELETE /mandates/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -117,10 +127,13 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler, approver fun
 			fail(w, err, "ended")
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/mandates", protect(people))
 	mux.Handle("/mandates/", protect(people))
+
 	return mux
 }

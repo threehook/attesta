@@ -28,6 +28,7 @@ func queryIDOf(n int) string {
 	if n == 0 {
 		return queryID
 	}
+
 	return fmt.Sprintf("%s_%d", queryID, n+1)
 }
 
@@ -38,10 +39,11 @@ const defaultIdentityClaim = "email"
 type Request struct {
 	Resource string
 	PolicyID string
-	// Credentials are what the holder must present, each of a type of its own. The first identifies the holder; Respond requires every other one to be
-	// of the same holder (the same identity claim).
+	// Credentials are what the holder must present, each of a type of its own. The first identifies the holder; Respond requires every other one to
+	// be of the same holder (the same identity claim).
 	Credentials []CredentialQuery
-	// IdentityClaim is the claim that identifies the holder in every credential. Every request asks for it and Respond requires it. Empty means email.
+	// IdentityClaim is the claim that identifies the holder in every credential. Every request asks for it and Respond requires it. Empty means
+	// email.
 	IdentityClaim string
 	// Action describes what the application is about to do, as texts by name. The application asserts it; Attesta cannot verify it.
 	Action map[string]string
@@ -55,6 +57,7 @@ func (r Request) identity() string {
 	if r.IdentityClaim == "" {
 		return defaultIdentityClaim
 	}
+
 	return r.IdentityClaim
 }
 
@@ -74,6 +77,7 @@ func (q CredentialQuery) asked(identity string) []string {
 			asked = append(asked, name)
 		}
 	}
+
 	return asked
 }
 
@@ -137,30 +141,43 @@ func New(o Options) *Verifier {
 	if now == nil {
 		now = time.Now
 	}
+
 	ttl := o.TTL
 	if ttl == 0 {
 		ttl = 5 * time.Minute
 	}
-	return &Verifier{publicURL: strings.TrimSuffix(o.PublicURL, "/"), keys: o.Keys, status: o.Status, ttl: ttl, now: now, sessions: newSessions(ttl, now)}
+
+	return &Verifier{
+		publicURL: strings.TrimSuffix(o.PublicURL, "/"),
+		keys:      o.Keys,
+		status:    o.Status,
+		ttl:       ttl,
+		now:       now,
+		sessions:  newSessions(ttl, now),
+	}
 }
 
 // NewRequest registers a request and returns its id and the `openid4vp://` link to give the wallet.
-func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err error) {
+func (v *Verifier) NewRequest(r Request) (string, string, error) {
 	if len(r.Credentials) == 0 {
 		return "", "", errors.New("a request asks for at least one credential")
 	}
-	id, err = randomID()
+
+	id, err := randomID()
 	if err != nil {
 		return "", "", err
 	}
+
 	nonce, err := randomID()
 	if err != nil {
 		return "", "", err
 	}
+
 	state, err := randomID()
 	if err != nil {
 		return "", "", err
 	}
+
 	responseURI := v.responseURI(id)
 
 	queries := make([]any, 0, len(r.Credentials))
@@ -169,14 +186,17 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 		for _, name := range q.asked(r.identity()) {
 			claims = append(claims, map[string]any{"path": []string{name}})
 		}
+
 		queries = append(queries, map[string]any{
 			"id": queryIDOf(i), "format": "dc+sd-jwt", "meta": map[string]any{"vct_values": []string{q.CredentialType}}, "claims": claims,
 		})
 	}
+
 	dcql, err := json.Marshal(map[string]any{"credentials": queries})
 	if err != nil {
 		return "", "", err
 	}
+
 	clientMetadata, err := json.Marshal(map[string]any{"vp_formats_supported": map[string]any{
 		"dc+sd-jwt": map[string]any{"sd-jwt_alg_values": []string{"EdDSA", "ES256"}, "kb-jwt_alg_values": []string{"EdDSA", "ES256"}},
 	}})
@@ -195,20 +215,21 @@ func (v *Verifier) NewRequest(r Request) (id, authorizationRequest string, err e
 	q.Set("client_metadata", string(clientMetadata))
 
 	v.sessions.put(id, session{request: r, nonce: nonce, state: state, responseURI: responseURI})
+
 	return id, "openid4vp://?" + q.Encode(), nil
 }
 
 // ErrInvalidPresentation wraps every reason a wallet's answer is not acceptable.
 var ErrInvalidPresentation = errors.New("invalid presentation")
 
-// Rejected is the error Respond returns for an answer that did not verify; it carries the request the answer belonged to.
-type Rejected struct {
+// RejectedError is the error Respond returns for an answer that did not verify; it carries the request the answer belonged to.
+type RejectedError struct {
 	Request Request
 	Err     error
 }
 
-func (r *Rejected) Error() string { return r.Err.Error() }
-func (r *Rejected) Unwrap() error { return r.Err }
+func (r *RejectedError) Error() string { return r.Err.Error() }
+func (r *RejectedError) Unwrap() error { return r.Err }
 
 // Respond verifies the wallet's direct_post answer (`vp_token` and `state` form fields) to request id. The request is consumed whether or not the
 // answer verifies.
@@ -217,30 +238,38 @@ func (v *Verifier) Respond(ctx context.Context, id string, form url.Values) (*Pr
 	if err != nil {
 		return nil, err
 	}
+
 	invalid := func(format string, args ...any) error {
-		return &Rejected{Request: sess.request, Err: fmt.Errorf("%w: %s", ErrInvalidPresentation, fmt.Sprintf(format, args...))}
+		return &RejectedError{Request: sess.request, Err: fmt.Errorf("%w: %s", ErrInvalidPresentation, fmt.Sprintf(format, args...))}
 	}
 
 	if form.Get("state") != sess.state {
 		return nil, invalid("state does not match the request")
 	}
+
 	var vpToken map[string][]string
 	if err := json.Unmarshal([]byte(form.Get("vp_token")), &vpToken); err != nil {
 		return nil, invalid("vp_token is not a JSON object of presentations")
 	}
+
 	queries := sess.request.Credentials
 	if len(vpToken) != len(queries) {
 		return nil, invalid("expected one presentation for each of %d credential queries", len(queries))
 	}
 
 	identity := sess.request.identity()
-	var presented []PresentedCredential
-	var ids []string
+
+	var (
+		presented []PresentedCredential
+		ids       []string
+	)
+
 	for i, q := range queries {
 		id := queryIDOf(i)
 		if len(vpToken[id]) != 1 {
 			return nil, invalid("expected exactly one presentation for %q", id)
 		}
+
 		verified, err := sdjwt.Verify(vpToken[id][0], sdjwt.Options{
 			Keys:             v.keys,
 			Audience:         clientID(sess.responseURI),
@@ -251,36 +280,49 @@ func (v *Verifier) Respond(ctx context.Context, id string, form url.Values) (*Pr
 		if err != nil {
 			return nil, invalid("%v", err)
 		}
+
 		if verified.Type != q.CredentialType {
 			return nil, invalid("credential type %q is not the requested %q", verified.Type, q.CredentialType)
 		}
+
 		if v.status == nil {
 			return nil, invalid("no way to check whether the %s credential was revoked", q.CredentialType)
 		}
+
 		if err := v.status.Check(ctx, verified.Issuer, verified.Status); err != nil {
-			return nil, &Rejected{Request: sess.request, Err: fmt.Errorf("%w: the %s credential: %w", ErrInvalidPresentation, q.CredentialType, err)}
+			return nil, &RejectedError{
+				Request: sess.request,
+				Err:     fmt.Errorf("%w: the %s credential: %w", ErrInvalidPresentation, q.CredentialType, err),
+			}
 		}
+
 		claims := map[string]any{}
+
 		for _, name := range q.asked(identity) {
 			value, ok := verified.Claims[name]
 			if !ok {
 				return nil, invalid("the %q claim of the %s credential was not disclosed", name, q.CredentialType)
 			}
+
 			claims[name] = value
 		}
+
 		holder, _ := claims[identity].(string)
 		if holder == "" {
 			return nil, invalid("the %q claim that identifies the holder is not a text", identity)
 		}
+
 		ids = append(ids, holder)
 		presented = append(presented, PresentedCredential{Issuer: verified.Issuer, Type: verified.Type, Claims: claims})
 	}
+
 	for _, other := range ids[1:] {
 		// An email address has no case; any other identifier, such as a SPIFFE ID, does.
 		if other != ids[0] && (identity != defaultIdentityClaim || !strings.EqualFold(other, ids[0])) {
 			return nil, invalid("the credentials are not of the same holder")
 		}
 	}
+
 	return &Presented{Request: sess.request, Subject: Subject{Issuer: presented[0].Issuer, ID: ids[0], Claim: identity}, Credentials: presented}, nil
 }
 
@@ -302,5 +344,6 @@ func randomID() (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate id: %w", err)
 	}
+
 	return hex.EncodeToString(b), nil
 }

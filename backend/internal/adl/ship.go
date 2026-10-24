@@ -36,6 +36,7 @@ func (c *capture) OnEmit(_ context.Context, r *sdklog.Record) error {
 	c.mu.Lock()
 	c.records = append(c.records, r.Clone())
 	c.mu.Unlock()
+
 	return nil
 }
 func (c *capture) Enabled(context.Context, sdklog.EnabledParameters) bool { return true }
@@ -45,8 +46,10 @@ func (c *capture) ForceFlush(context.Context) error                       { retu
 func (c *capture) take() []sdklog.Record {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
 	out := c.records
 	c.records = nil
+
 	return out
 }
 
@@ -67,6 +70,7 @@ type shipper struct {
 
 func newShipper(path string, exporter sdklog.Exporter, resource map[string]string, log *slog.Logger) *shipper {
 	c := &capture{}
+
 	return &shipper{
 		path: path, offsetPath: path + ".offset", keep: keepShipped, exporter: exporter, capture: c, otel: newOTelStateWith(c, resource), log: log,
 		wake: make(chan struct{}, 1),
@@ -76,6 +80,7 @@ func newShipper(path string, exporter sdklog.Exporter, resource map[string]strin
 // start runs the shipping loop until stop.
 func (s *shipper) start() {
 	ctx, cancel := context.WithCancel(context.Background())
+
 	s.cancel, s.done = cancel, make(chan struct{})
 	go s.run(ctx)
 }
@@ -94,25 +99,33 @@ func (s *shipper) stop(ctx context.Context) error {
 		s.cancel()
 		<-s.done
 	}
+
 	_, drainErr := s.drain(ctx)
+
 	return errors.Join(drainErr, s.exporter.Shutdown(ctx))
 }
 
 func (s *shipper) run(ctx context.Context) {
 	defer close(s.done)
+
 	var delay time.Duration
+
 	for {
 		if _, err := s.drain(ctx); err != nil && ctx.Err() == nil {
 			delay = min(max(2*delay, time.Second), shipMaxDelay)
 			s.log.Error("adl: sending records to the collector failed, will retry", "error", err, "retry_in", delay)
+
 			select {
 			case <-ctx.Done():
 				return
 			case <-time.After(delay):
 			}
+
 			continue
 		}
+
 		delay = 0
+
 		select {
 		case <-ctx.Done():
 			return
@@ -125,17 +138,22 @@ func (s *shipper) run(ctx context.Context) {
 // drain sends batches until everything is sent or a send fails, then deletes the segments that were sent long enough ago.
 func (s *shipper) drain(ctx context.Context) (int, error) {
 	total := 0
+
 	for {
 		n, more, err := s.shipOnce(ctx)
+
 		total += n
 		if err != nil {
 			return total, err
 		}
+
 		if !more {
 			break
 		}
 	}
+
 	s.removeOld()
+
 	return total, nil
 }
 
@@ -147,51 +165,66 @@ type position struct {
 
 // shipOnce sends up to one batch of complete lines after the saved position and moves the position past them once the exporter accepted them;
 // at the end of a segment that has a successor it moves to the successor. A line that is not a record is skipped, or it would block everything
-// behind it. more says whether the position moved.
-func (s *shipper) shipOnce(ctx context.Context) (sent int, more bool, err error) {
+// behind it. It returns how many records it sent and whether the position moved.
+func (s *shipper) shipOnce(ctx context.Context) (int, bool, error) {
 	seqs, err := listSegments(s.path)
 	if err != nil {
 		return 0, false, fmt.Errorf("list the record files: %w", err)
 	}
+
 	if len(seqs) == 0 {
 		return 0, false, nil
 	}
+
 	pos, ok := s.readPosition()
 	if ok && !slices.Contains(seqs, pos.seq) {
 		s.log.Error("adl: the saved position is in a record file that is gone, sending from the oldest", "segment", pos.seq)
+
 		ok = false
 	}
+
 	if !ok {
 		pos = position{seq: seqs[0]}
 	}
+
 	f, err := os.Open(segmentPath(s.path, pos.seq))
 	if err != nil {
 		return 0, false, fmt.Errorf("open the record file: %w", err)
 	}
 	defer f.Close()
+
 	if info, err := f.Stat(); err == nil && pos.off > info.Size() {
 		s.log.Error("adl: the record file is shorter than the saved offset, sending it from the start", "offset", pos.off, "size", info.Size())
 		pos.off = 0
 	}
+
 	if _, err := f.Seek(pos.off, io.SeekStart); err != nil {
 		return 0, false, fmt.Errorf("seek in the record file: %w", err)
 	}
+
 	r := bufio.NewReader(f)
 	end := pos.off
+
 	var batch []Record
 	for len(batch) < shipBatch {
 		line, err := r.ReadBytes('\n')
 		if err != nil {
 			break // end of the file, or a line still being written
 		}
+
 		end += int64(len(line))
+
 		var rec Record
 		if err := json.Unmarshal(line, &rec); err != nil {
-			s.log.Error("adl: skipping a line in the record file that is not a record", "segment", pos.seq, "offset", end-int64(len(line)), "error", err)
+			s.log.Error("adl: skipping a line in the record file that is not a record",
+				"segment", pos.seq, "offset", end-int64(len(line)), "error", err)
+
 			continue
 		}
+
 		batch = append(batch, rec)
 	}
+
 	if end == pos.off {
 		if pos.seq == seqs[len(seqs)-1] {
 			return 0, false, nil
@@ -201,21 +234,27 @@ func (s *shipper) shipOnce(ctx context.Context) (sent int, more bool, err error)
 		if err := os.Chtimes(segmentPath(s.path, pos.seq), now, now); err != nil {
 			return 0, false, fmt.Errorf("mark the record file as sent: %w", err)
 		}
+
 		next := seqs[slices.Index(seqs, pos.seq)+1]
+
 		return 0, true, s.writePosition(position{seq: next})
 	}
+
 	if len(batch) > 0 {
 		ctx, cancel := context.WithTimeout(ctx, shipTimeout)
 		defer cancel()
+
 		for _, rec := range batch {
 			if err := s.otel.emit(ctx, rec); err != nil {
 				return 0, false, err
 			}
 		}
+
 		if err := s.exporter.Export(ctx, s.capture.take()); err != nil {
 			return 0, false, fmt.Errorf("export the records: %w", err)
 		}
 	}
+
 	return len(batch), true, s.writePosition(position{seq: pos.seq, off: end})
 }
 
@@ -225,14 +264,17 @@ func (s *shipper) removeOld() {
 	if !ok {
 		return
 	}
+
 	seqs, err := listSegments(s.path)
 	if err != nil {
 		return
 	}
+
 	for _, seq := range seqs {
 		if seq >= pos.seq {
 			break
 		}
+
 		path := segmentPath(s.path, seq)
 		if info, err := os.Stat(path); err == nil && time.Since(info.ModTime()) > s.keep {
 			if err := os.Remove(path); err != nil {
@@ -248,41 +290,51 @@ func (s *shipper) readPosition() (position, bool) {
 	if err != nil {
 		return position{}, false
 	}
+
 	fields := strings.Fields(string(data))
+
 	nums := make([]int64, len(fields))
 	for i, f := range fields {
 		if nums[i], err = strconv.ParseInt(f, 10, 64); err != nil || nums[i] < 0 {
 			return position{}, false
 		}
 	}
+
 	switch len(nums) {
 	case 1:
 		return position{seq: 1, off: nums[0]}, true
 	case 2:
 		return position{seq: int(nums[0]), off: nums[1]}, true
 	}
+
 	return position{}, false
 }
 
 // writePosition replaces the position file whole, so a crash leaves the old or the new position, never half of one.
 func (s *shipper) writePosition(pos position) error {
 	tmp := s.offsetPath + ".tmp"
+
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("write the position: %w", err)
 	}
+
 	_, err = fmt.Fprintf(f, "%d %d", pos.seq, pos.off)
 	if err == nil {
 		err = f.Sync()
 	}
+
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
+
 	if err == nil {
 		err = os.Rename(tmp, s.offsetPath)
 	}
+
 	if err != nil {
 		return fmt.Errorf("write the position: %w", err)
 	}
+
 	return nil
 }

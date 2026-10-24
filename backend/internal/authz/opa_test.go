@@ -38,10 +38,12 @@ func TestOPAEvaluate(t *testing.T) {
 // Hot deployment gives the evaluator another source for the same policy; it must be used at once.
 func TestOPAEvaluateAfterHotReload(t *testing.T) {
 	vm := NewOPA()
+
 	in := diplomaFrom("trusted-university")
 	if got, err := vm.Evaluate(diplomaPolicyV1, in); err != nil || got.Decision != Permit {
 		t.Fatalf("v1: got %+v, %v, want Permit", got, err)
 	}
+
 	if got, err := vm.Evaluate(diplomaPolicyV2, in); err != nil || got.Decision != Deny || got.Reason != "v2 denies everything" {
 		t.Fatalf("v2: got %+v, %v, want Deny", got, err)
 	}
@@ -52,6 +54,7 @@ func TestOPAValidate(t *testing.T) {
 	if err := vm.Validate(diplomaPolicyV1); err != nil {
 		t.Fatalf("Validate well-formed policy: %v", err)
 	}
+
 	for name, source := range map[string]string{
 		"malformed":        "package policy\n\ndecision := {",
 		"no decision rule": "package policy\n\nallow := true",
@@ -61,9 +64,11 @@ func TestOPAValidate(t *testing.T) {
 		"no decision":      "package policy\n\ndecision := {\"reason\": \"x\"}",
 		"reason not text":  "package policy\n\ndecision := {\"decision\": \"Permit\", \"reason\": 1}",
 		"no statement id":  "package policy\n\ndecision := {\"decision\": \"Permit\", \"obligations\": [{\"attributes\": {}}]}",
-		"attribute number": "package policy\n\ndecision := {\"decision\": \"Permit\", \"obligations\": [{\"id\": \"a\", \"attributes\": {\"k\": 1}}]}",
+		"attribute number": "package policy\n\ndecision := {\"decision\": \"Permit\", \"obligations\": [{\"id\": \"a\", \"attributes\": {\"k\": " +
+			"1}}]}",
 		"obligations text": "package policy\n\ndecision := {\"decision\": \"Permit\", \"obligations\": \"a\"}",
-		"http.send":        "package policy\n\ndecision := {\"decision\": \"Permit\", \"reason\": http.send({\"method\": \"get\", \"url\": \"http://localhost\"}).raw_body}",
+		"http.send": "package policy\n\ndecision := {\"decision\": \"Permit\", \"reason\": http.send({\"method\": \"get\", \"url\": " +
+			"\"http://localhost\"}).raw_body}",
 		"time.now_ns":      "package policy\n\ndecision := {\"decision\": \"Permit\", \"reason\": sprintf(\"%d\", [time.now_ns()])}",
 		"unknown function": "package policy\n\ndecision := {\"decision\": \"Permit\", \"reason\": nothing(1)}",
 	} {
@@ -79,7 +84,9 @@ func TestOPAUndefinedRuleIsIndeterminate(t *testing.T) {
 
 decision := {"decision": "Permit", "reason": "ok"} if input.resource == "a"
 `
+
 	vm := NewOPA()
+
 	got, err := vm.Evaluate(source, Input{Resource: "b"})
 	if err != nil || got.Decision != Indeterminate || got.Reason != reasonNoDecision {
 		t.Fatalf("got %+v, %v, want Indeterminate %q", got, err, reasonNoDecision)
@@ -88,7 +95,8 @@ decision := {"decision": "Permit", "reason": "ok"} if input.resource == "a"
 
 const claimsPolicy = `package policy
 
-decision := {"decision": "Permit", "reason": sprintf("%s %s %s %v", [input.credentials.Employee.claims.department, input.userRoles[0], input.credentials.Diploma.claims.level, input.credentials.Diploma.issuer])}
+decision := {"decision": "Permit", "reason": sprintf("%s %s %s %v", [input.credentials.Employee.claims.department, input.userRoles[0],
+	input.credentials.Diploma.claims.level, input.credentials.Diploma.issuer])}
 `
 
 func TestOPAInput(t *testing.T) {
@@ -109,10 +117,12 @@ func TestOPAInputHasTheAction(t *testing.T) {
 
 decision := {"decision": "Permit", "reason": concat(" ", [input.action.application, input.action.version])}
 `
+
 	got, err := NewOPA().Evaluate(policy, Input{Action: map[string]string{"application": "shop", "version": "v1.4.2"}})
 	if err != nil || got.Reason != "shop v1.4.2" {
 		t.Fatalf("got %+v, %v", got, err)
 	}
+
 	empty := `package policy
 
 decision := {"decision": "Permit", "reason": sprintf("%d", [count(input.action)])}
@@ -136,6 +146,7 @@ func TestOPAObligationsAndAdvice(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	want := Result{
 		Decision: Permit, Reason: "ok",
 		Obligations: []Statement{{ID: "log", Attributes: []Attribute{{ID: "a", Value: "1"}, {ID: "b", Value: "2"}}}},
@@ -165,10 +176,13 @@ func TestOPAEvaluationIsCutOff(t *testing.T) {
 
 decision := {"decision": "Permit", "reason": sprintf("%d", [count([x | some x in numbers.range(1, 2000000000)])])}
 `
+
 	start := time.Now()
+
 	if _, err := NewOPA().Evaluate(source, Input{}); err == nil {
 		t.Fatal("want an error, got nil")
 	}
+
 	if time.Since(start) > 5*evalTimeout {
 		t.Fatalf("took %v", time.Since(start))
 	}
@@ -176,25 +190,26 @@ decision := {"decision": "Permit", "reason": sprintf("%d", [count([x | some x in
 
 func TestOPAEvaluateConcurrently(t *testing.T) {
 	vm := NewOPA()
+
 	var wg sync.WaitGroup
-	for i := 0; i < 32; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 50; j++ {
+	for range 32 {
+		wg.Go(func() {
+			for range 50 {
 				if got, err := vm.Evaluate(diplomaPolicyV1, diplomaFrom("trusted-university")); err != nil || got.Decision != Permit {
 					t.Errorf("got %+v, %v", got, err)
 					return
 				}
 			}
-		}()
+		})
 	}
+
 	wg.Wait()
 }
 
 func BenchmarkOPAEvaluate(b *testing.B) {
 	vm := NewOPA()
 	in := diplomaFrom("trusted-university")
+
 	b.ReportAllocs()
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
@@ -207,6 +222,7 @@ func BenchmarkOPAEvaluate(b *testing.B) {
 
 func TestOPADiagnose(t *testing.T) {
 	vm := NewOPA()
+
 	tests := []struct {
 		name, source, message string
 		row, col              int
@@ -227,11 +243,14 @@ func TestOPADiagnose(t *testing.T) {
 				if len(got) != 0 {
 					t.Fatalf("got %+v, want none", got)
 				}
+
 				return
 			}
+
 			if len(got) == 0 {
 				t.Fatal("got no diagnostics")
 			}
+
 			d := got[0]
 			if !strings.Contains(d.Message, tt.message) || d.Row != tt.row || (tt.col != 0 && d.Col != tt.col) || d.EndCol <= d.Col {
 				t.Fatalf("got %+v, want %q at %d:%d", d, tt.message, tt.row, tt.col)

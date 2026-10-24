@@ -18,6 +18,7 @@ func (rejectsFoo) Validate(source string) error {
 	if strings.Contains(source, "foo") {
 		return errors.New("contains foo")
 	}
+
 	return nil
 }
 
@@ -27,6 +28,7 @@ func TestStorePutGet(t *testing.T) {
 	if err := s.Put("ok", "package policy"); err != nil {
 		t.Fatalf("Put valid source: %v", err)
 	}
+
 	got, ok := s.Get("ok")
 	if !ok || got != "package policy" {
 		t.Fatalf("Get(%q) = %q, %v; want %q, true", "ok", got, ok, "package policy")
@@ -35,6 +37,7 @@ func TestStorePutGet(t *testing.T) {
 	if err := s.Put("bad", "foo"); err == nil {
 		t.Fatal("Put invalid source: want error, got nil")
 	}
+
 	if _, ok := s.Get("bad"); ok {
 		t.Fatal("Get after failed Put: want not found")
 	}
@@ -54,6 +57,7 @@ func TestStorePutReplaces(t *testing.T) {
 
 func writePolicy(t *testing.T, dir, name, source string) {
 	t.Helper()
+
 	if err := os.WriteFile(filepath.Join(dir, name), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -61,6 +65,7 @@ func writePolicy(t *testing.T, dir, name, source string) {
 
 func mustGet(t *testing.T, s *Store, id, want string) {
 	t.Helper()
+
 	if got, ok := s.Get(id); !ok || got != want {
 		t.Errorf("Get(%q) = %q, %v; want %q, true", id, got, ok, want)
 	}
@@ -68,6 +73,7 @@ func mustGet(t *testing.T, s *Store, id, want string) {
 
 func mustBeAbsent(t *testing.T, s *Store, id string) {
 	t.Helper()
+
 	if got, ok := s.Get(id); ok {
 		t.Errorf("Get(%q) = %q, true; want it absent", id, got)
 	}
@@ -78,21 +84,26 @@ func TestLoadDir(t *testing.T) {
 	writePolicy(t, dir, "a.rego", "package a")
 	writePolicy(t, dir, "b.rego", "package b")
 	writePolicy(t, dir, "notes.txt", "not a policy")
+
 	s := NewStore(rejectsFoo{})
 
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatalf("LoadDir: %v", err)
 	}
+
 	mustGet(t, s, "a", "package a")
 	mustGet(t, s, "b", "package b")
+
 	if got := len(s.IDs()); got != 2 {
 		t.Errorf("IDs = %v, want the two .rego files", s.IDs())
 	}
 
 	writePolicy(t, dir, "c.rego", "foo")
+
 	if err := NewStore(rejectsFoo{}).LoadDir(dir); err == nil || !strings.Contains(err.Error(), "c") {
 		t.Errorf("LoadDir with an invalid file: error = %v, want one naming the policy", err)
 	}
+
 	if err := s.LoadDir(filepath.Join(dir, "missing")); err == nil {
 		t.Error("LoadDir of a missing directory: want an error")
 	}
@@ -101,6 +112,7 @@ func TestLoadDir(t *testing.T) {
 func TestSyncFollowsTheDirectory(t *testing.T) {
 	dir := t.TempDir()
 	writePolicy(t, dir, "a.rego", "a v1")
+
 	s := NewStore(rejectsFoo{})
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatal(err)
@@ -112,20 +124,24 @@ func TestSyncFollowsTheDirectory(t *testing.T) {
 
 	writePolicy(t, dir, "a.rego", "a v2")
 	writePolicy(t, dir, "b.rego", "b v1")
+
 	r := s.Sync(dir)
 	if !reflect.DeepEqual(r.Installed, []string{"a", "b"}) || len(r.Removed) != 0 || len(r.Failed) != 0 {
 		t.Errorf("Sync after a change and an addition = %+v", r)
 	}
+
 	mustGet(t, s, "a", "a v2")
 	mustGet(t, s, "b", "b v1")
 
 	if err := os.Remove(filepath.Join(dir, "b.rego")); err != nil {
 		t.Fatal(err)
 	}
+
 	r = s.Sync(dir)
 	if !reflect.DeepEqual(r.Removed, []string{"b"}) || len(r.Installed) != 0 {
 		t.Errorf("Sync after a removal = %+v", r)
 	}
+
 	mustBeAbsent(t, s, "b")
 	mustGet(t, s, "a", "a v2")
 }
@@ -133,44 +149,55 @@ func TestSyncFollowsTheDirectory(t *testing.T) {
 func TestSyncRejectsAnInvalidFileOnceAndKeepsTheOldVersion(t *testing.T) {
 	dir := t.TempDir()
 	writePolicy(t, dir, "a.rego", "a v1")
+
 	s := NewStore(rejectsFoo{})
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatal(err)
 	}
 
 	writePolicy(t, dir, "a.rego", "a foo")
+
 	r := s.Sync(dir)
 	if len(r.Failed) != 1 || r.Failed["a"] == nil || len(r.Installed) != 0 {
 		t.Fatalf("Sync with an invalid change = %+v, want a failure for a", r)
 	}
+
 	mustGet(t, s, "a", "a v1")
+
 	if r := s.Sync(dir); !r.Empty() {
 		t.Errorf("Sync of the same rejected file again = %+v, want empty: it is reported once", r)
 	}
 
 	writePolicy(t, dir, "a.rego", "a v3")
+
 	if r := s.Sync(dir); !reflect.DeepEqual(r.Installed, []string{"a"}) {
 		t.Errorf("Sync after the fix = %+v", r)
 	}
+
 	mustGet(t, s, "a", "a v3")
 
 	writePolicy(t, dir, "new.rego", "new foo")
+
 	if r := s.Sync(dir); len(r.Failed) != 1 {
 		t.Errorf("Sync with an invalid new file = %+v", r)
 	}
+
 	mustBeAbsent(t, s, "new")
 }
 
 func TestSyncLeavesPoliciesDeployedWithPutAlone(t *testing.T) {
 	dir := t.TempDir()
 	writePolicy(t, dir, "a.rego", "a from file")
+
 	s := NewStore(rejectsFoo{})
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := s.Put("hot", "hot v1"); err != nil {
 		t.Fatal(err)
 	}
+
 	if err := s.Put("a", "a hot deployed"); err != nil {
 		t.Fatal(err)
 	}
@@ -178,15 +205,18 @@ func TestSyncLeavesPoliciesDeployedWithPutAlone(t *testing.T) {
 	if r := s.Sync(dir); !r.Empty() {
 		t.Errorf("Sync with an unchanged directory = %+v, want empty", r)
 	}
+
 	mustGet(t, s, "hot", "hot v1")
 	mustGet(t, s, "a", "a hot deployed")
 
 	if err := os.Remove(filepath.Join(dir, "a.rego")); err != nil {
 		t.Fatal(err)
 	}
+
 	if r := s.Sync(dir); len(r.Removed) != 0 {
 		t.Errorf("Sync after the file of a hot-deployed policy was removed = %+v, want it kept", r)
 	}
+
 	mustGet(t, s, "a", "a hot deployed")
 	mustGet(t, s, "hot", "hot v1")
 
@@ -198,6 +228,7 @@ func TestSyncLeavesPoliciesDeployedWithPutAlone(t *testing.T) {
 func TestSyncKeepsEverythingWhenTheDirectoryCannotBeRead(t *testing.T) {
 	dir := t.TempDir()
 	writePolicy(t, dir, "a.rego", "a v1")
+
 	s := NewStore(rejectsFoo{})
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatal(err)
@@ -207,12 +238,14 @@ func TestSyncKeepsEverythingWhenTheDirectoryCannotBeRead(t *testing.T) {
 	if r.Err == nil || r.Empty() {
 		t.Errorf("Sync of a missing directory = %+v, want an error", r)
 	}
+
 	mustGet(t, s, "a", "a v1")
 }
 
 func TestWatchAppliesChangesUntilCancelled(t *testing.T) {
 	dir := t.TempDir()
 	writePolicy(t, dir, "a.rego", "a v1")
+
 	s := NewStore(rejectsFoo{})
 	if err := s.LoadDir(dir); err != nil {
 		t.Fatal(err)
@@ -221,12 +254,14 @@ func TestWatchAppliesChangesUntilCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	reported := make(chan SyncResult, 4)
 	done := make(chan struct{})
+
 	go func() {
 		s.Watch(ctx, dir, 10*time.Millisecond, func(r SyncResult) { reported <- r })
 		close(done)
 	}()
 
 	writePolicy(t, dir, "a.rego", "a v2")
+
 	select {
 	case r := <-reported:
 		if !reflect.DeepEqual(r.Installed, []string{"a"}) {
@@ -235,9 +270,11 @@ func TestWatchAppliesChangesUntilCancelled(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Watch did not pick up the change")
 	}
+
 	mustGet(t, s, "a", "a v2")
 
 	cancel()
+
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):

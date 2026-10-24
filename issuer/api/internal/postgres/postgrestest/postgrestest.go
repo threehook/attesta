@@ -2,6 +2,7 @@
 package postgrestest
 
 import (
+	"attesta/issuer/internal/postgres"
 	"context"
 	"fmt"
 	"sync"
@@ -10,14 +11,12 @@ import (
 
 	"github.com/testcontainers/testcontainers-go"
 	tcpostgres "github.com/testcontainers/testcontainers-go/modules/postgres"
-
-	"attesta/issuer/internal/postgres"
 )
 
 var (
 	once      sync.Once
 	options   postgres.Options
-	startErr  error
+	errStart  error
 	databases atomic.Int64
 )
 
@@ -27,27 +26,33 @@ func Server(t *testing.T) postgres.Options {
 	testcontainers.SkipIfProviderIsNotHealthy(t)
 	once.Do(func() {
 		ctx := context.Background()
+
 		c, err := tcpostgres.Run(ctx, "postgres:17-alpine",
 			tcpostgres.WithUsername("postgres"), tcpostgres.WithPassword("test"), tcpostgres.BasicWaitStrategies())
 		if err != nil {
-			startErr = err
+			errStart = err
 			return
 		}
+
 		host, err := c.Host(ctx)
 		if err != nil {
-			startErr = err
+			errStart = err
 			return
 		}
+
 		port, err := c.MappedPort(ctx, "5432/tcp")
 		if err != nil {
-			startErr = err
+			errStart = err
 			return
 		}
+
 		options = postgres.Options{Host: host + ":" + port.Port(), User: "postgres", Password: "test"}
 	})
-	if startErr != nil {
-		t.Fatalf("start postgres: %v", startErr)
+
+	if errStart != nil {
+		t.Fatalf("start postgres: %v", errStart)
 	}
+
 	return options
 }
 

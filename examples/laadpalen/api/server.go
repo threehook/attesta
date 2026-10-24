@@ -27,7 +27,8 @@ const (
 	credentialType = "Employee"
 	// diplomaType is the second credential a laadpaal request asks for: the diploma Laadpalen Management.
 	diplomaType = "Diploma Laadpalen Management"
-	// submissionTTL is how long a submission is remembered; Attesta forgets a request after five minutes, so a longer one only keeps finished results.
+	// submissionTTL is how long a submission is remembered; Attesta forgets a request after five minutes, so a longer one only keeps finished
+	// results.
 	submissionTTL = 30 * time.Minute
 	// sessionTTL is how long an employee who signed in with the wallet stays signed in. It runs from the sign-in and is not extended by use.
 	sessionTTL    = 30 * time.Minute
@@ -112,6 +113,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("GET /api/request-laadpaal/{id}", s.handleStatus)
 	mux.HandleFunc("GET /api/session", s.handleSession)
 	mux.HandleFunc("DELETE /api/session", s.handleSignOut)
+
 	return mux
 }
 
@@ -136,12 +138,17 @@ func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
 
 // handleSignIn starts a sign-in: Attesta gets a link for the employee's wallet, which shows the employee credential's identity and nothing else.
 func (s *server) handleSignIn(w http.ResponseWriter, r *http.Request) {
-	started, err := s.attesta.Start(r.Context(), enforcer.Authorization{Resource: signInResource, PolicyID: signInPolicyID, Credentials: []enforcer.Credential{{Type: credentialType}}})
+	started, err := s.attesta.Start(
+		r.Context(),
+		enforcer.Authorization{Resource: signInResource, PolicyID: signInPolicyID, Credentials: []enforcer.Credential{{Type: credentialType}}},
+	)
 	if err != nil {
 		s.logger.Error("starting the sign-in failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon het aanmelden niet starten"})
+
 		return
 	}
+
 	s.mu.Lock()
 	s.forget()
 	s.submissions[started.RequestID] = &submission{
@@ -159,18 +166,22 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	sess, signedIn := s.currentSession(r)
 	s.mu.Unlock()
+
 	if !signedIn {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "u bent niet aangemeld"})
 		return
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<16)
+
 	var in submitRequest
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ongeldige aanvraag"})
 		return
 	}
+
 	postcode := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(in.Postcode), " ", ""))
+
 	houseNumber, err := strconv.Atoi(strings.TrimSpace(in.HouseNumber))
 	if !postcodePattern.MatchString(postcode) || err != nil || houseNumber < 1 {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "ongeldige postcode of huisnummer"})
@@ -181,6 +192,7 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.logger.Error("starting the authorization failed", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon de autorisatie niet starten"})
+
 		return
 	}
 
@@ -192,7 +204,8 @@ func (s *server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 
-	s.logger.Info("submission started", "requestId", started.RequestID, "traceId", started.TraceID, "email", sess.subject.Email, "postcode", postcode, "houseNumber", houseNumber)
+	s.logger.Info("submission started",
+		"requestId", started.RequestID, "traceId", started.TraceID, "email", sess.subject.Email, "postcode", postcode, "houseNumber", houseNumber)
 	writeJSON(w, http.StatusOK, submitResponse{RequestID: started.RequestID, Link: started.Link})
 }
 
@@ -207,21 +220,26 @@ func (s *server) status(w http.ResponseWriter, r *http.Request, signIn bool) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sub, ok := s.submissions[id]
 	if !ok || sub.signIn != signIn {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekende aanvraag"})
 		return
 	}
+
 	if !sub.answered {
 		if err := s.settle(r.Context(), id, sub); err != nil {
 			s.logger.Error("reading the decision failed", "requestId", id, "error", err)
 			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "kon de beslissing niet ophalen"})
+
 			return
 		}
+
 		if signIn && sub.answered && sub.view.Authorized && sub.view.Subject != nil {
 			s.startSession(w, r, *sub.view.Subject)
 		}
 	}
+
 	writeJSON(w, http.StatusOK, sub.view)
 }
 
@@ -231,11 +249,13 @@ func (s *server) currentSession(r *http.Request) (session, bool) {
 	if err != nil {
 		return session{}, false
 	}
+
 	sess, ok := s.sessions[c.Value]
 	if !ok || !s.now().Before(sess.expires) {
 		delete(s.sessions, c.Value)
 		return session{}, false
 	}
+
 	return sess, true
 }
 
@@ -244,7 +264,7 @@ func (s *server) startSession(w http.ResponseWriter, r *http.Request, who subjec
 	token := newToken()
 	expires := s.now().Add(sessionTTL)
 	s.sessions[token] = session{subject: who, expires: expires}
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // Secure follows the request
 		Name: sessionCookie, Value: token, Path: "/", Expires: expires, HttpOnly: true, SameSite: http.SameSiteLaxMode,
 		Secure: r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 	})
@@ -261,11 +281,13 @@ type sessionView struct {
 func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sess, ok := s.currentSession(r)
 	if !ok {
 		writeJSON(w, http.StatusOK, sessionView{})
 		return
 	}
+
 	writeJSON(w, http.StatusOK, sessionView{Active: true, Subject: &sess.subject, ExpiresAt: sess.expires})
 }
 
@@ -276,13 +298,16 @@ func (s *server) handleSignOut(w http.ResponseWriter, r *http.Request) {
 		delete(s.sessions, c.Value)
 		s.mu.Unlock()
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1, //nolint:gosec // clears the cookie
+		HttpOnly: true, SameSite: http.SameSiteLaxMode})
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func newToken() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
+
 	return hex.EncodeToString(b)
 }
 
@@ -293,11 +318,14 @@ func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 		sub.answered = true
 		sub.view.Status = "expired"
 		sub.view.Reason = "De aanvraag is verlopen; begin opnieuw"
+
 		return nil
 	}
+
 	if err != nil {
 		return err
 	}
+
 	if got.Status != "done" {
 		return nil
 	}
@@ -306,22 +334,29 @@ func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 	sub.view.Status = "done"
 	sub.view.Authorized = got.Decision == enforcer.DecisionPermit
 	sub.view.Reason = got.Reason
+
 	sub.view.Debug.Outcome = raw
 	if got.Decision != enforcer.DecisionPermit || got.Subject == nil {
 		sub.view.Authorized = false
+
 		s.logger.Info("submission not authorized", "requestId", id, "reason", got.Reason)
+
 		return nil
 	}
 
 	if sub.signIn {
 		sub.view.Subject = got.Subject
 		s.logger.Info("sign-in decided", "requestId", id, "email", got.Subject.Email, "issuer", got.Subject.Issuer)
+
 		return nil
 	}
+
 	if *got.Subject != sub.by {
 		sub.view.Authorized = false
 		sub.view.Reason = "Het bewijs hoort niet bij de aangemelde medewerker"
-		s.logger.Info("submission not authorized", "requestId", id, "reason", sub.view.Reason, "email", got.Subject.Email, "signedInAs", sub.by.Email)
+		s.logger.Info("submission not authorized",
+			"requestId", id, "reason", sub.view.Reason, "email", got.Subject.Email, "signedInAs", sub.by.Email)
+
 		return nil
 	}
 
@@ -331,6 +366,7 @@ func (s *server) settle(ctx context.Context, id string, sub *submission) error {
 	s.records = append(s.records, recorded{Subject: *got.Subject, Postcode: sub.postcode, HouseNumber: sub.houseNumber, Result: decided})
 	s.logger.Info("submission decided", "requestId", id, "email", got.Subject.Email, "issuer", got.Subject.Issuer,
 		"postcode", sub.postcode, "houseNumber", sub.houseNumber, "granted", decided.Granted, "reason", decided.Reason)
+
 	return nil
 }
 
@@ -341,6 +377,7 @@ func (s *server) forget() {
 			delete(s.submissions, id)
 		}
 	}
+
 	for token, sess := range s.sessions {
 		if !s.now().Before(sess.expires) {
 			delete(s.sessions, token)

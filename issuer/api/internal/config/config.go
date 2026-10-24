@@ -2,6 +2,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -91,6 +92,7 @@ func Load(getenv func(string) string) (Config, error) {
 		if v := getenv("ATTESTA_ISSUER_" + name); v != "" {
 			return v
 		}
+
 		return fallback
 	}
 	number := func(name string, fallback int) (int, error) {
@@ -98,10 +100,12 @@ func Load(getenv func(string) string) (Config, error) {
 		if v == "" {
 			return fallback, nil
 		}
+
 		n, err := strconv.Atoi(v)
 		if err != nil {
 			return 0, fmt.Errorf("ATTESTA_ISSUER_%s must be a number, got %q", name, v)
 		}
+
 		return n, nil
 	}
 
@@ -109,55 +113,72 @@ func Load(getenv func(string) string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+
 	if port < 1 || port > 65535 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_PORT must be a port number, got %d", port)
 	}
+
 	smtpPort, err := number("SMTP_PORT", 1025)
 	if err != nil {
 		return Config{}, err
 	}
+
 	qrSeconds, err := number("QR_LIFETIME_SECONDS", 24*3600)
 	if err != nil {
 		return Config{}, err
 	}
+
 	if qrSeconds < 1 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_QR_LIFETIME_SECONDS must be positive, got %d", qrSeconds)
 	}
+
 	tls := str("SMTP_TLS", "")
 	if tls != "" && tls != "none" && tls != "starttls" && tls != "tls" {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_SMTP_TLS must be none, starttls or tls, got %q", tls)
 	}
+
 	cooldown, err := time.ParseDuration(str("RENEWAL_COOLDOWN", "10m"))
 	if err != nil || cooldown <= 0 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_RENEWAL_COOLDOWN must be a duration such as 10m or 500ms, got %q", str("RENEWAL_COOLDOWN", ""))
 	}
+
 	workloadLifetime, err := time.ParseDuration(str("WORKLOAD_LIFETIME", "1h"))
 	if err != nil || workloadLifetime <= 0 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_WORKLOAD_LIFETIME must be a duration such as 1h or 30m, got %q", str("WORKLOAD_LIFETIME", ""))
 	}
+
 	requestLifetime, err := time.ParseDuration(str("APPROVAL_REQUEST_LIFETIME", "24h"))
 	if err != nil || requestLifetime <= 0 {
-		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME must be a duration such as 24h or 30m, got %q", str("APPROVAL_REQUEST_LIFETIME", ""))
+		return Config{}, fmt.Errorf(
+			"ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME must be a duration such as 24h or 30m, got %q",
+			str("APPROVAL_REQUEST_LIFETIME", ""),
+		)
 	}
+
 	approvalLifetime, err := time.ParseDuration(str("APPROVAL_LIFETIME", "15m"))
 	if err != nil || approvalLifetime <= 0 {
 		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVAL_LIFETIME must be a duration such as 15m or 1h, got %q", str("APPROVAL_LIFETIME", ""))
 	}
+
 	approvalsRequired, err := number("APPROVALS_REQUIRED", 2)
 	if err != nil || approvalsRequired < 1 {
-		return Config{}, fmt.Errorf("ATTESTA_ISSUER_APPROVALS_REQUIRED must be a number of people, 1 or more")
+		return Config{}, errors.New("ATTESTA_ISSUER_APPROVALS_REQUIRED must be a number of people, 1 or more")
 	}
+
 	dbHost := str("DB_HOST", "")
 	if dbHost == "" {
-		return Config{}, fmt.Errorf("ATTESTA_ISSUER_DB_HOST is required")
+		return Config{}, errors.New("ATTESTA_ISSUER_DB_HOST is required")
 	}
 
 	auth := Auth{
 		Issuer: str("OIDC_ISSUER", ""), DiscoveryURL: str("OIDC_DISCOVERY_URL", ""), ClientID: str("OIDC_CLIENT_ID", "issuer-gui"),
-		Role: str("OIDC_ROLE", "issuer-staff"), ApproverRole: str("OIDC_APPROVER_ROLE", "release-manager"), Disabled: str("AUTH_DISABLED", "") == "true",
+		Role: str(
+			"OIDC_ROLE",
+			"issuer-staff",
+		), ApproverRole: str("OIDC_APPROVER_ROLE", "release-manager"), Disabled: str("AUTH_DISABLED", "") == "true",
 	}
 	if auth.Issuer == "" && !auth.Disabled {
-		return Config{}, fmt.Errorf("ATTESTA_ISSUER_OIDC_ISSUER is required (ATTESTA_ISSUER_AUTH_DISABLED=true leaves the forms open)")
+		return Config{}, errors.New("ATTESTA_ISSUER_OIDC_ISSUER is required (ATTESTA_ISSUER_AUTH_DISABLED=true leaves the forms open)")
 	}
 
 	return Config{
@@ -166,7 +187,12 @@ func Load(getenv func(string) string) (Config, error) {
 		Seed:       str("SEED", DevSeed),
 		Name:       str("NAME", "Gemeente Vlierdam"),
 		QRLifetime: time.Duration(qrSeconds) * time.Second, RenewalCooldown: cooldown,
-		Database: Database{Host: dbHost, User: str("DB_USER", "issuer"), Password: str("DB_PASSWORD", ""), Name: str("DB_NAME", "issuer_entitlements")},
+		Database: Database{
+			Host:     dbHost,
+			User:     str("DB_USER", "issuer"),
+			Password: str("DB_PASSWORD", ""),
+			Name:     str("DB_NAME", "issuer_entitlements"),
+		},
 		SMTP: SMTP{
 			Host: str("SMTP_HOST", "localhost"), Port: smtpPort, User: str("SMTP_USER", ""), Password: str("SMTP_PASSWORD", ""),
 			TLS: tls, From: str("MAIL_FROM", "credentials@attesta.local"),
@@ -186,10 +212,12 @@ func Load(getenv func(string) string) (Config, error) {
 // addresses reads a comma-separated list without blanks.
 func addresses(text string) []string {
 	var out []string
-	for _, a := range strings.Split(text, ",") {
+
+	for a := range strings.SplitSeq(text, ",") {
 		if a = strings.TrimSpace(a); a != "" {
 			out = append(out, a)
 		}
 	}
+
 	return out
 }

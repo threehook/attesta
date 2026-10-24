@@ -1,11 +1,10 @@
 package presentation
 
 import (
+	"attesta/backend/internal/authz"
 	"errors"
 	"sync"
 	"time"
-
-	"attesta/backend/internal/authz"
 )
 
 // Outcome is the decision on a presentation, kept so the application that started the request can fetch it.
@@ -43,12 +42,14 @@ func newSessions(ttl time.Duration, now func() time.Time) *sessions {
 func (s *sessions) put(id string, sess session) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	now := s.now()
 	for k, v := range s.m {
 		if now.After(v.deadline) {
 			delete(s.m, k)
 		}
 	}
+
 	sess.deadline = now.Add(s.ttl)
 	s.m[id] = &sess
 }
@@ -57,20 +58,25 @@ func (s *sessions) put(id string, sess session) {
 func (s *sessions) claim(id string) (session, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sess, ok := s.m[id]
 	if !ok || s.now().After(sess.deadline) {
 		return session{}, ErrUnknownRequest
 	}
+
 	if sess.responded {
 		return session{}, ErrAlreadyAnswered
 	}
+
 	sess.responded = true
+
 	return *sess, nil
 }
 
 func (s *sessions) complete(id string, o Outcome) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	if sess, ok := s.m[id]; ok {
 		sess.outcome = &o
 	}
@@ -79,10 +85,12 @@ func (s *sessions) complete(id string, o Outcome) {
 func (s *sessions) outcome(id string) (*Outcome, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	sess, ok := s.m[id]
 	if !ok || s.now().After(sess.deadline) {
 		return nil, ErrUnknownRequest
 	}
+
 	return sess.outcome, nil
 }
 

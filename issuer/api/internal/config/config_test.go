@@ -1,6 +1,7 @@
 package config
 
 import (
+	"maps"
 	"testing"
 	"time"
 )
@@ -14,12 +15,17 @@ func TestDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Port != 4001 || c.PublicURL != "http://localhost:4001" || c.Seed != DevSeed || c.QRLifetime != 24*time.Hour || c.RenewalCooldown != 10*time.Minute || c.Database.Name != "issuer_entitlements" {
+
+	if c.Port != 4001 || c.PublicURL != "http://localhost:4001" || c.Seed != DevSeed || c.QRLifetime != 24*time.Hour ||
+		c.RenewalCooldown != 10*time.Minute ||
+		c.Database.Name != "issuer_entitlements" {
 		t.Fatalf("config %+v", c)
 	}
+
 	if c.Auth.Issuer != "https://login.example/realms/r" || c.Auth.ClientID != "issuer-gui" || c.Auth.Role != "issuer-staff" || c.Auth.Disabled {
 		t.Fatalf("auth %+v", c.Auth)
 	}
+
 	if c.Database.User != "issuer" || c.SMTP.Host != "localhost" || c.SMTP.Port != 1025 || c.SMTP.From != "credentials@attesta.local" {
 		t.Fatalf("config %+v", c)
 	}
@@ -27,17 +33,22 @@ func TestDefaults(t *testing.T) {
 
 func TestReadsTheSettings(t *testing.T) {
 	c, err := Load(env(map[string]string{
-		"ATTESTA_ISSUER_DB_HOST": "db:5433", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PORT": "8000", "ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example",
-		"ATTESTA_ISSUER_SEED": "s", "ATTESTA_ISSUER_QR_LIFETIME_SECONDS": "60", "ATTESTA_ISSUER_SMTP_HOST": "smtp.gmail.com",
+		"ATTESTA_ISSUER_DB_HOST": "db:5433", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PORT": "8000",
+		"ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example",
+		"ATTESTA_ISSUER_SEED":       "s", "ATTESTA_ISSUER_QR_LIFETIME_SECONDS": "60", "ATTESTA_ISSUER_SMTP_HOST": "smtp.gmail.com",
 		"ATTESTA_ISSUER_SMTP_PORT": "587", "ATTESTA_ISSUER_SMTP_TLS": "starttls", "ATTESTA_ISSUER_MAIL_FROM": "me@example.com",
 		"ATTESTA_ISSUER_RENEWAL_COOLDOWN": "500ms", "ATTESTA_ISSUER_DB_NAME": "other",
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Port != 8000 || c.PublicURL != "https://issuer.example" || c.Seed != "s" || c.QRLifetime != time.Minute || c.Database.Host != "db:5433" || c.RenewalCooldown != 500*time.Millisecond || c.Database.Name != "other" {
+
+	if c.Port != 8000 || c.PublicURL != "https://issuer.example" || c.Seed != "s" || c.QRLifetime != time.Minute || c.Database.Host != "db:5433" ||
+		c.RenewalCooldown != 500*time.Millisecond ||
+		c.Database.Name != "other" {
 		t.Fatalf("config %+v", c)
 	}
+
 	if c.SMTP.Host != "smtp.gmail.com" || c.SMTP.Port != 587 || c.SMTP.TLS != "starttls" || c.SMTP.From != "me@example.com" {
 		t.Fatalf("smtp %+v", c.SMTP)
 	}
@@ -45,6 +56,7 @@ func TestReadsTheSettings(t *testing.T) {
 
 func TestRejectsBadSettings(t *testing.T) {
 	good := map[string]string{"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_AUTH_DISABLED": "true"}
+
 	cases := map[string]map[string]string{
 		"no database":       {},
 		"no sign-in":        {"ATTESTA_ISSUER_AUTH_DISABLED": ""},
@@ -60,13 +72,11 @@ func TestRejectsBadSettings(t *testing.T) {
 	for name, extra := range cases {
 		vars := map[string]string{}
 		if name != "no database" {
-			for k, v := range good {
-				vars[k] = v
-			}
+			maps.Copy(vars, good)
 		}
-		for k, v := range extra {
-			vars[k] = v
-		}
+
+		maps.Copy(vars, extra)
+
 		if _, err := Load(env(vars)); err == nil {
 			t.Errorf("%s: no error", name)
 		}
@@ -74,56 +84,77 @@ func TestRejectsBadSettings(t *testing.T) {
 }
 
 func TestWorkloadsAreOffUntilATrustDomainIsSet(t *testing.T) {
-	base := map[string]string{"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example"}
+	base := map[string]string{
+		"ATTESTA_ISSUER_DB_HOST":       "db",
+		"ATTESTA_ISSUER_AUTH_DISABLED": "true",
+		"ATTESTA_ISSUER_PUBLIC_URL":    "https://issuer.example",
+	}
+
 	c, err := Load(env(base))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if c.SPIFFE.TrustDomain != "" || c.SPIFFE.Audience != "https://issuer.example" || c.SPIFFE.CredentialLifetime != time.Hour {
 		t.Fatalf("defaults %+v", c.SPIFFE)
 	}
+
 	base["ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN"] = "corp.test"
 	base["ATTESTA_ISSUER_SPIFFE_SOCKET"] = "unix:///run/spire/agent.sock"
 	base["ATTESTA_ISSUER_SPIFFE_AUDIENCE"] = "issuer"
 	base["ATTESTA_ISSUER_WORKLOAD_LIFETIME"] = "30m"
+
 	c, err = Load(env(base))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := c.SPIFFE; s.TrustDomain != "corp.test" || s.Socket != "unix:///run/spire/agent.sock" || s.Audience != "issuer" || s.CredentialLifetime != 30*time.Minute {
+
+	if s := c.SPIFFE; s.TrustDomain != "corp.test" || s.Socket != "unix:///run/spire/agent.sock" || s.Audience != "issuer" ||
+		s.CredentialLifetime != 30*time.Minute {
 		t.Fatalf("settings %+v", c.SPIFFE)
 	}
 }
 
 func TestApprovalsHaveDefaultsAndCanBeSet(t *testing.T) {
 	base := map[string]string{
-		"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_DB_PASSWORD": "x", "ATTESTA_ISSUER_AUTH_DISABLED": "true", "ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example",
+		"ATTESTA_ISSUER_DB_HOST": "db", "ATTESTA_ISSUER_DB_PASSWORD": "x", "ATTESTA_ISSUER_AUTH_DISABLED": "true",
+		"ATTESTA_ISSUER_PUBLIC_URL": "https://issuer.example",
 	}
+
 	c, err := Load(env(base))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	a := c.SPIFFE.Approvals
 	if a.Required != 2 || a.RequestLifetime != 24*time.Hour || a.CredentialLifetime != 15*time.Minute || len(a.Notify) != 0 {
 		t.Fatalf("defaults %+v", a)
 	}
+
 	base["ATTESTA_ISSUER_APPROVALS_REQUIRED"] = "3"
 	base["ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME"] = "12h"
 	base["ATTESTA_ISSUER_APPROVAL_LIFETIME"] = "5m"
 	base["ATTESTA_ISSUER_APPROVAL_NOTIFY"] = " a@corp.test, ,b@corp.test"
+
 	c, err = Load(env(base))
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	a = c.SPIFFE.Approvals
-	if a.Required != 3 || a.RequestLifetime != 12*time.Hour || a.CredentialLifetime != 5*time.Minute || len(a.Notify) != 2 || a.Notify[0] != "a@corp.test" || a.Notify[1] != "b@corp.test" {
+	if a.Required != 3 || a.RequestLifetime != 12*time.Hour || a.CredentialLifetime != 5*time.Minute || len(a.Notify) != 2 ||
+		a.Notify[0] != "a@corp.test" ||
+		a.Notify[1] != "b@corp.test" {
 		t.Fatalf("settings %+v", a)
 	}
-	for name, value := range map[string]string{"ATTESTA_ISSUER_APPROVALS_REQUIRED": "0", "ATTESTA_ISSUER_APPROVAL_LIFETIME": "soon", "ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME": "-1h"} {
+
+	for name, value := range map[string]string{
+		"ATTESTA_ISSUER_APPROVALS_REQUIRED": "0", "ATTESTA_ISSUER_APPROVAL_LIFETIME": "soon",
+		"ATTESTA_ISSUER_APPROVAL_REQUEST_LIFETIME": "-1h",
+	} {
 		bad := map[string]string{}
-		for k, v := range base {
-			bad[k] = v
-		}
+		maps.Copy(bad, base)
+
 		bad[name] = value
 		if _, err := Load(env(bad)); err == nil {
 			t.Errorf("%s=%s was accepted", name, value)

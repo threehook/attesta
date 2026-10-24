@@ -42,7 +42,9 @@ const columns = "id, name, " + inUse + ", created_at, updated_at"
 
 func scan(row pgx.Row) (Role, error) {
 	var r Role
+
 	err := row.Scan(&r.ID, &r.Name, &r.InUse, &r.CreatedAt, &r.UpdatedAt)
+
 	return r, err
 }
 
@@ -51,16 +53,19 @@ func clean(name string) (string, error) {
 	if name == "" || strings.Contains(name, ",") {
 		return "", ErrInvalid
 	}
+
 	return name, nil
 }
 
 // Names lists the names of the roles, in alphabetical order.
 func (s *Store) Names(ctx context.Context) ([]string, error) {
 	roles, err := s.List(ctx)
+
 	names := make([]string, len(roles))
 	for i, r := range roles {
 		names[i] = r.Name
 	}
+
 	return names, err
 }
 
@@ -71,14 +76,18 @@ func (s *Store) List(ctx context.Context) ([]Role, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
 	roles := []Role{}
+
 	for rows.Next() {
 		r, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		roles = append(roles, r)
 	}
+
 	return roles, rows.Err()
 }
 
@@ -92,10 +101,12 @@ func (s *Store) Create(ctx context.Context, name string) (Role, error) {
 	if err != nil {
 		return Role{}, err
 	}
+
 	r, err := scan(s.pool.QueryRow(ctx, "INSERT INTO roles (name) VALUES ($1) RETURNING "+columns, name))
 	if isDuplicate(err) {
 		return Role{}, ErrExists
 	}
+
 	return r, err
 }
 
@@ -104,17 +115,22 @@ func (s *Store) Rename(ctx context.Context, id, name string) (Role, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return Role{}, ErrNotFound
 	}
+
 	name, err := clean(name)
 	if err != nil {
 		return Role{}, err
 	}
-	r, err := scan(s.pool.QueryRow(ctx, "UPDATE roles SET name = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING "+columns, id, name))
+
+	r, err := scan(
+		s.pool.QueryRow(ctx, "UPDATE roles SET name = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL RETURNING "+columns, id, name),
+	)
 	switch {
 	case isDuplicate(err):
 		return Role{}, ErrExists
 	case errors.Is(err, pgx.ErrNoRows):
 		return Role{}, ErrNotFound
 	}
+
 	return r, err
 }
 
@@ -123,19 +139,23 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if _, err := uuid.Parse(id); err != nil {
 		return ErrNotFound
 	}
+
 	tag, err := s.pool.Exec(ctx, "UPDATE roles SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL AND NOT "+inUse, id)
 	if err != nil {
 		return err
 	}
+
 	if tag.RowsAffected() == 0 {
 		return s.whyNot(ctx, id)
 	}
+
 	return nil
 }
 
 // whyNot says why a change to the role with this id matched nothing.
 func (s *Store) whyNot(ctx context.Context, id string) error {
 	var held bool
+
 	err := s.pool.QueryRow(ctx, "SELECT "+inUse+" FROM roles WHERE id = $1 AND deleted_at IS NULL", id).Scan(&held)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -145,5 +165,6 @@ func (s *Store) whyNot(ctx context.Context, id string) error {
 	case held:
 		return ErrInUse
 	}
+
 	return ErrNotFound
 }

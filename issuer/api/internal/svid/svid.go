@@ -24,9 +24,11 @@ func New(bundles jwtbundle.Source, trustDomain, audience string) (*Verifier, err
 	if err != nil {
 		return nil, fmt.Errorf("trust domain: %w", err)
 	}
+
 	if audience == "" {
 		return nil, errors.New("an audience is required")
 	}
+
 	return &Verifier{bundles: bundles, trustDomain: td, audience: audience}, nil
 }
 
@@ -37,10 +39,12 @@ var ErrInvalid = errors.New("invalid JWT-SVID")
 func (v *Verifier) Verify(_ context.Context, token string) (string, error) {
 	svid, err := jwtsvid.ParseAndValidate(token, v.bundles, []string{v.audience})
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrInvalid, err)
+		return "", fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
+
 	if !svid.ID.MemberOf(v.trustDomain) {
 		return "", fmt.Errorf("%w: %s is not in the trust domain %s", ErrInvalid, svid.ID, v.trustDomain)
 	}
+
 	return svid.ID.String(), nil
 }

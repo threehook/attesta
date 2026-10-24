@@ -39,15 +39,18 @@ type Input struct {
 
 func clean(in Input) (Input, error) {
 	in.SpiffeID, in.Owner, in.Environment = strings.TrimSpace(in.SpiffeID), strings.TrimSpace(in.Owner), strings.TrimSpace(in.Environment)
+
 	id, err := spiffeid.FromString(in.SpiffeID)
 	if err != nil || id.Path() == "" {
 		return Input{}, ErrInvalid
 	}
+
 	for _, text := range []string{in.Owner, in.Environment} {
 		if text == "" || len([]rune(text)) > maxText {
 			return Input{}, ErrInvalid
 		}
 	}
+
 	return in, nil
 }
 
@@ -60,7 +63,9 @@ const columns = "id, spiffe_id, owner, environment, created_at"
 
 func scan(row pgx.Row) (Workload, error) {
 	var w Workload
+
 	err := row.Scan(&w.ID, &w.SpiffeID, &w.Owner, &w.Environment, &w.CreatedAt)
+
 	return w, err
 }
 
@@ -75,10 +80,20 @@ func (s *Store) Enroll(ctx context.Context, in Input) (Workload, error) {
 	if err != nil {
 		return Workload{}, err
 	}
-	w, err := scan(s.pool.QueryRow(ctx, "INSERT INTO workloads (spiffe_id, owner, environment) VALUES ($1, $2, $3) RETURNING "+columns, in.SpiffeID, in.Owner, in.Environment))
+
+	w, err := scan(
+		s.pool.QueryRow(
+			ctx,
+			"INSERT INTO workloads (spiffe_id, owner, environment) VALUES ($1, $2, $3) RETURNING "+columns,
+			in.SpiffeID,
+			in.Owner,
+			in.Environment,
+		),
+	)
 	if isDuplicate(err) {
 		return Workload{}, ErrExists
 	}
+
 	return w, err
 }
 
@@ -89,14 +104,18 @@ func (s *Store) List(ctx context.Context) ([]Workload, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var out []Workload
+
 	for rows.Next() {
 		w, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, w)
 	}
+
 	return out, rows.Err()
 }
 
@@ -106,6 +125,7 @@ func (s *Store) FindEnrolled(ctx context.Context, spiffeID string) (Workload, er
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Workload{}, ErrNotFound
 	}
+
 	return w, err
 }
 
@@ -115,5 +135,6 @@ func (s *Store) Revoke(ctx context.Context, id string) (Workload, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Workload{}, ErrNotFound
 	}
+
 	return w, err
 }

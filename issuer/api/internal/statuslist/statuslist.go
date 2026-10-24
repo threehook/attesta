@@ -2,6 +2,7 @@
 package statuslist
 
 import (
+	"attesta/issuer/internal/identity"
 	"context"
 	"log/slog"
 	"net/http"
@@ -9,8 +10,6 @@ import (
 	"time"
 
 	sdjwt "github.com/threehook/sdjwt-go"
-
-	"attesta/issuer/internal/identity"
 )
 
 // Path is where the list is published below the issuer's public URL.
@@ -42,6 +41,7 @@ func New(id identity.Identity, store Revocations, publicURL string, now func() t
 	if now == nil {
 		now = time.Now
 	}
+
 	return &Server{identity: id, store: store, uri: publicURL + Path, now: now}
 }
 
@@ -52,6 +52,7 @@ func (s *Server) URI() string { return s.uri }
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+Path, s.serve)
+
 	return mux
 }
 
@@ -60,23 +61,30 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("could not read the revocations", "error", err)
 		http.Error(w, "the status list is not available", http.StatusInternalServerError)
+
 		return
 	}
+
 	list := sdjwt.NewStatusList(int(max(size, minSize)))
 	for _, i := range revoked {
 		if err := list.SetRevoked(int(i), true); err != nil {
 			slog.Error("could not mark a revocation", "error", err)
 			http.Error(w, "the status list is not available", http.StatusInternalServerError)
+
 			return
 		}
 	}
+
 	now := s.now()
+
 	token, err := sdjwt.SignStatusList(s.identity.Key, s.uri, list, TTL, now.Add(Lifetime), s.now)
 	if err != nil {
 		slog.Error("could not sign the status list", "error", err)
 		http.Error(w, "the status list is not available", http.StatusInternalServerError)
+
 		return
 	}
+
 	w.Header().Set("Content-Type", "application/statuslist+jwt")
 	w.Header().Set("Cache-Control", "max-age="+strconv.Itoa(int(TTL/time.Second)))
 	w.Write([]byte(token))

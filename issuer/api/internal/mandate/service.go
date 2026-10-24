@@ -1,12 +1,11 @@
 package mandate
 
 import (
-	"context"
-	"errors"
-
 	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/workload"
+	"context"
+	"errors"
 )
 
 // ErrNotEnrolled is a mandate for a workload nobody enrolled.
@@ -48,6 +47,7 @@ func (s *Service) Create(ctx context.Context, approver string, in Input) (Mandat
 	} else if err != nil {
 		return Mandate{}, err
 	}
+
 	return s.mandates.Create(ctx, in, approver)
 }
 
@@ -63,7 +63,9 @@ func (s *Service) End(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+
 	_, err = s.entitlements.RevokeType(ctx, entitlement.WorkloadOf(m.Workload), credential.Mandate)
+
 	return err
 }
 
@@ -73,9 +75,11 @@ func (s *Service) EndFor(ctx context.Context, spiffeID string) error {
 	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
+
 	if err != nil {
 		return err
 	}
+
 	return s.End(ctx, m.ID)
 }
 
@@ -85,8 +89,10 @@ func (s *Service) GrantFor(ctx context.Context, spiffeID string) (workload.Grant
 	if errors.Is(err, ErrNotFound) {
 		return workload.Grant{}, false, nil
 	}
+
 	if err != nil {
 		return workload.Grant{}, false, err
 	}
+
 	return workload.Grant{Resource: m.Resource, Approvers: m.Approvers, EndsAt: m.ExpiresAt}, true, nil
 }

@@ -15,6 +15,7 @@ func TestTheSameSeedGivesTheSameIssuerAndAnotherSeedAnotherOne(t *testing.T) {
 	if a.DID != b.DID || !a.Key.Equal(b.Key) {
 		t.Fatal("the same seed must give the same identity")
 	}
+
 	if a.DID == c.DID {
 		t.Fatal("another seed must give another identity")
 	}

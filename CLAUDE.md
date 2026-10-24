@@ -62,6 +62,21 @@ The issuer's staff user is `staff`, its password is in the Secret `attesta-issue
 - The SPIRE controller manager handles only a `ClusterSPIFFEID` with `className: spire-mgmt-spire`; without it no pod gets an identity.
 - The kubelet cannot probe over HTTP a container that listens on 127.0.0.1 only; the wallet in the cicd-agent pod uses an `exec` probe.
 
+## Go code style
+
+`.golangci.yaml` in the root covers all three Go modules; run `make lint` before a change is done. These rules cause most findings, so write the code this way at once:
+
+- Lines are at most 149 characters (code, tests and comments); a test table row that is longer goes over several lines. A tab counts as four. Wrap at a logical place: for `slog` the message first, then key/value pairs on a line together; never one argument per line, and cut a long text by sentence.
+- Blank lines (`wsl_v5`): cuddle (no blank line) a statement only under one statement whose result it uses, as in `x := f()` directly followed by `if x != nil {`.
+  Otherwise leave a blank line: after a `}`, above an `if`, `for` or `range` that follows two or more statements, and around a `var`. A `var` is never cuddled;
+  group consecutive ones as `var (...)`. A `return`, `break` or `continue` may follow directly only in a block of up to two lines. Run `golangci-lint fmt` (gofumpt, goimports).
+- Check every error, tests included; `defer tx.Rollback`, response writes and `Encode` are the accepted exceptions. In a test, handle an error with `t.Fatal`.
+- Give an HTTP request a context (`NewRequestWithContext`, `t.Context()` in a test), and a `http.Server` a `ReadHeaderTimeout`.
+- No named return values (a deferred `recover` that sets them is the one `//nolint` with a reason); preallocate a slice whose length is known; no unchecked type assertions.
+- A type that is an error ends in `Error`, a package-level error variable starts with `err`.
+- No limit on function length or complexity: split code only when a part is separate in function or reusable. Dutch texts are fine (`misspell` is off).
+- A `//nolint` always names the linter and gives the reason.
+
 ## Words
 
 - **Entitlement:** the issuer's lasting right of one person (by email) to one credential. It is issued once. Not an "offer": an offer is a one-time message, which is what this replaced.

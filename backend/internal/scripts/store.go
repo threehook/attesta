@@ -41,9 +41,9 @@ func NewStore(validator Validator) *Store {
 	return &Store{validator: validator, policies: make(map[string]string), fromDir: make(map[string]bool), seen: make(map[string]string)}
 }
 
-// LoadDir loads every *.rego file in dir, using the filename (without extension) as the policy ID. It fails fast on the first invalid file — this runs
-// at startup, where surfacing a bad policy immediately is preferable to starting with a partially loaded policy set. Sync keeps the store up to date
-// afterwards.
+// LoadDir loads every *.rego file in dir, using the filename (without extension) as the policy ID. It fails fast on the first invalid file — this
+// runs at startup, where surfacing a bad policy immediately is preferable to starting with a partially loaded policy set. Sync keeps the store up to
+// date afterwards.
 func (s *Store) LoadDir(dir string) error {
 	s.syncMu.Lock()
 	defer s.syncMu.Unlock()
@@ -52,15 +52,19 @@ func (s *Store) LoadDir(dir string) error {
 	if err != nil {
 		return err
 	}
+
 	for _, f := range files {
 		if f.err != nil {
 			return f.err
 		}
+
 		if err := s.validator.Validate(f.source); err != nil {
 			return fmt.Errorf("load policy %q: invalid policy: %w", f.id, err)
 		}
+
 		s.installFromDir(f)
 	}
+
 	return nil
 }
 
@@ -86,6 +90,7 @@ func (s *Store) Sync(dir string) SyncResult {
 	defer s.syncMu.Unlock()
 
 	var result SyncResult
+
 	files, err := readDir(dir)
 	if err != nil {
 		result.Err = err
@@ -98,40 +103,52 @@ func (s *Store) Sync(dir string) SyncResult {
 		if f.err != nil {
 			continue // unreadable right now, perhaps mid-update; the next Sync tries again
 		}
+
 		s.mu.RLock()
 		unchanged := s.seen[f.id] == f.hash
 		s.mu.RUnlock()
+
 		if unchanged {
 			continue
 		}
+
 		if err := s.validator.Validate(f.source); err != nil {
 			s.mu.Lock()
 			s.seen[f.id] = f.hash
 			s.mu.Unlock()
+
 			if result.Failed == nil {
 				result.Failed = make(map[string]error)
 			}
+
 			result.Failed[f.id] = fmt.Errorf("invalid policy: %w", err)
+
 			continue
 		}
+
 		s.installFromDir(f)
 		result.Installed = append(result.Installed, f.id)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	for id := range s.seen {
 		if present[id] {
 			continue
 		}
+
 		delete(s.seen, id)
+
 		if s.fromDir[id] {
 			delete(s.policies, id)
 			delete(s.fromDir, id)
 			result.Removed = append(result.Removed, id)
 		}
 	}
+
 	sort.Strings(result.Removed)
+
 	return result
 }
 
@@ -139,6 +156,7 @@ func (s *Store) Sync(dir string) SyncResult {
 func (s *Store) Watch(ctx context.Context, dir string, interval time.Duration, report func(SyncResult)) {
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -162,13 +180,17 @@ func readDir(dir string) ([]policyFile, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read policies dir %q: %w", dir, err)
 	}
+
 	var files []policyFile
+
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rego") {
 			continue
 		}
+
 		path := filepath.Join(dir, entry.Name())
 		f := policyFile{id: strings.TrimSuffix(entry.Name(), ".rego")}
+
 		source, err := os.ReadFile(path)
 		if err != nil {
 			f.err = fmt.Errorf("read policy %q: %w", path, err)
@@ -176,14 +198,17 @@ func readDir(dir string) ([]policyFile, error) {
 			sum := sha256.Sum256(source)
 			f.source, f.hash = string(source), hex.EncodeToString(sum[:])
 		}
+
 		files = append(files, f)
 	}
+
 	return files, nil
 }
 
 func (s *Store) installFromDir(f policyFile) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.policies[f.id] = f.source
 	s.fromDir[f.id] = true
 	s.seen[f.id] = f.hash
@@ -195,26 +220,33 @@ func (s *Store) Put(id, source string) error {
 	if err := s.validator.Validate(source); err != nil {
 		return fmt.Errorf("invalid policy: %w", err)
 	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	s.policies[id] = source
 	delete(s.fromDir, id)
+
 	return nil
 }
 
 func (s *Store) Get(id string) (string, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	source, ok := s.policies[id]
+
 	return source, ok
 }
 
 func (s *Store) IDs() []string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
+
 	ids := make([]string, 0, len(s.policies))
 	for id := range s.policies {
 		ids = append(ids, id)
 	}
+
 	return ids
 }

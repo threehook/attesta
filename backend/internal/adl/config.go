@@ -1,6 +1,7 @@
 package adl
 
 import (
+	"maps"
 	"os"
 	"strings"
 )
@@ -22,11 +23,13 @@ type Config struct {
 	OTLPEndpoint string
 	// OTLPInsecure sends without TLS, for a collector inside the cluster.
 	OTLPInsecure bool
-	// Resource identifies the producer of the records. service.name defaults to attesta-adl, so the decisions are a stream of their own, and instance_id to the host name.
+	// Resource identifies the producer of the records. service.name defaults to attesta-adl, so the decisions are a stream of their own, and
+	// instance_id to the host name.
 	Resource map[string]string
 }
 
-// ConfigFromEnv reads ATTESTA_ADL_OUTPUT, ATTESTA_ADL_FILE, ATTESTA_ADL_OTLP_ENDPOINT, ATTESTA_ADL_OTLP_INSECURE (true) and ATTESTA_ADL_RESOURCE (key=value,key=value).
+// ConfigFromEnv reads ATTESTA_ADL_OUTPUT, ATTESTA_ADL_FILE, ATTESTA_ADL_OTLP_ENDPOINT, ATTESTA_ADL_OTLP_INSECURE (true) and ATTESTA_ADL_RESOURCE
+// (key=value,key=value).
 func ConfigFromEnv() Config {
 	return Config{
 		Output:       os.Getenv("ATTESTA_ADL_OUTPUT"),
@@ -39,12 +42,14 @@ func ConfigFromEnv() Config {
 
 func parseResource(value string) map[string]string {
 	out := map[string]string{}
-	for _, entry := range strings.Split(value, ",") {
+
+	for entry := range strings.SplitSeq(value, ",") {
 		key, val, ok := strings.Cut(entry, "=")
 		if key = strings.TrimSpace(key); ok && key != "" {
 			out[key] = strings.TrimSpace(val)
 		}
 	}
+
 	return out
 }
 
@@ -53,12 +58,15 @@ func (c Config) outputs() map[string]bool {
 	if strings.TrimSpace(raw) == "" {
 		raw = OutputStdout
 	}
+
 	set := map[string]bool{}
-	for _, o := range strings.Split(raw, ",") {
+
+	for o := range strings.SplitSeq(raw, ",") {
 		if o = strings.TrimSpace(o); o != "" {
 			set[o] = true
 		}
 	}
+
 	return set
 }
 
@@ -66,18 +74,20 @@ func (c Config) outputs() map[string]bool {
 // deployments cannot be told apart once aggregated.
 func (c Config) effectiveResource() map[string]string {
 	resource := map[string]string{}
-	for k, v := range c.Resource {
-		resource[k] = v
-	}
+	maps.Copy(resource, c.Resource)
+
 	if _, ok := resource["service.name"]; !ok {
 		resource["service.name"] = "attesta-adl"
 	}
+
 	if _, ok := resource["instance_id"]; !ok {
 		host, err := os.Hostname()
 		if err != nil || host == "" {
 			host, _ = randomHex(8)
 		}
+
 		resource["instance_id"] = host
 	}
+
 	return resource
 }

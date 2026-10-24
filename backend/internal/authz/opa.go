@@ -43,25 +43,33 @@ type OPA struct {
 
 func NewOPA() *OPA {
 	caps := ast.CapabilitiesForThisVersion()
+
 	allowed := caps.Builtins[:0:0]
 	for _, b := range caps.Builtins {
 		if !forbiddenBuiltins[b.Name] {
 			allowed = append(allowed, b)
 		}
 	}
+
 	caps.Builtins = allowed
 	caps.AllowNet = []string{}
+
 	return &OPA{capabilities: caps, prepared: make(map[[sha256.Size]byte]rego.PreparedEvalQuery)}
 }
+
+const sample = "validate"
 
 // validationInput and validationInputWithoutCredentials are the sample calls Validate makes to prove that the rule's value has the expected shape;
 // their values are never interpreted.
 var (
 	validationInput = Input{
-		Resource: "validate", Credentials: map[string]Credential{"validate": {Issuer: "validate", Claims: map[string]string{"validate": "validate"}}},
+		Resource: sample, Credentials: map[string]Credential{sample: {
+			Issuer: sample,
+			Claims: map[string]string{sample: sample},
+		}},
 	}
 
-	validationInputWithoutCredentials = Input{Resource: "validate"}
+	validationInputWithoutCredentials = Input{Resource: sample}
 )
 
 // Validate checks that source compiles, is in package policy and defines the rule decision, and that the rule's value has the right shape for a
@@ -71,25 +79,30 @@ func (e *OPA) Validate(source string) error {
 	if err != nil {
 		return err
 	}
+
 	if module.Package.Path.String() != "data."+policyPackage {
 		return fmt.Errorf("the policy must be in package %s", policyPackage)
 	}
+
 	defined := false
 	for _, r := range module.Rules {
 		defined = defined || r.Head.Name.String() == decisionRule
 	}
+
 	if !defined {
 		return fmt.Errorf("the policy defines no rule %s", decisionRule)
 	}
+
 	for _, in := range []Input{validationInput, validationInputWithoutCredentials} {
 		if _, err := e.Evaluate(source, in); err != nil {
 			return err
 		}
 	}
+
 	return nil
 }
 
-func (e *OPA) Evaluate(source string, in Input) (result Result, err error) {
+func (e *OPA) Evaluate(source string, in Input) (result Result, err error) { //nolint:nonamedreturns // the deferred recover sets both
 	defer func() {
 		if r := recover(); r != nil {
 			result, err = Result{}, fmt.Errorf("the policy panicked: %v", r)
@@ -100,30 +113,37 @@ func (e *OPA) Evaluate(source string, in Input) (result Result, err error) {
 	if err != nil {
 		return Result{}, err
 	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), evalTimeout)
 	defer cancel()
+
 	rs, err := pq.Eval(ctx, rego.EvalInput(inputOf(in)))
 	if err != nil {
 		return Result{}, fmt.Errorf("evaluate the policy: %w", err)
 	}
+
 	if len(rs) == 0 || len(rs[0].Expressions) == 0 {
 		return Result{Decision: Indeterminate, Reason: reasonNoDecision}, nil
 	}
+
 	return resultOf(rs[0].Expressions[0].Value)
 }
 
 // prepare returns the compiled query of source, compiling it when it has not been seen.
 func (e *OPA) prepare(source string) (rego.PreparedEvalQuery, error) {
 	key := sha256.Sum256([]byte(source))
+
 	e.mu.Lock()
 	pq, ok := e.prepared[key]
 	e.mu.Unlock()
+
 	if ok {
 		return pq, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), evalTimeout)
 	defer cancel()
+
 	pq, err := rego.New(
 		rego.Query(query), rego.Module("policy.rego", source), rego.Capabilities(e.capabilities), rego.SetRegoVersion(ast.RegoV1), rego.Strict(true),
 	).PrepareForEval(ctx)
@@ -133,10 +153,13 @@ func (e *OPA) prepare(source string) (rego.PreparedEvalQuery, error) {
 
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
 	if len(e.prepared) >= maxPrepared {
 		clear(e.prepared)
 	}
+
 	e.prepared[key] = pq
+
 	return pq, nil
 }
 
@@ -145,10 +168,12 @@ func inputOf(in Input) map[string]any {
 	for t, c := range in.Credentials {
 		credentials[t] = map[string]any{"issuer": c.Issuer, "claims": stringMap(c.Claims)}
 	}
+
 	roles := make([]any, len(in.UserRoles))
 	for i, r := range in.UserRoles {
 		roles[i] = r
 	}
+
 	return map[string]any{"resource": in.Resource, "userRoles": roles, "action": stringMap(in.Action), "credentials": credentials}
 }
 
@@ -157,6 +182,7 @@ func stringMap(m map[string]string) map[string]any {
 	for k, v := range m {
 		out[k] = v
 	}
+
 	return out
 }
 
@@ -166,24 +192,30 @@ func resultOf(value any) (Result, error) {
 	if !ok {
 		return Result{}, errors.New("decision: want an object")
 	}
+
 	var r Result
+
 	d, ok := obj["decision"].(string)
 	if !ok || !Decision(d).valid() {
 		return Result{}, fmt.Errorf("decision: unknown decision %v", obj["decision"])
 	}
+
 	r.Decision = Decision(d)
 	if reason, present := obj["reason"]; present {
 		if r.Reason, ok = reason.(string); !ok {
 			return Result{}, errors.New("decision: reason must be a string")
 		}
 	}
+
 	var err error
 	if r.Obligations, err = statements(obj["obligations"]); err != nil {
 		return Result{}, fmt.Errorf("decision: obligations: %w", err)
 	}
+
 	if r.Advice, err = statements(obj["advice"]); err != nil {
 		return Result{}, fmt.Errorf("decision: advice: %w", err)
 	}
+
 	return r, nil
 }
 
@@ -192,36 +224,46 @@ func statements(value any) ([]Statement, error) {
 	if value == nil {
 		return nil, nil
 	}
+
 	list, ok := value.([]any)
 	if !ok {
 		return nil, errors.New("want a list")
 	}
+
 	out := make([]Statement, 0, len(list))
 	for _, item := range list {
 		obj, ok := item.(map[string]any)
 		if !ok {
 			return nil, errors.New("want a list of objects")
 		}
+
 		id, ok := obj["id"].(string)
 		if !ok || id == "" {
 			return nil, errors.New("every statement needs an id")
 		}
+
 		s := Statement{ID: id}
+
 		if attrs, present := obj["attributes"]; present {
 			m, ok := attrs.(map[string]any)
 			if !ok {
 				return nil, fmt.Errorf("statement %q: attributes must be an object", id)
 			}
+
 			for k, v := range m {
 				str, ok := v.(string)
 				if !ok {
 					return nil, fmt.Errorf("statement %q: attribute %q must be a string", id, k)
 				}
+
 				s.Attributes = append(s.Attributes, Attribute{ID: k, Value: str})
 			}
+
 			sort.Slice(s.Attributes, func(i, j int) bool { return s.Attributes[i].ID < s.Attributes[j].ID })
 		}
+
 		out = append(out, s)
 	}
+
 	return out, nil
 }
