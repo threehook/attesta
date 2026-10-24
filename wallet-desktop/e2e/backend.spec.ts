@@ -71,12 +71,12 @@ decision := {"decision": "Deny", "reason": concat("", ["issuer not trusted: ", d
         status: string;
         decision: string;
         reason: string;
-        subject?: { issuer: string; email: string };
+        subject?: { issuer: string; id: string; email: string };
       };
       expect(outcome.status).toBe("done");
       expect(outcome.decision).toBe(trusted ? "Permit" : "Deny");
       if (trusted) {
-        expect(outcome.subject).toEqual({ issuer: test_.did, email: "ada@example.com" });
+        expect(outcome.subject).toEqual({ issuer: test_.did, id: "ada@example.com", email: "ada@example.com" });
       } else {
         expect(outcome.reason).toContain("issuer not trusted");
         expect(outcome.subject).toBeUndefined();
