@@ -3,7 +3,8 @@
 # Needs `az login`. Prints the three values to store as repository variables.
 set -euo pipefail
 
-REPO=threehook/attesta
+# This repo's tokens carry the numeric owner and repo ids in the subject.
+REPO=threehook@442604/attesta@1404472147
 ENVIRONMENT=azure-test
 APP_NAME=attesta-github-terraform
 
