@@ -91,7 +91,7 @@ jobs:
           ATTESTA_E2E_ISSUER_PORT: '4099'
 
   images:
-    needs: [test-go, test-typescript, test-agent]
+    needs: [test-go, test-typescript, test-agent, test-e2e]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
