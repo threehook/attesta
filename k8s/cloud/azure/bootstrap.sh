@@ -31,10 +31,8 @@ federate main "repo:$REPO:ref:refs/heads/main"
 federate pull-request "repo:$REPO:pull_request"
 federate environment "repo:$REPO:environment:$ENVIRONMENT"
 
-# Contributor creates the resources; User Access Administrator lets Terraform manage role assignments.
-for role in Contributor "User Access Administrator"; do
-	az role assignment create --assignee "$CLIENT_ID" --role "$role" --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
-done
+# Contributor creates the resources.
+az role assignment create --assignee "$CLIENT_ID" --role Contributor --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
 
 echo "AZURE_CLIENT_ID=$CLIENT_ID"
 echo "AZURE_TENANT_ID=$TENANT_ID"
