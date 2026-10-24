@@ -37,8 +37,12 @@ resource "azurerm_kubernetes_cluster" "this" {
   location                = azurerm_resource_group.this.location
   resource_group_name     = azurerm_resource_group.this.name
   dns_prefix              = var.name
-  private_cluster_enabled = true
+  private_cluster_enabled = false
   sku_tier                = "Free"
+
+  api_server_access_profile {
+    authorized_ip_ranges = var.api_allowed_cidrs
+  }
 
   default_node_pool {
     name            = "system"
@@ -56,7 +60,7 @@ resource "azurerm_kubernetes_cluster" "this" {
     network_plugin = "azure"
     service_cidr   = "10.21.0.0/16"
     dns_service_ip = "10.21.0.10"
-    # Nodes and the API server get no public address; pods leave through the load balancer's outbound IP.
+    # Nodes get no public address; pods leave through the load balancer's outbound IP.
     outbound_type = "loadBalancer"
   }
 }
