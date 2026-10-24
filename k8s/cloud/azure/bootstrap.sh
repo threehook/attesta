@@ -31,8 +31,8 @@ federate main "repo:$REPO:ref:refs/heads/main"
 federate pull-request "repo:$REPO:pull_request"
 federate environment "repo:$REPO:environment:$ENVIRONMENT"
 
-# Contributor creates the resources; User Access Administrator lets Terraform create the AcrPull role assignment; AcrPush lets the image workflow push.
-for role in Contributor "User Access Administrator" AcrPush; do
+# Contributor creates the resources; User Access Administrator lets Terraform manage role assignments.
+for role in Contributor "User Access Administrator"; do
 	az role assignment create --assignee "$CLIENT_ID" --role "$role" --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
 done
 

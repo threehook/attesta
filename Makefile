@@ -279,7 +279,7 @@ cicd-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/cicd-agent --all-containers --prefix -f
 
 # Azure test infrastructure (k8s/cloud/azure). azure-down stops the nodes and keeps everything else, azure-up starts them again;
-# azure-destroy removes it all, the images in ACR included.
+# azure-destroy removes it all.
 AZURE_DIR := k8s/cloud/azure
 # The names Terraform gives them (var.name in $(AZURE_DIR)/variables.tf); stop and start need no Terraform login.
 AZURE_RG := rg-attesta-test
@@ -296,5 +296,5 @@ azure-up:
 	az aks start --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
 
 azure-destroy:
-	@read -p "Destroy the Azure test infrastructure, images in ACR included? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
+	@read -p "Destroy the Azure test infrastructure? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
 	terraform -chdir=$(AZURE_DIR) destroy
