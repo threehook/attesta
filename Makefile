@@ -38,7 +38,8 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs
+	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
+	azure-apply azure-down azure-up azure-destroy
 
 build:
 	cd backend && go build ./...
@@ -276,3 +277,23 @@ cicd-delete:
 
 cicd-logs:
 	kubectl --context $(KUBE_CONTEXT) logs -n $(NAMESPACE) deploy/cicd-agent --all-containers --prefix -f
+
+# Azure test infrastructure (k8s/cloud/azure). azure-down stops the nodes and keeps everything else, azure-up starts them again;
+# azure-destroy removes it all, the images in ACR included.
+AZURE_DIR := k8s/cloud/azure
+AZURE_RG = $(shell terraform -chdir=$(AZURE_DIR) output -raw resource_group)
+AZURE_CLUSTER = $(shell terraform -chdir=$(AZURE_DIR) output -raw cluster)
+
+azure-apply:
+	terraform -chdir=$(AZURE_DIR) init -input=false
+	terraform -chdir=$(AZURE_DIR) apply
+
+azure-down:
+	az aks stop --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
+
+azure-up:
+	az aks start --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
+
+azure-destroy:
+	@read -p "Destroy the Azure test infrastructure, images in ACR included? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
+	terraform -chdir=$(AZURE_DIR) destroy
