@@ -1,16 +1,15 @@
 package httpapi
 
 import (
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/scripts"
+	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"attesta/backend/internal/authz"
-	"attesta/backend/internal/scripts"
 )
 
 // fakeEvaluator isolates httpapi's own routing/decoding/status-code logic from the real OPA implementation, which has its own tests
@@ -39,31 +38,36 @@ func (f *fakeEvaluator) Evaluate(_ string, in authz.Input) (authz.Result, error)
 // no OPA involved since the fake Evaluator also serves as its Validator) pre-loaded with one policy.
 func newTestServer(t *testing.T, evaluator *fakeEvaluator) *Server {
 	t.Helper()
+
 	policies := scripts.NewStore(evaluator)
 	if err := policies.Put("p1", "package policy"); err != nil {
 		t.Fatalf("seed policy: %v", err)
 	}
+
 	return &Server{
 		Authz:       evaluator,
 		Policies:    policies,
 		AdminToken:  "admin-tok",
-		Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Logger:      slog.New(slog.DiscardHandler),
 		CORSOrigins: "http://allowed.example",
 	}
 }
 
 func doRequest(s *Server, method, path, body string, headers map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), method, path, strings.NewReader(body))
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
+
 	rec := httptest.NewRecorder()
 	s.Routes().ServeHTTP(rec, req)
+
 	return rec
 }
 
 func TestHandleHealthz(t *testing.T) {
 	s := newTestServer(t, &fakeEvaluator{})
+
 	rec := doRequest(s, "GET", "/healthz", "", nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -77,6 +81,7 @@ func TestWithCORS(t *testing.T) {
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", rec.Code, http.StatusNoContent)
 	}
+
 	if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://allowed.example" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want %q", got, "http://allowed.example")
 	}
@@ -118,9 +123,11 @@ func TestHandlePutPolicySuccess(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body)
 	}
+
 	if _, ok := s.Policies.Get("p2"); !ok {
 		t.Fatal("policy was not stored")
 	}
+
 	if evaluator.validated != "package policy" {
 		t.Fatalf("Validate was called with %q, want %q", evaluator.validated, "package policy")
 	}
@@ -142,12 +149,16 @@ func TestHandleDiagnosePolicy(t *testing.T) {
 	if rec := doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, nil); rec.Code != http.StatusUnauthorized {
 		t.Fatalf("without token: status = %d, want %d", rec.Code, http.StatusUnauthorized)
 	}
+
 	rec := doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, map[string]string{"X-Admin-Token": "admin-tok"})
+
 	want := `{"diagnostics":[{"severity":"error","message":"boom","row":2,"col":3,"endRow":2,"endCol":5}]}` + "\n"
 	if rec.Code != http.StatusOK || rec.Body.String() != want {
 		t.Fatalf("status = %d, body = %q, want %q", rec.Code, rec.Body, want)
 	}
+
 	evaluator.diagnostics = nil
+
 	rec = doRequest(s, "POST", "/admin/policies/diagnose", `{"source":"x"}`, map[string]string{"X-Admin-Token": "admin-tok"})
 	if got := rec.Body.String(); got != `{"diagnostics":[]}`+"\n" {
 		t.Fatalf("no problems: body = %q", got)
@@ -156,7 +167,9 @@ func TestHandleDiagnosePolicy(t *testing.T) {
 
 func TestHandleEvaluatePolicy(t *testing.T) {
 	admin := map[string]string{"X-Admin-Token": "admin-tok"}
-	const body = `{"source":"x","input":{"resource":"r","userRoles":["a"],"credentials":{"Employee":{"issuer":"did:key:i","claims":{"department":"burgerzaken"}}}}}`
+
+	const body = `{"source":"x","input":{"resource":"r","userRoles":["a"],"credentials":{"Employee":{"issuer":"did:key:i",` +
+		`"claims":{"department":"burgerzaken"}}}}}`
 
 	t.Run("needs the admin token", func(t *testing.T) {
 		if rec := doRequest(newTestServer(t, &fakeEvaluator{}), "POST", "/admin/policies/evaluate", body, nil); rec.Code != http.StatusUnauthorized {
@@ -164,15 +177,23 @@ func TestHandleEvaluatePolicy(t *testing.T) {
 		}
 	})
 	t.Run("runs the policy on the input", func(t *testing.T) {
-		e := &fakeEvaluator{result: authz.Result{Decision: authz.Permit, Reason: "ok", Obligations: []authz.Statement{{ID: "log", Attributes: []authz.Attribute{{ID: "k", Value: "v"}}}}}}
+		e := &fakeEvaluator{
+			result: authz.Result{
+				Decision:    authz.Permit,
+				Reason:      "ok",
+				Obligations: []authz.Statement{{ID: "log", Attributes: []authz.Attribute{{ID: "k", Value: "v"}}}},
+			},
+		}
 		rec := doRequest(newTestServer(t, e), "POST", "/admin/policies/evaluate", body, admin)
 
 		want := `{"result":{"advice":[],"decision":"Permit","obligations":[{"id":"log","attributes":{"k":"v"}}],"reason":"ok"}}` + "\n"
 		if rec.Code != http.StatusOK || rec.Body.String() != want {
 			t.Fatalf("status = %d, body = %q, want %q", rec.Code, rec.Body, want)
 		}
+
 		got := e.evaluated
-		if got.Resource != "r" || got.UserRoles[0] != "a" || got.Credentials["Employee"].Issuer != "did:key:i" || got.Credentials["Employee"].Claims["department"] != "burgerzaken" {
+		if got.Resource != "r" || got.UserRoles[0] != "a" || got.Credentials["Employee"].Issuer != "did:key:i" ||
+			got.Credentials["Employee"].Claims["department"] != "burgerzaken" {
 			t.Fatalf("input = %+v", got)
 		}
 	})
@@ -187,7 +208,10 @@ func TestHandleEvaluatePolicy(t *testing.T) {
 	t.Run("refuses an input that is not the shape of input", func(t *testing.T) {
 		for name, tc := range map[string]struct{ body, message string }{
 			"a field input does not have": {`{"source":"x","input":{"type":"Employee"}}`, "unknown field"},
-			"a claim that is not text":    {`{"source":"x","input":{"credentials":{"Employee":{"claims":{"employeeHasCar":true}}}}}`, "must be text"},
+			"a claim that is not text": {
+				`{"source":"x","input":{"credentials":{"Employee":{"claims":{"employeeHasCar":true}}}}}`,
+				"must be text",
+			},
 		} {
 			rec := doRequest(newTestServer(t, &fakeEvaluator{}), "POST", "/admin/policies/evaluate", tc.body, admin)
 			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.message) {

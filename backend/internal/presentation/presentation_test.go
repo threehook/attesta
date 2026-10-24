@@ -1,6 +1,7 @@
 package presentation
 
 import (
+	"attesta/backend/internal/authz"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"attesta/backend/internal/authz"
 	"github.com/threehook/sdjwt-go"
 )
 
@@ -21,32 +21,64 @@ func (goodStanding) Check(context.Context, string, *sdjwt.StatusReference) error
 
 // recorded is a presentation captured from a Credo wallet (see testdata): the session below is built to match its audience, nonce
 // and state, and the clock is set to when it was made.
-type recording struct{ Nonce, State, VPToken string }
+type recording struct {
+	Nonce   string `json:"nonce"`
+	State   string `json:"state"`
+	VPToken string `json:"vpToken"`
+}
+
+// dcqlQuery is the part of the request's dcql_query that the tests read.
+type dcqlQuery struct {
+	Credentials []struct {
+		ID     string `json:"id"`
+		Format string `json:"format"`
+		Meta   struct {
+			VCTValues []string `json:"vct_values"`
+		} `json:"meta"`
+		Claims []struct {
+			Path []string `json:"path"`
+		} `json:"claims"`
+	} `json:"credentials"`
+}
 
 type recorded struct {
-	Issuer, Audience string
-	IssuedAt         int64
+	Issuer   string `json:"issuer"`
+	Audience string `json:"audience"`
+	IssuedAt int64  `json:"issuedAt"`
 	// Full discloses the degree and the email; WithoutEmail only the degree.
-	Full, WithoutEmail recording
+	Full         recording `json:"full"`
+	WithoutEmail recording `json:"withoutEmail"`
 }
 
 func loadRecorded(t *testing.T) recorded {
 	t.Helper()
+
 	raw, err := os.ReadFile("testdata/credo-presentation.json")
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	var r recorded
 	if err := json.Unmarshal(raw, &r); err != nil {
 		t.Fatal(err)
 	}
+
 	return r
 }
 
 func newRecordedVerifier(t *testing.T, r recorded, rec recording, request Request) *Verifier {
 	t.Helper()
-	v := New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Status: goodStanding{}, Now: func() time.Time { return time.Unix(r.IssuedAt, 0) }})
+
+	v := New(
+		Options{
+			PublicURL: "http://backend.test",
+			Keys:      sdjwt.DIDKey{},
+			Status:    goodStanding{},
+			Now:       func() time.Time { return time.Unix(r.IssuedAt, 0) },
+		},
+	)
 	v.sessions.put("req-1", session{request: request, nonce: rec.Nonce, state: rec.State, responseURI: r.Audience[len("redirect_uri:"):]})
+
 	return v
 }
 
@@ -63,11 +95,14 @@ func TestNewRequest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewRequest: %v", err)
 	}
+
 	u, err := url.Parse(link)
 	if err != nil || u.Scheme != "openid4vp" {
 		t.Fatalf("link = %q, want an openid4vp:// link", link)
 	}
+
 	q := u.Query()
+
 	responseURI := "http://backend.test/v1/authorize/requests/" + id + "/response"
 	for key, want := range map[string]string{
 		"response_type": "vp_token", "response_mode": "direct_post", "response_uri": responseURI, "client_id": "redirect_uri:" + responseURI,
@@ -76,24 +111,20 @@ func TestNewRequest(t *testing.T) {
 			t.Errorf("%s = %q, want %q", key, q.Get(key), want)
 		}
 	}
+
 	if q.Get("nonce") == "" || q.Get("state") == "" || q.Get("nonce") == q.Get("state") {
 		t.Errorf("nonce %q and state %q must be set and differ", q.Get("nonce"), q.Get("state"))
 	}
 
-	var dcql struct {
-		Credentials []struct {
-			ID, Format string
-			Meta       struct {
-				VCTValues []string `json:"vct_values"`
-			}
-			Claims []struct{ Path []string }
-		}
-	}
+	var dcql dcqlQuery
 	if err := json.Unmarshal([]byte(q.Get("dcql_query")), &dcql); err != nil || len(dcql.Credentials) != 1 {
 		t.Fatalf("dcql_query = %s", q.Get("dcql_query"))
 	}
+
 	c := dcql.Credentials[0]
-	if c.Format != "dc+sd-jwt" || len(c.Meta.VCTValues) != 1 || c.Meta.VCTValues[0] != "Diploma" || len(c.Claims) != 2 || c.Claims[0].Path[0] != "degree" || c.Claims[1].Path[0] != "email" {
+	if c.Format != "dc+sd-jwt" || len(c.Meta.VCTValues) != 1 || c.Meta.VCTValues[0] != "Diploma" || len(c.Claims) != 2 ||
+		c.Claims[0].Path[0] != "degree" ||
+		c.Claims[1].Path[0] != "email" {
 		t.Errorf("credential query = %+v, want a Diploma asking for degree and the identifying email", c)
 	}
 
@@ -110,19 +141,22 @@ func TestNewRequestAlwaysAsksForTheEmail(t *testing.T) {
 		if err != nil {
 			t.Fatal(name, err)
 		}
+
 		u, _ := url.Parse(link)
-		var dcql struct {
-			Credentials []struct{ Claims []struct{ Path []string } }
-		}
+
+		var dcql dcqlQuery
 		if err := json.Unmarshal([]byte(u.Query().Get("dcql_query")), &dcql); err != nil {
 			t.Fatal(name, err)
 		}
+
 		emails := 0
+
 		for _, c := range dcql.Credentials[0].Claims {
 			if c.Path[0] == "email" {
 				emails++
 			}
 		}
+
 		if emails != 1 {
 			t.Errorf("%s: the email is asked for %d times, want once", name, emails)
 		}
@@ -137,9 +171,12 @@ func TestRespond(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
-	if first := got.Credentials[0]; first.Issuer != r.Issuer || first.Type != "Diploma" || first.Claims["degree"] != "Mathematics" || got.Request.Resource != "vault" {
+
+	if first := got.Credentials[0]; first.Issuer != r.Issuer || first.Type != "Diploma" || first.Claims["degree"] != "Mathematics" ||
+		got.Request.Resource != "vault" {
 		t.Errorf("Presented = %+v", got)
 	}
+
 	if got.Subject != (Subject{Issuer: r.Issuer, ID: "ada@example.com", Claim: "email"}) {
 		t.Errorf("Subject = %+v, want the issuer and the disclosed email", got.Subject)
 	}
@@ -157,7 +194,12 @@ func TestRespondRequiresTheEmail(t *testing.T) {
 
 func TestRespondRequiresEveryRequestedClaim(t *testing.T) {
 	r := loadRecorded(t)
-	v := newRecordedVerifier(t, r, r.Full, Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}}})
+	v := newRecordedVerifier(
+		t,
+		r,
+		r.Full,
+		Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}}},
+	)
 
 	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
 	if !errors.Is(err, ErrInvalidPresentation) || !strings.Contains(err.Error(), "department") {
@@ -173,6 +215,7 @@ func TestRespondKeepsOnlyTheAskedClaims(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Respond: %v", err)
 	}
+
 	if claims := got.Credentials[0].Claims; len(claims) != 1 || claims["email"] != "ada@example.com" {
 		t.Errorf("Claims = %v, want only the email: the degree was disclosed but not asked for", claims)
 	}
@@ -184,20 +227,26 @@ func TestRespondRejects(t *testing.T) {
 	with := func(k, v string) url.Values {
 		f := formOf(r.Full)
 		f.Set(k, v)
+
 		return f
 	}
+
 	cases := map[string]struct {
 		form    url.Values
 		request Request
 		mutate  func(v *Verifier)
 	}{
-		"wrong state":              {form: with("state", "other"), request: diploma},
-		"vp_token not JSON":        {form: with("vp_token", "nope"), request: diploma},
-		"no presentation":          {form: with("vp_token", `{"credential":[]}`), request: diploma},
-		"unknown query id":         {form: with("vp_token", `{"other":["a~"]}`), request: diploma},
-		"another credential type":  {form: good, request: Request{Credentials: []CredentialQuery{{CredentialType: "Passport"}}}},
-		"another nonce":            {form: good, request: diploma, mutate: func(v *Verifier) { v.sessions.m["req-1"].nonce = "other" }},
-		"another verifier address": {form: good, request: diploma, mutate: func(v *Verifier) { v.sessions.m["req-1"].responseURI = "http://evil.test/response" }},
+		"wrong state":             {form: with("state", "other"), request: diploma},
+		"vp_token not JSON":       {form: with("vp_token", "nope"), request: diploma},
+		"no presentation":         {form: with("vp_token", `{"credential":[]}`), request: diploma},
+		"unknown query id":        {form: with("vp_token", `{"other":["a~"]}`), request: diploma},
+		"another credential type": {form: good, request: Request{Credentials: []CredentialQuery{{CredentialType: "Passport"}}}},
+		"another nonce":           {form: good, request: diploma, mutate: func(v *Verifier) { v.sessions.m["req-1"].nonce = "other" }},
+		"another verifier address": {
+			form:    good,
+			request: diploma,
+			mutate:  func(v *Verifier) { v.sessions.m["req-1"].responseURI = "http://evil.test/response" },
+		},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -205,6 +254,7 @@ func TestRespondRejects(t *testing.T) {
 			if tc.mutate != nil {
 				tc.mutate(v)
 			}
+
 			_, err := v.Respond(context.Background(), "req-1", tc.form)
 			if !errors.Is(err, ErrInvalidPresentation) {
 				t.Errorf("error = %v, want ErrInvalidPresentation", err)
@@ -221,6 +271,7 @@ func TestRespondOnlyOnce(t *testing.T) {
 	if _, err := v.Respond(context.Background(), "req-1", form); err != nil {
 		t.Fatalf("first Respond: %v", err)
 	}
+
 	if _, err := v.Respond(context.Background(), "req-1", form); !errors.Is(err, ErrAlreadyAnswered) {
 		t.Errorf("second Respond error = %v, want ErrAlreadyAnswered", err)
 	}
@@ -233,6 +284,7 @@ func TestRespondConsumesRequestOnFailure(t *testing.T) {
 	if _, err := v.Respond(context.Background(), "req-1", url.Values{"vp_token": {"bad"}, "state": {r.Full.State}}); err == nil {
 		t.Fatal("want an error for a bad vp_token")
 	}
+
 	if _, err := v.Respond(context.Background(), "req-1", formOf(r.Full)); !errors.Is(err, ErrAlreadyAnswered) {
 		t.Errorf("Respond after a failed attempt: error = %v, want ErrAlreadyAnswered", err)
 	}
@@ -250,7 +302,9 @@ func TestRespondUnknownAndExpired(t *testing.T) {
 	clock := time.Unix(r.IssuedAt, 0)
 	v = New(Options{PublicURL: "http://backend.test", Keys: sdjwt.DIDKey{}, Now: func() time.Time { return clock }})
 	v.sessions.put("req-1", session{request: diploma, nonce: r.Full.Nonce, state: r.Full.State, responseURI: r.Audience[len("redirect_uri:"):]})
+
 	clock = clock.Add(6 * time.Minute)
+
 	if _, err := v.Respond(context.Background(), "req-1", form); !errors.Is(err, ErrUnknownRequest) {
 		t.Errorf("expired request: error = %v, want ErrUnknownRequest", err)
 	}
@@ -263,10 +317,13 @@ func TestOutcome(t *testing.T) {
 	if o, err := v.Outcome(id); err != nil || o != nil {
 		t.Fatalf("before an answer: outcome = %v, err = %v, want nil, nil", o, err)
 	}
+
 	v.Complete(id, Outcome{Decision: authz.Permit, Reason: "ok"})
+
 	if o, err := v.Outcome(id); err != nil || o == nil || o.Decision != authz.Permit || o.Reason != "ok" {
 		t.Errorf("after Complete: outcome = %v, err = %v", o, err)
 	}
+
 	if _, err := v.Outcome("nope"); !errors.Is(err, ErrUnknownRequest) {
 		t.Errorf("unknown id: error = %v, want ErrUnknownRequest", err)
 	}
@@ -274,12 +331,16 @@ func TestOutcome(t *testing.T) {
 
 func TestRespondRejectionCarriesTheRequest(t *testing.T) {
 	r := loadRecorded(t)
-	req := Request{Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}}, TraceParent: "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01"}
+	req := Request{
+		Credentials: []CredentialQuery{{CredentialType: "Diploma", Claims: []string{"degree", "department"}}},
+		TraceParent: "00-28dbeec32e77635cc19bc3204ec56c41-dec5220770f8f4f4-01",
+	}
 	v := newRecordedVerifier(t, r, r.Full, req)
 
 	_, err := v.Respond(context.Background(), "req-1", formOf(r.Full))
-	var rejected *Rejected
+
+	var rejected *RejectedError
 	if !errors.As(err, &rejected) || rejected.Request.TraceParent != req.TraceParent || rejected.Request.Credentials[0].CredentialType != "Diploma" {
-		t.Errorf("error = %v, want a Rejected carrying the request", err)
+		t.Errorf("error = %v, want a RejectedError carrying the request", err)
 	}
 }

@@ -37,9 +37,11 @@ func New(opts Options) *Verifier { return &Verifier{opts: opts} }
 func (v *Verifier) verifierFor(ctx context.Context) (*oidc.IDTokenVerifier, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+
 	if v.verifier != nil {
 		return v.verifier, nil
 	}
+
 	url := v.opts.DiscoveryURL
 	if url == "" {
 		url = v.opts.Issuer
@@ -49,7 +51,9 @@ func (v *Verifier) verifierFor(ctx context.Context) (*oidc.IDTokenVerifier, erro
 	if err != nil {
 		return nil, err
 	}
+
 	v.verifier = provider.Verifier(&oidc.Config{SkipClientIDCheck: true})
+
 	return v.verifier, nil
 }
 
@@ -61,21 +65,27 @@ func (v *Verifier) Protect(next http.Handler) http.Handler {
 			deny(w, http.StatusUnauthorized, "inloggen is nodig")
 			return
 		}
+
 		verifier, err := v.verifierFor(r.Context())
 		if err != nil {
 			slog.Error("cannot reach the login server", "error", err)
 			deny(w, http.StatusServiceUnavailable, "de loginserver is niet bereikbaar")
+
 			return
 		}
+
 		email, err := v.check(r.Context(), verifier, token)
 		if err != nil {
 			status := http.StatusUnauthorized
 			if errors.Is(err, errForbidden) {
 				status = http.StatusForbidden
 			}
+
 			deny(w, status, err.Error())
+
 			return
 		}
+
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), emailKey{}, email)))
 	})
 }
@@ -95,6 +105,7 @@ func (v *Verifier) check(ctx context.Context, verifier *oidc.IDTokenVerifier, ra
 	if err != nil {
 		return "", errors.New("de aanmelding is ongeldig of verlopen")
 	}
+
 	var claims struct {
 		Email       string   `json:"email"`
 		Azp         string   `json:"azp"`
@@ -106,12 +117,15 @@ func (v *Verifier) check(ctx context.Context, verifier *oidc.IDTokenVerifier, ra
 	if err := t.Claims(&claims); err != nil {
 		return "", errors.New("de aanmelding is ongeldig of verlopen")
 	}
+
 	if claims.Azp != v.opts.ClientID {
 		return "", errForbidden
 	}
+
 	if !slices.Contains(claims.RealmAccess.Roles, v.opts.Role) && !slices.Contains(claims.Roles, v.opts.Role) {
 		return "", errForbidden
 	}
+
 	return strings.ToLower(strings.TrimSpace(claims.Email)), nil
 }
 

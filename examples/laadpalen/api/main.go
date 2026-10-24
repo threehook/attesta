@@ -39,6 +39,7 @@ func run() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	logger.Info("listening", "addr", addr, "attesta", attestaURL)
+
 	return srv.ListenAndServe()
 }
 
@@ -46,5 +47,6 @@ func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
+
 	return fallback
 }

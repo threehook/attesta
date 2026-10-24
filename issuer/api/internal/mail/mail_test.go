@@ -1,15 +1,14 @@
 package mail_test
 
 import (
+	"attesta/issuer/internal/config"
+	"attesta/issuer/internal/mail"
+	"attesta/issuer/internal/mail/mailtest"
 	"context"
 	"strings"
 	"testing"
 
 	"github.com/google/uuid"
-
-	"attesta/issuer/internal/config"
-	"attesta/issuer/internal/mail"
-	"attesta/issuer/internal/mail/mailtest"
 )
 
 func TestSendsTheMailWithTheImageInline(t *testing.T) {
@@ -29,12 +28,17 @@ func TestSendsTheMailWithTheImageInline(t *testing.T) {
 	if len(got) != 1 || got[0].Subject != "Uw credential staat klaar bij Gemeente Zoëterwoude" {
 		t.Fatalf("messages %+v", got)
 	}
+
 	raw := strings.ToLower(got[0].Raw)
-	for _, want := range []string{"multipart/related", "text/plain", "text/html", "content-id: <qr>", "filename=\"credential.png\"", "from: <credentials@attesta.local>"} {
+	for _, want := range []string{
+		"multipart/related", "text/plain", "text/html", "content-id: <qr>", "filename=\"credential.png\"",
+		"from: <credentials@attesta.local>",
+	} {
 		if !strings.Contains(raw, strings.ToLower(want)) {
 			t.Errorf("the mail lacks %q:\n%s", want, got[0].Raw)
 		}
 	}
+
 	if strings.Count(raw, "filename=\"credential.png\"") != 1 {
 		t.Errorf("the image is in the mail more than once")
 	}

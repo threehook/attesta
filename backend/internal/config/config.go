@@ -20,8 +20,8 @@ type Config struct {
 	PublicURL string
 	// CORSOrigins is the comma-separated browser-origin allowlist passed to httpapi.Server; see withCORS.
 	CORSOrigins string
-	// StatusPrefixes are the URLs, each ending in "/", that credential status lists may be fetched from (comma-separated). A credential whose list is
-	// elsewhere is refused, and with none set every credential is.
+	// StatusPrefixes are the URLs, each ending in "/", that credential status lists may be fetched from (comma-separated). A credential whose list
+	// is elsewhere is refused, and with none set every credential is.
 	StatusPrefixes []string
 	// StatusHosts sends the public address of a status list's host to the address this backend reaches it at, as `https://public=http://internal`
 	// pairs separated by commas.
@@ -33,6 +33,7 @@ func FromEnv() (Config, error) {
 	if err != nil {
 		return Config{}, fmt.Errorf("ATTESTA_STATUS_HOSTS: %w", err)
 	}
+
 	return Config{
 		StatusPrefixes: list(os.Getenv("ATTESTA_STATUS_URL_PREFIXES")), StatusHosts: hosts,
 		Addr:        getenv("ATTESTA_ADDR", ":8080"),
@@ -45,23 +46,28 @@ func FromEnv() (Config, error) {
 
 func list(value string) []string {
 	var out []string
-	for _, v := range strings.Split(value, ",") {
+
+	for v := range strings.SplitSeq(value, ",") {
 		if v = strings.TrimSpace(v); v != "" {
 			out = append(out, v)
 		}
 	}
+
 	return out
 }
 
 func pairs(value string) (map[string]string, error) {
 	out := map[string]string{}
+
 	for _, p := range list(value) {
 		from, to, ok := strings.Cut(p, "=")
 		if !ok || from == "" || to == "" {
 			return nil, fmt.Errorf("%q is not public=internal", p)
 		}
+
 		out[from] = to
 	}
+
 	return out, nil
 }
 
@@ -69,5 +75,6 @@ func getenv(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
 	}
+
 	return fallback
 }

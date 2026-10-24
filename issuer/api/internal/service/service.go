@@ -3,6 +3,12 @@
 package service
 
 import (
+	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/credtype"
+	"attesta/issuer/internal/entitlement"
+	"attesta/issuer/internal/mail"
+	"attesta/issuer/internal/qr"
+	"attesta/issuer/internal/role"
 	"context"
 	"errors"
 	"fmt"
@@ -10,15 +16,9 @@ import (
 	"log/slog"
 	"maps"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
-
-	"attesta/issuer/internal/credential"
-	"attesta/issuer/internal/credtype"
-	"attesta/issuer/internal/entitlement"
-	"attesta/issuer/internal/mail"
-	"attesta/issuer/internal/qr"
-	"attesta/issuer/internal/role"
 )
 
 const qrSize = 480
@@ -82,9 +82,11 @@ func New(cfg Config, store Store, roles RoleStore, types TypeStore, offers Offer
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+
 	if cfg.Log == nil {
 		cfg.Log = slog.Default()
 	}
+
 	return &Service{cfg: cfg, store: store, roles: roles, types: types, offers: offers, mailer: mailer}
 }
 
@@ -97,7 +99,9 @@ func (e InvalidError) Error() string { return e.Message }
 type AlreadyIssuedError struct{ IssuedAt time.Time }
 
 func (e AlreadyIssuedError) Error() string {
-	return "deze persoon heeft al een geldig credential van dit type (uitgegeven op " + e.IssuedAt.Format("02-01-2006") + "); dat moet eerst worden ingetrokken"
+	return "deze persoon heeft al een geldig credential van dit type (uitgegeven op " + e.IssuedAt.Format(
+		"02-01-2006",
+	) + "); dat moet eerst worden ingetrokken"
 }
 
 // AlreadyWaitingError is the same for a credential that is recorded but not yet fetched, with other data than the request.
@@ -121,6 +125,7 @@ func blank(values ...string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -130,6 +135,7 @@ func (s *Service) RecordType(ctx context.Context, def credential.Type, values ma
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
+
 	return s.record(ctx, n)
 }
 
@@ -138,29 +144,36 @@ func (s *Service) RecordEmployee(ctx context.Context, in EmployeeInput) (entitle
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
+
 	return s.record(ctx, n)
 }
 
 // typeOf checks the answers to the form of a type. A date field named validUntil ends the credential and must lie in the future.
 func (s *Service) typeOf(def credential.Type, values map[string]string) (entitlement.New, error) {
 	claims := map[string]string{}
+
 	var end *time.Time
+
 	for _, f := range def.Fields {
 		v := strings.TrimSpace(values[f.Key])
 		if v == "" {
 			if f.Required {
 				return entitlement.New{}, InvalidError{f.Key + " is required"}
 			}
+
 			continue
 		}
+
 		if len([]rune(v)) > credential.MaxValueSize {
 			return entitlement.New{}, InvalidError{f.Key + " is too long"}
 		}
+
 		switch f.Kind {
 		case credential.KindEmail:
 			if !emailPattern.MatchString(v) {
 				return entitlement.New{}, InvalidError{f.Key + " is not an email address"}
 			}
+
 			v = strings.ToLower(v)
 		case credential.KindDate:
 			if f.Key == credential.ValidUntilKey {
@@ -168,12 +181,14 @@ func (s *Service) typeOf(def credential.Type, values map[string]string) (entitle
 				if err != nil {
 					return entitlement.New{}, err
 				}
+
 				end, v = &e, day
 			} else {
 				d, err := credential.ParseDate(v)
 				if err != nil {
 					return entitlement.New{}, InvalidError{f.Key + " must be a date, dd-mm-yyyy or YYYY-MM-DD"}
 				}
+
 				v = d.Format(time.DateOnly)
 			}
 		case credential.KindNumber:
@@ -181,14 +196,17 @@ func (s *Service) typeOf(def credential.Type, values map[string]string) (entitle
 			if err != nil {
 				return entitlement.New{}, InvalidError{err.Error()}
 			}
+
 			v = n
 		case credential.KindChoice:
 			if !contains(f.Options, v) {
 				return entitlement.New{}, InvalidError{f.Key + " must be one of " + strings.Join(f.Options, ", ")}
 			}
 		}
+
 		claims[f.Key] = v
 	}
+
 	return entitlement.New{Subject: entitlement.PersonOf(claims["email"]), Type: def.Type, Claims: claims, ValidUntil: end}, nil
 }
 
@@ -196,29 +214,37 @@ func (s *Service) employeeOf(ctx context.Context, in EmployeeInput) (entitlement
 	if blank(in.Name, in.Email, in.Department, in.Organisation) {
 		return entitlement.New{}, InvalidError{"name, email, department and organisation are required"}
 	}
+
 	if !emailPattern.MatchString(in.Email) {
 		return entitlement.New{}, InvalidError{"email is not an email address"}
 	}
+
 	if !contains(credential.Departments, in.Department) {
 		return entitlement.New{}, InvalidError{"department must be one of " + strings.Join(credential.Departments, ", ")}
 	}
+
 	known, err := s.roles.Names(ctx)
 	if err != nil {
 		return entitlement.New{}, err
 	}
+
 	roles := []string{}
+
 	for _, r := range in.Roles {
 		if !contains(known, r) {
 			return entitlement.New{}, InvalidError{"roles must be among " + strings.Join(known, ", ")}
 		}
+
 		if !contains(roles, r) {
 			roles = append(roles, r)
 		}
 	}
+
 	claims := map[string]string{
 		"name": in.Name, "email": strings.ToLower(strings.TrimSpace(in.Email)), "department": in.Department, "organisation": in.Organisation,
 		"roles": strings.Join(roles, ", "),
 	}
+
 	return entitlement.New{Subject: entitlement.PersonOf(in.Email), Type: credential.Employee, Claims: claims}, nil
 }
 
@@ -242,20 +268,27 @@ func (s *Service) correction(typeName string) correct {
 	fixed := map[string]correct{
 		credential.Employee: func(ctx context.Context, r Replacement) (entitlement.New, error) {
 			v := r.Values
-			return s.employeeOf(ctx, EmployeeInput{Name: v["name"], Email: v["email"], Department: v["department"], Organisation: v["organisation"], Roles: r.Roles})
+
+			return s.employeeOf(
+				ctx,
+				EmployeeInput{Name: v["name"], Email: v["email"], Department: v["department"], Organisation: v["organisation"], Roles: r.Roles},
+			)
 		},
 	}
 	if c, ok := fixed[typeName]; ok {
 		return c
 	}
+
 	return func(ctx context.Context, r Replacement) (entitlement.New, error) {
 		def, err := s.types.Find(ctx, typeName)
 		if errors.Is(err, credtype.ErrNotFound) {
 			return entitlement.New{}, fmt.Errorf("unknown credential type %q", typeName)
 		}
+
 		if err != nil {
 			return entitlement.New{}, err
 		}
+
 		return s.typeOf(def, r.Values)
 	}
 }
@@ -265,6 +298,7 @@ func (s *Service) Active(ctx context.Context, email string) ([]entitlement.Entit
 	if !emailPattern.MatchString(email) {
 		return nil, InvalidError{"email is not an email address"}
 	}
+
 	return s.store.FindActiveFor(ctx, entitlement.PersonOf(email))
 }
 
@@ -280,13 +314,16 @@ func (s *Service) Revoke(ctx context.Context, id string) error {
 	} else if err != nil {
 		return err
 	}
+
 	ok, err := s.store.Revoke(ctx, id)
 	if err != nil {
 		return err
 	}
+
 	if !ok {
 		return NotFoundError{}
 	}
+
 	return nil
 }
 
@@ -296,37 +333,46 @@ func (s *Service) Replace(ctx context.Context, id string, r Replacement) (entitl
 	if errors.Is(err, entitlement.ErrNotFound) {
 		return entitlement.Entitlement{}, NotFoundError{}
 	}
+
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
+
 	n, err := s.correction(old.Type)(ctx, r)
 	if err != nil {
 		return entitlement.Entitlement{}, err
 	}
 	// The email address is the person: another address is a credential for someone else, which is revoked and recorded anew, not corrected.
 	if n.Subject != old.Subject {
-		return entitlement.Entitlement{}, InvalidError{"het e-mailadres van een credential kan niet worden gewijzigd; trek het credential in en maak een nieuw credential aan"}
+		return entitlement.Entitlement{}, InvalidError{
+			"het e-mailadres van een credential kan niet worden gewijzigd; trek het credential in en maak een nieuw credential aan",
+		}
 	}
+
 	if err := s.stands(ctx, n, id); err != nil {
 		return entitlement.Entitlement{}, err
 	}
+
 	e, err := s.store.Replace(ctx, id, n)
 	if errors.Is(err, entitlement.ErrNotFound) {
 		return entitlement.Entitlement{}, NotFoundError{}
 	}
+
 	return e, err
 }
 
 // endOf reads the day a credential ends, which must be in the future: a wallet refuses an expired credential.
-func (s *Service) endOf(value, field string) (end time.Time, day string, err error) {
+func (s *Service) endOf(value, field string) (time.Time, string, error) {
 	d, err := credential.ParseDate(value)
 	if err != nil {
 		return time.Time{}, "", InvalidError{field + " must be a date, dd-mm-yyyy or YYYY-MM-DD"}
 	}
-	end = credential.EndOfDay(d)
+
+	end := credential.EndOfDay(d)
 	if !end.After(s.cfg.Now()) {
 		return time.Time{}, "", InvalidError{field + " is in the past; a wallet refuses an expired credential"}
 	}
+
 	return end, d.Format(time.DateOnly), nil
 }
 
@@ -340,11 +386,12 @@ func (s *Service) CreateRole(ctx context.Context, name string) (role.Role, error
 	return s.roles.Create(ctx, name)
 }
 
-// DeleteRole refuses a role an employee holds (role.ErrInUse).
+// RenameRole changes the name of a role.
 func (s *Service) RenameRole(ctx context.Context, id, name string) (role.Role, error) {
 	return s.roles.Rename(ctx, id, name)
 }
 
+// DeleteRole refuses a role an employee holds (role.ErrInUse).
 func (s *Service) DeleteRole(ctx context.Context, id string) error { return s.roles.Delete(ctx, id) }
 
 // Types lists the credential types staff defined.
@@ -360,6 +407,7 @@ func (s *Service) TypeTitle(ctx context.Context, typeName string) string {
 	if def, err := s.types.Find(ctx, typeName); err == nil {
 		return def.Title
 	}
+
 	return typeName
 }
 
@@ -376,20 +424,16 @@ func (s *Service) UpdateType(ctx context.Context, id string, in credtype.Input) 
 func (s *Service) DeleteType(ctx context.Context, id string) error { return s.types.Delete(ctx, id) }
 
 func contains(list []string, s string) bool {
-	for _, v := range list {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, s)
 }
 
-// record makes the entitlement. A person has one of each credential at a time (one of each credential type): the same data again gives the entitlement that is waiting (and its QR code is
-// mailed again), anything else is refused while one is waiting or issued and not ended.
+// record makes the entitlement. A person has one of each credential at a time (one of each credential type): the same data again gives the
+// entitlement that is waiting (and its QR code is mailed again), anything else is refused while one is waiting or issued and not ended.
 func (s *Service) record(ctx context.Context, n entitlement.New) (entitlement.Entitlement, error) {
 	if err := s.stands(ctx, n, ""); err != nil {
 		return entitlement.Entitlement{}, err
 	}
+
 	return s.store.Create(ctx, n)
 }
 
@@ -400,24 +444,30 @@ func (s *Service) stands(ctx context.Context, n entitlement.New, except string) 
 	if err != nil {
 		return err
 	}
+
 	for _, e := range open {
 		if e.Type != n.Type || e.ID == except {
 			continue
 		}
+
 		if maps.Equal(e.Claims, n.Claims) {
 			return nil
 		}
+
 		return AlreadyWaitingError{}
 	}
+
 	issued, err := s.store.FindIssuedFor(ctx, n.Subject)
 	if err != nil {
 		return err
 	}
+
 	for _, e := range issued {
 		if e.Type == n.Type && e.ID != except {
 			return AlreadyIssuedError{IssuedAt: *e.IssuedAt}
 		}
 	}
+
 	return nil
 }
 
@@ -427,29 +477,49 @@ func (s *Service) MailQRCode(ctx context.Context, e entitlement.Entitlement) err
 	if err != nil {
 		return err
 	}
+
 	png, err := qr.PNG(link, qrSize)
 	if err != nil {
 		return err
 	}
+
 	hours := max(1, int((s.cfg.QRLifetime+30*time.Minute)/time.Hour))
+
 	where := ""
 	if s.cfg.IssuerName != "" {
 		where = " bij " + s.cfg.IssuerName
 	}
+
 	htmlWhere := html.EscapeString(where)
+
 	err = s.mailer.Send(ctx, mail.Message{
 		To:      e.Subject.Email,
 		Subject: "Uw credential staat klaar" + where,
-		Text: fmt.Sprintf("Er staat een credential voor u klaar%s.\n\nSla de bijlage (credential.png) op. Kies in uw wallet \"QR-code uploaden\" en kies dat bestand; de rest gaat vanzelf.\n\n"+
-			"De QR-code is %d uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.\nVerwachtte u dit niet? Dan kunt u dit bericht negeren.\n", where, hours),
-		HTML: fmt.Sprintf(`<p>Er staat een credential voor u klaar%s.</p><p>Sla de afbeelding hieronder op. Kies in uw wallet <strong>QR-code uploaden</strong> en kies dat bestand; de rest gaat vanzelf.</p>`+
-			`<p><img src="cid:credential-qr" alt="QR-code" width="240" height="240"></p><p>De QR-code is %d uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.</p>`+
-			`<p>Verwachtte u dit niet? Dan kunt u dit bericht negeren.</p>`, htmlWhere, hours),
+		Text: fmt.Sprintf(
+			"Er staat een credential voor u klaar%s.\n\n"+
+				"Sla de bijlage (credential.png) op. Kies in uw wallet \"QR-code uploaden\" en kies dat bestand; de rest gaat vanzelf.\n\n"+
+				"De QR-code is %d uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.\n"+
+				"Verwachtte u dit niet? Dan kunt u dit bericht negeren.\n",
+			where,
+			hours,
+		),
+		HTML: fmt.Sprintf(
+			`<p>Er staat een credential voor u klaar%s.</p>`+
+				`<p>Sla de afbeelding hieronder op. Kies in uw wallet <strong>QR-code uploaden</strong> `+
+				`en kies dat bestand; de rest gaat vanzelf.</p>`+
+				`<p><img src="cid:credential-qr" alt="QR-code" width="240" height="240"></p>`+
+				`<p>De QR-code is %d uur geldig en werkt één keer. Is hij verlopen? Dan stuurt de uitgever u automatisch een nieuwe.</p>`+
+				`<p>Verwachtte u dit niet? Dan kunt u dit bericht negeren.</p>`,
+			htmlWhere,
+			hours,
+		),
 		Image: &mail.Image{Filename: "credential.png", ContentID: "credential-qr", PNG: png},
 	})
 	if err != nil {
 		return fmt.Errorf("mail the QR code: %w", err)
 	}
+
 	s.cfg.Log.Info(fmt.Sprintf("mailed a QR code for the %s credential to %s", e.Type, e.Subject.Email))
+
 	return nil
 }

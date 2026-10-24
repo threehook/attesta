@@ -58,9 +58,11 @@ func (s Subject) Validate() error {
 	if !ok {
 		return errors.New("unknown kind of subject")
 	}
+
 	if k.id(s) == "" || k.other(s) != "" {
 		return fmt.Errorf("a %s is identified by %s only", s.Kind, k.column)
 	}
+
 	return nil
 }
 

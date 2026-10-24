@@ -2,19 +2,18 @@
 package httpapi
 
 import (
-	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"log/slog"
-	"net/http"
-
 	"attesta/issuer/internal/credential"
 	"attesta/issuer/internal/credtype"
 	"attesta/issuer/internal/entitlement"
 	"attesta/issuer/internal/role"
 	"attesta/issuer/internal/service"
 	"attesta/issuer/internal/statuslist"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"log/slog"
+	"net/http"
 )
 
 type Service interface {
@@ -62,31 +61,40 @@ type Config struct {
 func Handler(cfg Config, svc Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.Handle("/", cfg.Protocol)
+
 	if cfg.Status != nil {
 		mux.Handle(statuslist.Path, cfg.Status)
 	}
+
 	if cfg.WorkloadApprovals != nil {
 		mux.Handle("/workloads/approvals", cfg.WorkloadApprovals)
 		mux.Handle("/workloads/approvals/", cfg.WorkloadApprovals)
 	}
+
 	if cfg.Approvals != nil {
 		mux.Handle("/approvals", cfg.Approvals)
 		mux.Handle("/approvals/", cfg.Approvals)
 	}
+
 	if cfg.Workloads != nil {
 		mux.Handle("/workloads", cfg.Workloads)
 		mux.Handle("/workloads/", cfg.Workloads)
 	}
+
 	if cfg.Mandates != nil {
 		mux.Handle("/mandates", cfg.Mandates)
 		mux.Handle("/mandates/", cfg.Mandates)
 	}
+
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+
 	staff := http.NewServeMux()
+
 	protect := cfg.Protect
 	if protect == nil {
 		protect = func(h http.Handler) http.Handler { return h }
 	}
+
 	mux.Handle("/info", protect(staff))
 	mux.Handle("/entitlements", protect(staff))
 	mux.Handle("/entitlements/", protect(staff))
@@ -99,18 +107,23 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if err != nil {
 			slog.Error("could not read the roles", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rollen konden niet worden gelezen"})
+
 			return
 		}
+
 		types, err := svc.Types(r.Context())
 		if err != nil {
 			slog.Error("could not read the credential types", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de credentialtypes konden niet worden gelezen"})
+
 			return
 		}
+
 		list := make([]map[string]any, len(types))
 		for i, t := range types {
 			list[i] = map[string]any{"type": t.Type.Type, "path": t.Path, "title": t.Title, "description": t.Description, "fields": t.Fields}
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{
 			"issuerName": cfg.IssuerName, "did": cfg.DID, "departments": credential.Departments, "roles": roles, "types": list,
 		})
@@ -121,15 +134,19 @@ func Handler(cfg Config, svc Service) http.Handler {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "onbekend credentialtype"})
 			return
 		}
+
 		if err != nil {
 			slog.Error("could not read the credential type", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "het credentialtype kon niet worden gelezen"})
+
 			return
 		}
+
 		var in map[string]string
 		if !decode(w, r, &in) {
 			return
 		}
+
 		e, err := svc.RecordType(r.Context(), def.Type, in)
 		grant(w, r, svc, e, err)
 	})
@@ -141,6 +158,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !decode(w, r, &in) {
 			return
 		}
+
 		e, err := svc.RecordEmployee(r.Context(), service.EmployeeInput{
 			Name: in.Name, Email: in.Email, Department: in.Department, Organisation: in.Organisation, Roles: in.Roles,
 		})
@@ -148,34 +166,41 @@ func Handler(cfg Config, svc Service) http.Handler {
 	})
 	staff.HandleFunc("GET /entitlements", func(w http.ResponseWriter, r *http.Request) {
 		// Without an email address this lists the credentials of everyone.
-		var active []entitlement.Entitlement
-		var err error
+		var (
+			active []entitlement.Entitlement
+			err    error
+		)
 		if r.URL.Query().Has("email") {
 			active, err = svc.Active(r.Context(), r.URL.Query().Get("email"))
 		} else {
 			active, err = svc.AllActive(r.Context())
 		}
-		var invalid service.InvalidError
-		if errors.As(err, &invalid) {
+
+		if invalid, ok := errors.AsType[service.InvalidError](err); ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
 			return
 		}
+
 		if err != nil {
 			slog.Error("could not read the entitlements", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de credentials konden niet worden gelezen"})
+
 			return
 		}
+
 		out := make([]map[string]any, len(active))
 		for i, e := range active {
 			status := "waiting"
 			if e.Status == entitlement.Issued {
 				status = "issued"
 			}
+
 			out[i] = map[string]any{
 				"id": e.ID, "type": e.Type, "title": svc.TypeTitle(r.Context(), e.Type), "status": status, "claims": e.Claims,
 				"validUntil": e.ValidUntil, "createdAt": e.CreatedAt, "issuedAt": e.IssuedAt,
 			}
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"entitlements": out})
 	})
 	staff.HandleFunc("GET /roles", func(w http.ResponseWriter, r *http.Request) {
@@ -183,12 +208,15 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if err != nil {
 			slog.Error("could not read the roles", "error", err)
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "de rollen konden niet worden gelezen"})
+
 			return
 		}
+
 		out := make([]map[string]any, len(roles))
 		for i, ro := range roles {
 			out[i] = roleJSON(ro)
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"roles": out})
 	})
 	staff.HandleFunc("POST /roles", func(w http.ResponseWriter, r *http.Request) {
@@ -196,11 +224,13 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !decode(w, r, &in) {
 			return
 		}
+
 		ro, err := svc.CreateRole(r.Context(), in.Name)
 		if err != nil {
 			refuseRole(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusCreated, roleJSON(ro))
 	})
 	staff.HandleFunc("PUT /roles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -208,11 +238,13 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !decode(w, r, &in) {
 			return
 		}
+
 		ro, err := svc.RenameRole(r.Context(), r.PathValue("id"), in.Name)
 		if err != nil {
 			refuseRole(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, roleJSON(ro))
 	})
 	staff.HandleFunc("DELETE /roles/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -220,6 +252,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 			refuseRole(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	})
 	typeInput := func(w http.ResponseWriter, r *http.Request) (credtype.Input, bool) {
@@ -230,6 +263,7 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !decode(w, r, &in) {
 			return credtype.Input{}, false
 		}
+
 		return credtype.Input{Title: in.Title, Description: in.Description, Fields: in.Fields}, true
 	}
 	staff.HandleFunc("GET /credential-types", func(w http.ResponseWriter, r *http.Request) {
@@ -238,10 +272,12 @@ func Handler(cfg Config, svc Service) http.Handler {
 			refuseType(w, err)
 			return
 		}
+
 		out := make([]map[string]any, len(types))
 		for i, t := range types {
 			out[i] = typeJSON(t)
 		}
+
 		writeJSON(w, http.StatusOK, map[string]any{"types": out})
 	})
 	staff.HandleFunc("POST /credential-types", func(w http.ResponseWriter, r *http.Request) {
@@ -249,11 +285,13 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !ok {
 			return
 		}
+
 		t, err := svc.CreateType(r.Context(), in)
 		if err != nil {
 			refuseType(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusCreated, typeJSON(t))
 	})
 	staff.HandleFunc("PUT /credential-types/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -261,11 +299,13 @@ func Handler(cfg Config, svc Service) http.Handler {
 		if !ok {
 			return
 		}
+
 		t, err := svc.UpdateType(r.Context(), r.PathValue("id"), in)
 		if err != nil {
 			refuseType(w, err)
 			return
 		}
+
 		writeJSON(w, http.StatusOK, typeJSON(t))
 	})
 	staff.HandleFunc("DELETE /credential-types/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -273,13 +313,17 @@ func Handler(cfg Config, svc Service) http.Handler {
 			refuseType(w, err)
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	})
 	// Without a body this revokes; with the corrected data of the credential it revokes and records the corrected one, and mails its QR code.
 	staff.HandleFunc("POST /entitlements/revoke/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
+
 		var raw map[string]any
+
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
 		replace := true
 		if err := json.NewDecoder(r.Body).Decode(&raw); errors.Is(err, io.EOF) {
 			replace = false
@@ -287,32 +331,40 @@ func Handler(cfg Config, svc Service) http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
 			return
 		}
+
 		if !replace {
 			if err := svc.Revoke(r.Context(), id); err != nil {
 				refuse(w, err)
 				return
 			}
+
 			writeJSON(w, http.StatusOK, map[string]any{"revoked": true})
+
 			return
 		}
+
 		replacement, ok := replacementOf(raw)
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
 			return
 		}
+
 		e, err := svc.Replace(r.Context(), id, replacement)
 		if err != nil {
 			refuse(w, err)
 			return
 		}
+
 		grant(w, r, svc, e, nil)
 	})
+
 	return mux
 }
 
 // replacementOf reads the corrected data: text per field and, for an Employee, a list of roles.
 func replacementOf(raw map[string]any) (service.Replacement, bool) {
 	r := service.Replacement{Values: map[string]string{}}
+
 	for k, v := range raw {
 		switch v := v.(type) {
 		case string:
@@ -321,17 +373,20 @@ func replacementOf(raw map[string]any) (service.Replacement, bool) {
 			if k != "roles" {
 				return r, false
 			}
+
 			for _, item := range v {
 				name, ok := item.(string)
 				if !ok {
 					return r, false
 				}
+
 				r.Roles = append(r.Roles, name)
 			}
 		default:
 			return r, false
 		}
 	}
+
 	return r, true
 }
 
@@ -379,10 +434,12 @@ func refuseRole(w http.ResponseWriter, err error) {
 
 // refuse answers a request to revoke that could not be done.
 func refuse(w http.ResponseWriter, err error) {
-	var invalid service.InvalidError
-	var missing service.NotFoundError
-	var issued service.AlreadyIssuedError
-	var waiting service.AlreadyWaitingError
+	var (
+		invalid service.InvalidError
+		missing service.NotFoundError
+		issued  service.AlreadyIssuedError
+		waiting service.AlreadyWaitingError
+	)
 	switch {
 	case errors.As(err, &invalid):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
@@ -398,29 +455,36 @@ func refuse(w http.ResponseWriter, err error) {
 
 // grant answers a request to record an entitlement: the person gets the mail with the QR code.
 func grant(w http.ResponseWriter, r *http.Request, svc Service, e entitlement.Entitlement, err error) {
-	var invalid service.InvalidError
-	if errors.As(err, &invalid) {
+	if invalid, ok := errors.AsType[service.InvalidError](err); ok {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": invalid.Message})
 		return
 	}
-	var issued service.AlreadyIssuedError
-	var waiting service.AlreadyWaitingError
+
+	var (
+		issued  service.AlreadyIssuedError
+		waiting service.AlreadyWaitingError
+	)
 	if errors.As(err, &issued) || errors.As(err, &waiting) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 		return
 	}
+
 	if err != nil {
 		slog.Error("could not record the entitlement", "error", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "het credential kon niet worden vastgelegd"})
+
 		return
 	}
+
 	if err := svc.MailQRCode(r.Context(), e); err != nil {
 		slog.Error("could not mail the QR code", "error", err)
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"error": "het credential is vastgelegd, maar de e-mail kon niet worden verstuurd; probeer het opnieuw", "entitlementId": e.ID,
 		})
+
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"entitlementId": e.ID, "mailedTo": e.Subject.Email})
 }
 
@@ -429,6 +493,7 @@ func decode(w http.ResponseWriter, r *http.Request, into any) bool {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "the request is not the JSON this endpoint takes"})
 		return false
 	}
+
 	return true
 }
 
