@@ -17,21 +17,6 @@ resource "azurerm_subnet" "aks" {
   address_prefixes     = ["10.20.0.0/22"]
 }
 
-resource "random_string" "acr" {
-  length  = 6
-  upper   = false
-  special = false
-}
-
-# Basic has no private endpoint; the registry keeps its public endpoint, behind Entra authentication.
-resource "azurerm_container_registry" "this" {
-  name                = "acr${replace(var.name, "-", "")}${random_string.acr.result}"
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  sku                 = "Basic"
-  admin_enabled       = false
-}
-
 resource "azurerm_kubernetes_cluster" "this" {
   name                    = "aks-${var.name}"
   location                = azurerm_resource_group.this.location
@@ -63,11 +48,4 @@ resource "azurerm_kubernetes_cluster" "this" {
     # Nodes get no public address; pods leave through the load balancer's outbound IP.
     outbound_type = "loadBalancer"
   }
-}
-
-resource "azurerm_role_assignment" "acr_pull" {
-  scope                            = azurerm_container_registry.this.id
-  role_definition_name             = "AcrPull"
-  principal_id                     = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
-  skip_service_principal_aad_check = true
 }
