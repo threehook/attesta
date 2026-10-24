@@ -297,4 +297,5 @@ azure-up:
 
 azure-destroy:
 	@read -p "Destroy the Azure test infrastructure? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
+	terraform -chdir=$(AZURE_DIR) init -input=false
 	terraform -chdir=$(AZURE_DIR) destroy

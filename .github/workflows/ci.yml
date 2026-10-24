@@ -1,0 +1,127 @@
+name: ci
+
+on:
+  pull_request:
+    paths-ignore: ['k8s/cloud/**', 'docs/**', '**.md']
+  push:
+    branches: [main]
+    paths-ignore: ['k8s/cloud/**', 'docs/**', '**.md']
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # The issuer's Postgres tests start a container, which the runner's Docker provides.
+  test-go:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: [backend, issuer/api, examples/laadpalen/api]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: ${{ matrix.module }}/go.mod
+          cache-dependency-path: ${{ matrix.module }}/go.sum
+      - run: go test ./...
+        working-directory: ${{ matrix.module }}
+
+  test-typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @attesta/client --filter @attesta/wallet build
+      - run: pnpm -r typecheck
+      - run: pnpm -r test
+
+  test-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev]'
+        working-directory: examples/cicd-agent
+      - run: pytest
+        working-directory: examples/cicd-agent
+
+  # The real Electron wallet against the Go issuer and the Go backend. Docker runs Postgres and Mailpit for the issuer.
+  test-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: |
+            backend/go.sum
+            issuer/api/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.8.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @attesta/client build
+      - run: go build -o "$RUNNER_TEMP/attesta" ./cmd/attesta
+        working-directory: backend
+      - name: Backend
+        run: |
+          ATTESTA_ADDR=:18080 ATTESTA_PUBLIC_URL=http://localhost:18080 ATTESTA_ADMIN_TOKEN=e2e-admin \
+            ATTESTA_STATUS_URL_PREFIXES=http://localhost:4099/status/ "$RUNNER_TEMP/attesta" &
+          for _ in $(seq 30); do curl -sf http://localhost:18080/healthz && exit 0; sleep 1; done
+          exit 1
+      - run: xvfb-run -a pnpm --filter @attesta/wallet-desktop test:e2e
+        env:
+          ATTESTA_BACKEND_URL: http://localhost:18080
+          ATTESTA_ADMIN_TOKEN: e2e-admin
+          ATTESTA_E2E_ISSUER_PORT: '4099'
+
+  images:
+    needs: [test-go, test-typescript, test-agent]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: attesta-backend
+            context: backend
+            file: backend/Dockerfile
+          - image: cicd-wallet
+            context: .
+            file: wallet/Dockerfile
+          - image: cicd-agent
+            context: examples/cicd-agent
+            file: examples/cicd-agent/Dockerfile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      # A pull request only builds; the push to the registry happens after the merge.
+      - uses: docker/login-action@v3
+        if: github.event_name == 'push'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          push: ${{ github.event_name == 'push' }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}:${{ github.sha }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
