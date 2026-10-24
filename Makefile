@@ -281,8 +281,9 @@ cicd-logs:
 # Azure test infrastructure (k8s/cloud/azure). azure-down stops the nodes and keeps everything else, azure-up starts them again;
 # azure-destroy removes it all, the images in ACR included.
 AZURE_DIR := k8s/cloud/azure
-AZURE_RG = $(shell terraform -chdir=$(AZURE_DIR) output -raw resource_group)
-AZURE_CLUSTER = $(shell terraform -chdir=$(AZURE_DIR) output -raw cluster)
+# The names Terraform gives them (var.name in $(AZURE_DIR)/variables.tf); stop and start need no Terraform login.
+AZURE_RG := rg-attesta-test
+AZURE_CLUSTER := aks-attesta-test
 
 azure-apply:
 	terraform -chdir=$(AZURE_DIR) init -input=false
