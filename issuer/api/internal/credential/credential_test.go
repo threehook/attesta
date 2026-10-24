@@ -290,7 +290,13 @@ func TestSlugKeepsLettersAndDigitsAndSeparatesWithHyphens(t *testing.T) {
 
 func TestNormalizesANumberToTheDecimalsOfItsFieldAndHoldsItToItsBounds(t *testing.T) {
 	price := credential.Field{Key: "price", Kind: "number", Decimals: 2, Min: "0", Max: "99.5"}
-	for in, want := range map[string]string{"12": "12.00", "12,5": "12.50", " 0.1 ": "0.10", "99.50": "99.50", "-0": "0.00"} {
+	cases := map[string]string{
+		"12": "12.00", "12,5": "12.50",
+		" 0.1 ": "0.10", //nolint:gocritic // the surrounding whitespace is what the test is about
+		"99.50": "99.50", "-0": "0.00",
+	}
+
+	for in, want := range cases {
 		if got, err := credential.NormalizeNumber(price, in); err != nil || got != want {
 			t.Errorf("%q: %q %v, want %q", in, got, err, want)
 		}

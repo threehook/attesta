@@ -70,7 +70,7 @@ func (f *fakes) RevokeAll(_ context.Context, subject entitlement.Subject) (int64
 	return 1, nil
 }
 
-func (f *fakes) Verify(_ context.Context, token string) (string, error) {
+func (f *fakes) Verify(_ context.Context, _ string) (string, error) {
 	if f.verifyErr != nil {
 		return "", f.verifyErr
 	}

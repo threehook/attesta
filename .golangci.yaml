@@ -13,7 +13,6 @@ linters:
     - cyclop
     - depguard
     - err113
-    - exhaustive
     - exhaustruct
     - exhaustruct_v5
     - forbidigo
@@ -22,21 +21,17 @@ linters:
     - gochecknoglobals
     - gocognit
     - gocyclo
-    - goconst
     - gomodguard
     - interfacebloat
     - maintidx
-    - misspell # the user-facing texts are Dutch
     - mnd
     - nilnil
     - nlreturn
     - noinlineerr
     - paralleltest
-    - revive
     - tagalign
     - tagliatelle
     - testpackage
-    - thelper
     - varnamelen
     - wrapcheck
     - wsl
@@ -52,11 +47,16 @@ linters:
         - (*encoding/json.Encoder).Encode
         - (github.com/jackc/pgx/v5.Tx).Rollback
 
-    gocritic:
-      enable-all: false
-      disable-all: true
-      enabled-checks:
-        - commentedOutCode
+    goconst:
+      min-occurrences: 5
+      ignore-string-values:
+        - ^error$ # the key of every JSON error body
+
+    misspell:
+      # Dutch words that the English dictionary reads as a misspelling.
+      ignore-rules:
+        - productie
+        - adres
 
     gosec:
       excludes:
@@ -85,7 +85,10 @@ linters:
     rules:
       - linters: [errchkjson]
         text: "Encode.*unsafe type"
+      - path: _test\.go
+        linters: [goconst]
     presets:
+      - comments
       - std-error-handling
 
 formatters:

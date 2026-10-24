@@ -27,7 +27,10 @@ type wallet struct {
 }
 
 func newWallet(t *testing.T) wallet {
+	t.Helper()
+
 	pub, key, _ := ed25519.GenerateKey(rand.Reader)
+
 	return wallet{t: t, issuer: key, did: sdjwt.DIDKeyFromEd25519(pub), now: time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)}
 }
 

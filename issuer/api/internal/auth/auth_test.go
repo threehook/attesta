@@ -133,7 +133,7 @@ func TestLoginServerDown(t *testing.T) {
 
 	v := New(Options{Issuer: "https://login.example/realms/r", DiscoveryURL: url, ClientID: "issuer-gui", Role: "issuer-staff"})
 
-	h := v.Protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	h := v.Protect(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	if got := call(h, "abc"); got != http.StatusServiceUnavailable {
 		t.Fatalf("got %d", got)
 	}

@@ -57,17 +57,19 @@ func NewOPA() *OPA {
 	return &OPA{capabilities: caps, prepared: make(map[[sha256.Size]byte]rego.PreparedEvalQuery)}
 }
 
+const sample = "validate"
+
 // validationInput and validationInputWithoutCredentials are the sample calls Validate makes to prove that the rule's value has the expected shape;
 // their values are never interpreted.
 var (
 	validationInput = Input{
-		Resource: "validate", Credentials: map[string]Credential{"validate": {
-			Issuer: "validate",
-			Claims: map[string]string{"validate": "validate"},
+		Resource: sample, Credentials: map[string]Credential{sample: {
+			Issuer: sample,
+			Claims: map[string]string{sample: sample},
 		}},
 	}
 
-	validationInputWithoutCredentials = Input{Resource: "validate"}
+	validationInputWithoutCredentials = Input{Resource: sample}
 )
 
 // Validate checks that source compiles, is in package policy and defines the rule decision, and that the rule's value has the right shape for a
