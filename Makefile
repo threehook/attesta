@@ -295,9 +295,12 @@ AZURE_NAME := $(call AZURE_ENV_VAR,environment)-attesta
 AZURE_RG := rg-$(AZURE_NAME)
 AZURE_CLUSTER := aks-$(AZURE_NAME)
 
+# The addresses come from the repository variables that the workflow uses too (gh needs a login), so a local run and a workflow run give the same result.
 azure-apply:
 	terraform -chdir=$(AZURE_DIR) init -input=false
-	terraform -chdir=$(AZURE_DIR) apply -var-file=environments/$(AZURE_ENV).tfvars
+	TF_VAR_api_allowed_cidrs="$$(gh variable get API_ALLOWED_CIDRS)" \
+		TF_VAR_key_vault_allowed_cidrs="$$(gh variable get KEY_VAULT_ALLOWED_CIDRS 2>/dev/null || echo '[]')" \
+		terraform -chdir=$(AZURE_DIR) apply -auto-approve -var-file=environments/$(AZURE_ENV).tfvars
 
 azure-down:
 	az aks stop --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
@@ -306,9 +309,10 @@ azure-up:
 	az aks start --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
 
 azure-destroy:
-	@read -p "Destroy the Azure test infrastructure? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
 	terraform -chdir=$(AZURE_DIR) init -input=false
-	terraform -chdir=$(AZURE_DIR) destroy -var-file=environments/$(AZURE_ENV).tfvars
+	TF_VAR_api_allowed_cidrs="$$(gh variable get API_ALLOWED_CIDRS)" \
+		TF_VAR_key_vault_allowed_cidrs="$$(gh variable get KEY_VAULT_ALLOWED_CIDRS 2>/dev/null || echo '[]')" \
+		terraform -chdir=$(AZURE_DIR) destroy -auto-approve -var-file=environments/$(AZURE_ENV).tfvars
 
 # The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
 # Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
