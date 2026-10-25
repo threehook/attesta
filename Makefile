@@ -287,10 +287,13 @@ cicd-logs:
 # azure-destroy removes it all.
 AZURE_DIR := k8s/cloud/azure
 # Which environment's settings (k8s/cloud/azure/environments/<name>.tfvars) apply and destroy use.
-AZURE_ENV ?= test
-# The names Terraform gives them (var.name in $(AZURE_DIR)/variables.tf); stop and start need no Terraform login.
-AZURE_RG := rg-attesta-test
-AZURE_CLUSTER := aks-attesta-test
+AZURE_ENV ?= tst
+# A setting of the environment, such as environment or key_vault_name.
+AZURE_ENV_VAR = $(shell sed -n 's/^$(1) *= *"\(.*\)"/\1/p' $(AZURE_DIR)/environments/$(AZURE_ENV).tfvars)
+# The names Terraform gives them (local.name in $(AZURE_DIR)/main.tf); stop and start need no Terraform login.
+AZURE_NAME := $(call AZURE_ENV_VAR,environment)-attesta
+AZURE_RG := rg-$(AZURE_NAME)
+AZURE_CLUSTER := aks-$(AZURE_NAME)
 
 azure-apply:
 	terraform -chdir=$(AZURE_DIR) init -input=false
@@ -309,7 +312,7 @@ azure-destroy:
 
 # The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
 # Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
-AZURE_KUBE_CONTEXT := aks-attesta-test
+AZURE_KUBE_CONTEXT := $(AZURE_CLUSTER)
 AZURE_BACKEND_IMAGE := ghcr.io/threehook/attesta-backend
 
 azure-backend-apply:
@@ -335,7 +338,6 @@ azure-backend-delete:
 
 # The CI/CD agent on AKS (k8s/cloud/cicd): make azure-cicd-apply TAG=<git sha>, the sha of the commit whose images the images workflow pushed.
 # Needs the Terraform applied (Key Vault, the wallet's identity) and, to get a credential, the issuer and SPIRE.
-AZURE_ENV_VAR = $(shell sed -n 's/^$(1) *= *"\(.*\)"/\1/p' $(AZURE_DIR)/environments/$(AZURE_ENV).tfvars)
 # The key's name in mode provisioned (wallet_key_name in $(AZURE_DIR)/variables.tf), and what the keys start with in mode create.
 AZURE_WALLET_KEY := cicd-agent
 
@@ -348,7 +350,7 @@ azure-cicd-apply:
 	$(MAKE) azure-cicd-policies azure-cicd-keys
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/cicd/serviceaccount.yaml
 	kubectl --context $(AZURE_KUBE_CONTEXT) annotate serviceaccount cicd-agent -n $(NAMESPACE) --overwrite \
-		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-attesta-test-wallet --query clientId -o tsv)
+		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-$(AZURE_NAME)-wallet --query clientId -o tsv)
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/cicd/deployment.yaml -f k8s/cloud/cicd/service.yaml
 	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/cicd-agent -n $(NAMESPACE) \
 		cicd-agent=ghcr.io/threehook/cicd-agent:$(TAG) cicd-wallet=ghcr.io/threehook/cicd-wallet:$(TAG) cicd-attesta=$(AZURE_BACKEND_IMAGE):$(TAG)

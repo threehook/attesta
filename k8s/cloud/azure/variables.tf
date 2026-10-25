@@ -8,10 +8,14 @@ variable "location" {
   default = "westeurope"
 }
 
-variable "name" {
+variable "environment" {
   type        = string
-  default     = "attesta-test"
-  description = "Prefix of every resource name"
+  description = "Short name of the environment, such as tst or prd; resources are named <type>-<environment>-<application>"
+}
+
+variable "application" {
+  type    = string
+  default = "attesta"
 }
 
 variable "node_count" {

@@ -5,7 +5,7 @@ set -euo pipefail
 
 # This repo's tokens carry the numeric owner and repo ids in the subject.
 REPO=threehook@442604/attesta@1404472147
-ENVIRONMENT=azure-test
+ENVIRONMENT=azure-tst
 APP_NAME=attesta-github-terraform
 
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
@@ -29,7 +29,9 @@ federate() {
 }
 federate main "repo:$REPO:ref:refs/heads/main"
 federate pull-request "repo:$REPO:pull_request"
-federate environment "repo:$REPO:environment:$ENVIRONMENT"
+federate "environment-$ENVIRONMENT" "repo:$REPO:environment:$ENVIRONMENT"
+# The credential of the environment that was called azure-test before.
+az ad app federated-credential delete --id "$CLIENT_ID" --federated-credential-id environment >/dev/null 2>&1 || true
 
 # Contributor creates the resources.
 az role assignment create --assignee "$CLIENT_ID" --role Contributor --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true

@@ -23,7 +23,7 @@ resource "azurerm_key_vault" "this" {
 
 # The wallet's identity: the pod's service account is exchanged for a token of this identity.
 resource "azurerm_user_assigned_identity" "wallet" {
-  name                = "id-${var.name}-wallet"
+  name                = "id-${local.name}-wallet"
   location            = azurerm_resource_group.this.location
   resource_group_name = azurerm_resource_group.this.name
 }
