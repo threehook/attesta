@@ -31,10 +31,16 @@ federate main "repo:$REPO:ref:refs/heads/main"
 federate pull-request "repo:$REPO:pull_request"
 federate environment "repo:$REPO:environment:$ENVIRONMENT"
 
-# Contributor creates the resources; User Access Administrator lets Terraform manage role assignments.
-for role in Contributor "User Access Administrator"; do
-	az role assignment create --assignee "$CLIENT_ID" --role "$role" --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
-done
+# Contributor creates the resources.
+az role assignment create --assignee "$CLIENT_ID" --role Contributor --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
+
+# Terraform gives the wallet's identity its role on the Key Vault. The app may assign only these two roles, Key Vault Crypto Officer and Key Vault Crypto User,
+# and no other. RBAC_SCOPE is where it may do that: the subscription by default; an environment whose resource group exists beforehand sets that group.
+RBAC_SCOPE=${RBAC_SCOPE:-/subscriptions/$SUBSCRIPTION_ID}
+ROLES="14b46e9e-c2b7-41b4-b07b-48a6ebf60603, 12338af0-0e69-4776-bea7-57ae8d297424"
+CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$ROLES})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$ROLES}))"
+az role assignment create --assignee "$CLIENT_ID" --role "Role Based Access Control Administrator" --scope "$RBAC_SCOPE" \
+	--condition "$CONDITION" --condition-version 2.0 >/dev/null || true
 
 echo "AZURE_CLIENT_ID=$CLIENT_ID"
 echo "AZURE_TENANT_ID=$TENANT_ID"

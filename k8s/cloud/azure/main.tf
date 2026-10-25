@@ -15,6 +15,7 @@ resource "azurerm_subnet" "aks" {
   resource_group_name  = azurerm_resource_group.this.name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = ["10.20.0.0/22"]
+  service_endpoints    = ["Microsoft.KeyVault"]
 }
 
 resource "azurerm_kubernetes_cluster" "this" {
@@ -24,6 +25,10 @@ resource "azurerm_kubernetes_cluster" "this" {
   dns_prefix              = var.name
   private_cluster_enabled = false
   sku_tier                = "Free"
+
+  # Pods sign in to Azure with a token of their service account (Workload Identity): no secret in the cluster.
+  oidc_issuer_enabled       = true
+  workload_identity_enabled = true
 
   api_server_access_profile {
     authorized_ip_ranges = var.api_allowed_cidrs

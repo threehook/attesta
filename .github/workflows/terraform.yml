@@ -40,7 +40,7 @@ jobs:
       - run: terraform init -input=false
       - run: terraform fmt -check
       - run: terraform validate
-      - run: terraform plan -input=false
+      - run: terraform plan -input=false -var-file=environments/test.tfvars
 
   apply:
     if: github.event_name == 'push'
@@ -58,4 +58,4 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
       - run: terraform init -input=false
-      - run: terraform apply -input=false -auto-approve
+      - run: terraform apply -input=false -auto-approve -var-file=environments/test.tfvars
