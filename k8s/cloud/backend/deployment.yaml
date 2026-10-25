@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attesta-backend
+  namespace: attesta
+  labels:
+    app: attesta-backend
+spec:
+  replicas: 1
+  strategy:
+    # The decision log volume is ReadWriteOnce: the old pod must stop before the new one mounts it.
+    type: Recreate
+  selector:
+    matchLabels:
+      app: attesta-backend
+  template:
+    metadata:
+      labels:
+        app: attesta-backend
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        fsGroup: 10001
+      containers:
+        - name: attesta-backend
+          # Placeholder: the Makefile target sets the pushed tag (git sha) with `kubectl set image`.
+          image: ghcr.io/threehook/attesta-backend:dev
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ATTESTA_PUBLIC_URL
+              value: http://localhost:8080
+            - name: ATTESTA_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-backend
+                  key: admin-token
+            - name: ATTESTA_POLICIES_DIR
+              value: /policies
+            - name: ATTESTA_ADL_OUTPUT
+              value: "file,stdout"
+            - name: ATTESTA_ADL_FILE
+              value: /var/lib/attesta/adl/decisions.jsonl
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          volumeMounts:
+            - name: policies
+              mountPath: /policies
+              readOnly: true
+            - name: decision-log
+              mountPath: /var/lib/attesta/adl
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: policies
+          configMap:
+            name: attesta-policies
+        - name: decision-log
+          persistentVolumeClaim:
+            claimName: attesta-decision-log
