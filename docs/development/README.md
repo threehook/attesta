@@ -1,4 +1,6 @@
-# Attesta
+# Attesta, technical README
+
+What Attesta is and does is in the [README at the root](../../README.md). This one is for people who build, run or extend it. Paths are relative to the repository root.
 
 A Go backend that authorizes requests based on verifiable credentials that users present from their own wallet. An application asks the backend to
 start an authorization; the user's wallet answers with an SD-JWT presentation that discloses only what was asked for; the backend verifies it and
@@ -12,7 +14,7 @@ This is a monorepo: the backend, a TypeScript client library, a wallet core and 
 
 ## Architecture
 
-How the pieces fit together, with the end-to-end flow and the design of the next steps, is in [docs/architecture.md](docs/architecture/architecture.md).
+How the pieces fit together, with the end-to-end flow and the design of the next steps, is in [architecture/architecture.md](../architecture/architecture.md).
 
 Key design decisions:
 
@@ -52,6 +54,7 @@ issuer/                    credential issuer; see its README
   api/                     Go (module attesta/issuer): OpenID4VCI, entitlements, roles, credential types, status list, the mail with the QR code
   gui/                     @attesta/issuer-gui: the pages, including the Policy Editor and Policy Tester
 examples/
+  cicd-agent/              a CI/CD agent with a wallet and an Attesta of its own; see its README
   laadpalen/               a relying application with Attesta as its sidecar: Go backend (api/), React page (gui/), policy (policies/); see its README
 k8s/
   local/              manifests for Docker Desktop's local k8s
@@ -59,7 +62,7 @@ k8s/
     issuer/           deployments/services for the issuer: api, gui, Postgres and Keycloak
     laadpalen/        the laadpalen app: one pod with its backend and the Attesta sidecar, and its page
     ingress/          Ingress for the issuer, the laadpalen page and the sidecar's API; Traefik terminates https (make k8s-traefik k8s-ingress)
-  cloud/              (empty for now)
+  cloud/              manifests (backend, cicd) and Terraform (azure) for AKS
 pnpm-workspace.yaml   client-lib, wallet, wallet-desktop, issuer/gui and examples/laadpalen/gui
 Makefile              build/test/docker/k8s targets (see Development workflow)
 ```
@@ -72,7 +75,7 @@ Makefile              build/test/docker/k8s targets (see Development workflow)
 | Laadpalen page | `examples/laadpalen/gui` | The employee's page of the laadpalen app: sign in with the wallet, then request a laadpaal. Attesta decides from the credential in the wallet. |
 | Wallet | `wallet-desktop` | The employee's wallet: reads the QR code from the mail, confirms every credential it adds, and confirms every disclosure unless the employee chose to always share with that application. |
 
-Each GUI is described, with screenshots, in the README of its module: [issuer](issuer/README.md), [laadpalen](examples/laadpalen/README.md) and [wallet-desktop](wallet-desktop/README.md). They share one look: a header with the logo and a breadcrumb, a menu on the left, and a one-line footer.
+Each GUI is described, with screenshots, in the README of its module: [issuer](../../issuer/README.md), [laadpalen](../../examples/laadpalen/README.md) and [wallet-desktop](../../wallet-desktop/README.md). They share one look: a header with the logo and a breadcrumb, a menu on the left, and a one-line footer.
 
 ## Development workflow
 
@@ -85,10 +88,7 @@ go run ./cmd/attesta      # listens on :8080, no policies unless ATTESTA_POLICIE
 go test ./...
 ```
 
-Configuration comes from the environment: `ATTESTA_ADDR`, `ATTESTA_PUBLIC_URL` (where wallets reach the backend: it appears in every presentation
-request), `ATTESTA_POLICIES_DIR`, `ATTESTA_ADMIN_TOKEN`, `ATTESTA_CORS_ORIGINS`, `ATTESTA_STATUS_URL_PREFIXES` (the URLs, each ending in `/`, that status lists are read from; with none set
-every credential is denied) and `ATTESTA_STATUS_HOSTS` (`https://public=http://internal` pairs, for a list that is reached at another address than its public one). `internal/config` falls back to an insecure dev default for the admin token when its variable
-isn't set — fine for local Docker Desktop, not fine for anything beyond it.
+Every setting, with its default, is in [configuration.md](../configuration.md).
 
 For the k8s loop (requires Docker Desktop running, with Kubernetes enabled):
 
@@ -105,11 +105,7 @@ make laadpalen           # deploys examples/laadpalen (needs the issuer): the pa
 make laadpalen-policies  # hot-deploys that app's policies into its sidecar, no restart
 ```
 
-A backend serves the policies in the directory `ATTESTA_POLICIES_DIR` and reads it every 30 seconds. It applies what changed without a restart: a new or
-changed file is validated and installed, a file that is gone takes its policy with it, and an invalid file is rejected (logged once) while the previous
-version stays in use. The policy ID is the file name without `.rego`. The laadpalen sidecar gets its directory from the ConfigMap `laadpalen-policies`
-(`make laadpalen-policies`; Kubernetes updates the mounted files within about a minute, and the backend reads them at its next pass, so a change is live within about 90 seconds). `POST /admin/policies` hot-deploys a single policy directly; it
-is held in memory until the backend restarts, and the directory never removes it.
+The policies of a backend are loaded from a directory that is watched, and hot-deployed through `POST /admin/policies`; see [configuration.md](../configuration.md#policies). The laadpalen sidecar gets its directory from the ConfigMap `laadpalen-policies` (`make laadpalen-policies`).
 
 ```sh
 pnpm install                          # from the repo root; allows the install scripts listed in pnpm-workspace.yaml
@@ -123,7 +119,7 @@ Askar, the wallet's storage, ships a native library that its install script down
 
 ### Trying the whole flow
 
-The laadpalen app and its policies are in [examples/laadpalen](examples/laadpalen/README.md):
+The laadpalen app and its policies are in [examples/laadpalen](../../examples/laadpalen/README.md):
 
 ```sh
 make k8s-issuer-apply laadpalen                                # the issuer and the laadpalen app
@@ -141,4 +137,4 @@ The wallet core also has a headless CLI (`cd wallet && pnpm cli accept|present|l
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](../../LICENSE).
