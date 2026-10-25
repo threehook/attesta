@@ -39,7 +39,8 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
 	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
-	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete lint
+	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete \
+	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -331,3 +332,41 @@ azure-backend-delete:
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/backend/deployment.yaml -f k8s/cloud/backend/service.yaml --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete secret attesta-backend -n $(NAMESPACE) --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete configmap attesta-policies -n $(NAMESPACE) --ignore-not-found
+
+# The CI/CD agent on AKS (k8s/cloud/cicd): make azure-cicd-apply TAG=<git sha>, the sha of the commit whose images the images workflow pushed.
+# Needs the Terraform applied (Key Vault, the wallet's identity) and, to get a credential, the issuer and SPIRE.
+AZURE_ENV_VAR = $(shell sed -n 's/^$(1) *= *"\(.*\)"/\1/p' $(AZURE_DIR)/environments/$(AZURE_ENV).tfvars)
+# The key's name in mode provisioned (wallet_key_name in $(AZURE_DIR)/variables.tf), and what the keys start with in mode create.
+AZURE_WALLET_KEY := cicd-agent
+
+azure-cicd-apply:
+	@test -n "$(TAG)" || { echo "usage: make azure-cicd-apply TAG=<git sha>"; exit 1; }
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/backend/namespace.yaml
+	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret cicd-agent -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic cicd-agent -n $(NAMESPACE) \
+			--from-literal=token=$$(openssl rand -hex 24) --from-literal=admin-token=$$(openssl rand -hex 32)
+	$(MAKE) azure-cicd-policies azure-cicd-keys
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/cicd/serviceaccount.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) annotate serviceaccount cicd-agent -n $(NAMESPACE) --overwrite \
+		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-attesta-test-wallet --query clientId -o tsv)
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/cicd/deployment.yaml -f k8s/cloud/cicd/service.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/cicd-agent -n $(NAMESPACE) \
+		cicd-agent=ghcr.io/threehook/cicd-agent:$(TAG) cicd-wallet=ghcr.io/threehook/cicd-wallet:$(TAG) cicd-attesta=$(AZURE_BACKEND_IMAGE):$(TAG)
+	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/cicd-agent -n $(NAMESPACE)
+
+azure-cicd-policies: KUBE_CONTEXT := $(AZURE_KUBE_CONTEXT)
+azure-cicd-policies:
+	@$(call put-configmap,cicd-policies,$(CICD_POLICIES))
+
+# What the wallet needs to find its key, from the environment's Terraform settings and the vault itself.
+azure-cicd-keys:
+	kubectl --context $(AZURE_KUBE_CONTEXT) create configmap cicd-wallet-keys -n $(NAMESPACE) --dry-run=client -o yaml \
+		--from-literal=ATTESTA_WALLET_AZURE_KEY_VAULT_URL=$$(az keyvault show -n $(call AZURE_ENV_VAR,key_vault_name) --query properties.vaultUri -o tsv) \
+		--from-literal=ATTESTA_WALLET_AZURE_KEY_MODE=$(call AZURE_ENV_VAR,wallet_key_mode) \
+		--from-literal=ATTESTA_WALLET_KMS_PREFIX=$(AZURE_WALLET_KEY) --from-literal=ATTESTA_WALLET_AZURE_KEY_NAME=$(AZURE_WALLET_KEY) | \
+		kubectl --context $(AZURE_KUBE_CONTEXT) apply -f -
+
+azure-cicd-delete:
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/cicd --ignore-not-found
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete secret cicd-agent -n $(NAMESPACE) --ignore-not-found
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete configmap cicd-policies cicd-wallet-keys -n $(NAMESPACE) --ignore-not-found

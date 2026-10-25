@@ -1,0 +1,12 @@
+# Only the agent is reachable; its wallet and its attesta listen on the pod's own address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cicd-agent
+  namespace: attesta
+spec:
+  selector:
+    app: cicd-agent
+  ports:
+    - port: 8090
+      targetPort: 8090
