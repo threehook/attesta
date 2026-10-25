@@ -11,7 +11,7 @@ permissions:
   id-token: write
   contents: read
 
-concurrency: terraform-azure-test
+concurrency: terraform-azure-tst
 
 defaults:
   run:
@@ -47,7 +47,7 @@ jobs:
     if: github.event_name == 'push'
     needs: plan
     runs-on: ubuntu-latest
-    environment: azure-test
+    environment: azure-tst
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
