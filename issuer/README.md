@@ -4,7 +4,7 @@ A credential issuer. It stands for an organization such as a university or a mun
 QR code by mail, and their wallet fetches the signed credential (SD-JWT VC) over OpenID4VCI. The issuer is independent of the Attesta backend; the backend only learns of it
 by being configured to trust the issuer's DID.
 
-![Recording an Employee credential in the issuer's pages](docs/images/medewerker.jpg)
+![The issuer: staff see every credential they gave out, and can change or revoke it](docs/images/credentials.jpg)
 
 ## The idea in short
 
