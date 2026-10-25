@@ -6,7 +6,7 @@ terraform {
     organization = "corbencreatives"
 
     workspaces {
-      name = "attesta-azure-test"
+      name = "attesta-azure-tst"
     }
   }
 
