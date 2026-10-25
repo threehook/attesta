@@ -285,13 +285,15 @@ cicd-logs:
 # Azure test infrastructure (k8s/cloud/azure). azure-down stops the nodes and keeps everything else, azure-up starts them again;
 # azure-destroy removes it all.
 AZURE_DIR := k8s/cloud/azure
+# Which environment's settings (k8s/cloud/azure/environments/<name>.tfvars) apply and destroy use.
+AZURE_ENV ?= test
 # The names Terraform gives them (var.name in $(AZURE_DIR)/variables.tf); stop and start need no Terraform login.
 AZURE_RG := rg-attesta-test
 AZURE_CLUSTER := aks-attesta-test
 
 azure-apply:
 	terraform -chdir=$(AZURE_DIR) init -input=false
-	terraform -chdir=$(AZURE_DIR) apply
+	terraform -chdir=$(AZURE_DIR) apply -var-file=environments/$(AZURE_ENV).tfvars
 
 azure-down:
 	az aks stop --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER)
@@ -302,7 +304,7 @@ azure-up:
 azure-destroy:
 	@read -p "Destroy the Azure test infrastructure? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
 	terraform -chdir=$(AZURE_DIR) init -input=false
-	terraform -chdir=$(AZURE_DIR) destroy
+	terraform -chdir=$(AZURE_DIR) destroy -var-file=environments/$(AZURE_ENV).tfvars
 
 # The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
 # Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
