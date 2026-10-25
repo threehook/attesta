@@ -39,6 +39,12 @@ variable "key_vault_name" {
   description = "Name of the Key Vault, unique in all of Azure (3-24 letters, digits and hyphens)"
 }
 
+variable "key_vault_allowed_cidrs" {
+  type        = list(string)
+  default     = []
+  description = "Addresses that may reach the vault besides the cluster, e.g. [\"203.0.113.7/32\"]; set in the repository variable KEY_VAULT_ALLOWED_CIDRS"
+}
+
 variable "key_vault_purge_protection" {
   type        = bool
   description = "Keep a deleted vault and its keys until the retention ends, so nothing can purge them"

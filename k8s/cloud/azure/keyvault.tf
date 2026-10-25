@@ -12,11 +12,12 @@ resource "azurerm_key_vault" "this" {
   purge_protection_enabled   = var.key_vault_purge_protection
   soft_delete_retention_days = var.key_vault_soft_delete_days
 
-  # Only the cluster's subnet reaches the vault.
+  # Only the cluster's subnet and the listed addresses reach the vault. The vault takes a single address, not a /32 range.
   network_acls {
     default_action             = "Deny"
     bypass                     = "AzureServices"
     virtual_network_subnet_ids = [azurerm_subnet.aks.id]
+    ip_rules                   = [for cidr in var.key_vault_allowed_cidrs : replace(cidr, "/32", "")]
   }
 }
 

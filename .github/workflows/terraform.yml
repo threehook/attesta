@@ -23,6 +23,7 @@ env:
   ARM_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   ARM_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   TF_VAR_api_allowed_cidrs: ${{ vars.API_ALLOWED_CIDRS }}
+  TF_VAR_key_vault_allowed_cidrs: ${{ vars.KEY_VAULT_ALLOWED_CIDRS || '[]' }}
 
 jobs:
   plan:
