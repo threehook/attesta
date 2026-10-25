@@ -1,6 +1,7 @@
 package approval
 
 import (
+	"attesta/issuer/internal/svid"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -8,8 +9,6 @@ import (
 	"slices"
 	"strings"
 	"time"
-
-	"attesta/issuer/internal/svid"
 )
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -70,10 +69,12 @@ func bearer(w http.ResponseWriter, r *http.Request) (string, bool) {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		writeError(w, http.StatusUnauthorized, "a JWT-SVID is required")
 	}
+
 	return token, ok && token != ""
 }
 
-// WorkloadHandler serves the endpoints a workload parks an action with and takes its credential from; it shows a JWT-SVID. It is mounted on /workloads/approvals.
+// WorkloadHandler serves the endpoints a workload parks an action with and takes its credential from; it shows a JWT-SVID. It is mounted on
+// /workloads/approvals.
 func WorkloadHandler(svc *Service) http.Handler {
 	told := func(r Request) forWorkload {
 		return forWorkload{ID: r.ID, Status: r.State, Approvals: len(r.Approvers), Required: svc.Required()}
@@ -84,6 +85,7 @@ func WorkloadHandler(svc *Service) http.Handler {
 		if !ok {
 			return
 		}
+
 		var in struct {
 			Resource string            `json:"resource"`
 			Action   map[string]string `json:"action"`
@@ -92,11 +94,13 @@ func WorkloadHandler(svc *Service) http.Handler {
 			writeError(w, http.StatusBadRequest, "the request is not JSON")
 			return
 		}
+
 		parked, err := svc.Request(r.Context(), token, in.Resource, in.Action)
 		if err != nil {
 			fail(w, err, "parked")
 			return
 		}
+
 		writeJSON(w, http.StatusOK, told(parked))
 	})
 	mux.HandleFunc("GET /workloads/approvals/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -104,11 +108,13 @@ func WorkloadHandler(svc *Service) http.Handler {
 		if !ok {
 			return
 		}
+
 		got, err := svc.Pending(r.Context(), token, r.PathValue("id"))
 		if err != nil {
 			fail(w, err, "read")
 			return
 		}
+
 		writeJSON(w, http.StatusOK, told(got))
 	})
 	mux.HandleFunc("POST /workloads/approvals/{id}/offer", func(w http.ResponseWriter, r *http.Request) {
@@ -116,30 +122,39 @@ func WorkloadHandler(svc *Service) http.Handler {
 		if !ok {
 			return
 		}
+
 		link, err := svc.Offer(r.Context(), token, r.PathValue("id"))
 		if errors.Is(err, ErrNotApproved) {
 			got, _ := svc.Pending(r.Context(), token, r.PathValue("id"))
 			writeJSON(w, http.StatusAccepted, told(got))
+
 			return
 		}
+
 		if err != nil {
 			fail(w, err, "handed out")
 			return
 		}
+
 		writeJSON(w, http.StatusOK, map[string]string{"offer": link})
 	})
+
 	return mux
 }
 
-// PeopleHandler serves the endpoints people approve or reject requests with. protect lets in only people who may approve, and approver says who the person is.
+// PeopleHandler serves the endpoints people approve or reject requests with. protect lets in only people who may approve, and approver says who the
+// person is.
 func PeopleHandler(svc *Service, protect func(http.Handler) http.Handler, approver func(*http.Request) string) http.Handler {
 	if protect == nil {
 		protect = func(h http.Handler) http.Handler { return h }
 	}
+
 	told := func(r Request, me string) forPeople {
 		return forPeople{
-			ID: r.ID, Workload: r.Workload, Resource: r.Resource, Action: r.Action, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt, Approvers: r.Approvers,
-			Required: svc.Required(), ApprovedByMe: me != "" && slices.Contains(r.Approvers, me), ValidSeconds: int64(svc.CredentialLifetime().Seconds()),
+			ID: r.ID, Workload: r.Workload, Resource: r.Resource, Action: r.Action, CreatedAt: r.CreatedAt, ExpiresAt: r.ExpiresAt,
+			Approvers: r.Approvers,
+			Required:  svc.Required(), ApprovedByMe: me != "" && slices.Contains(r.Approvers, me),
+			ValidSeconds: int64(svc.CredentialLifetime().Seconds()),
 		}
 	}
 	people := http.NewServeMux()
@@ -149,11 +164,14 @@ func PeopleHandler(svc *Service, protect func(http.Handler) http.Handler, approv
 			fail(w, err, "read")
 			return
 		}
+
 		me := approver(r)
+
 		out := make([]forPeople, len(list))
 		for i, item := range list {
 			out[i] = told(item, me)
 		}
+
 		writeJSON(w, http.StatusOK, out)
 	})
 	people.HandleFunc("POST /approvals/{id}/approvals", func(w http.ResponseWriter, r *http.Request) {
@@ -162,11 +180,13 @@ func PeopleHandler(svc *Service, protect func(http.Handler) http.Handler, approv
 			writeError(w, http.StatusUnauthorized, "inloggen is nodig")
 			return
 		}
+
 		got, err := svc.Approve(r.Context(), r.PathValue("id"), email)
 		if err != nil {
 			fail(w, err, "approved")
 			return
 		}
+
 		writeJSON(w, http.StatusOK, told(got, email))
 	})
 	people.HandleFunc("DELETE /approvals/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -174,10 +194,13 @@ func PeopleHandler(svc *Service, protect func(http.Handler) http.Handler, approv
 			fail(w, err, "rejected")
 			return
 		}
+
 		w.WriteHeader(http.StatusNoContent)
 	})
+
 	mux := http.NewServeMux()
 	mux.Handle("/approvals", protect(people))
 	mux.Handle("/approvals/", protect(people))
+
 	return mux
 }

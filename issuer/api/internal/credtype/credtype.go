@@ -2,6 +2,7 @@
 package credtype
 
 import (
+	"attesta/issuer/internal/credential"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,8 +14,6 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-
-	"attesta/issuer/internal/credential"
 )
 
 var (
@@ -31,6 +30,7 @@ func (e InvalidError) Error() string { return e.Message }
 // Type is a credential type that has not been deleted. InUse is true while a credential of the type that is not revoked exists.
 type Type struct {
 	credential.Type
+
 	ID        string
 	InUse     bool
 	CreatedAt time.Time
@@ -54,33 +54,42 @@ const inUse = `EXISTS (SELECT 1 FROM entitlements e WHERE e.type = credential_ty
 const columns = "id, type, path, title, description, fields, " + inUse + ", created_at, updated_at"
 
 func scan(row pgx.Row) (Type, error) {
-	var t Type
-	var fields []byte
+	var (
+		t      Type
+		fields []byte
+	)
 	if err := row.Scan(&t.ID, &t.Type.Type, &t.Path, &t.Title, &t.Description, &fields, &t.InUse, &t.CreatedAt, &t.UpdatedAt); err != nil {
 		return Type{}, err
 	}
+
 	return t, json.Unmarshal(fields, &t.Fields)
 }
 
 // clean trims what staff typed and checks it.
 func clean(in Input) (Input, error) {
 	in.Title, in.Description = strings.TrimSpace(in.Title), strings.TrimSpace(in.Description)
+
 	fields := make([]credential.Field, len(in.Fields))
 	for i, f := range in.Fields {
 		f.Key, f.Label = strings.TrimSpace(f.Key), strings.TrimSpace(f.Label)
+
 		f.Min, f.Max = strings.ReplaceAll(strings.TrimSpace(f.Min), ",", "."), strings.ReplaceAll(strings.TrimSpace(f.Max), ",", ".")
 		if f.Kind != credential.KindNumber {
 			f.Min, f.Max, f.Decimals = "", "", 0
 		}
+
 		if f.Kind != credential.KindChoice {
 			f.Options = nil
 		}
+
 		fields[i] = f
 	}
+
 	in.Fields = fields
 	if err := (credential.Type{Title: in.Title, Description: in.Description, Fields: in.Fields}).Check(); err != nil {
 		return Input{}, InvalidError{err.Error()}
 	}
+
 	return in, nil
 }
 
@@ -96,14 +105,18 @@ func (s *Store) List(ctx context.Context) ([]Type, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
 	types := []Type{}
+
 	for rows.Next() {
 		t, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		types = append(types, t)
 	}
+
 	return types, rows.Err()
 }
 
@@ -114,10 +127,12 @@ func (s *Store) Find(ctx context.Context, typeName string) (credential.Type, err
 			return t, nil
 		}
 	}
+
 	t, err := scan(s.pool.QueryRow(ctx, "SELECT "+columns+" FROM credential_types WHERE type = $1 AND deleted_at IS NULL", typeName))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return credential.Type{}, ErrNotFound
 	}
+
 	return t.Type, err
 }
 
@@ -127,19 +142,23 @@ func (s *Store) FindByPath(ctx context.Context, path string) (Type, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Type{}, ErrNotFound
 	}
+
 	return t, err
 }
 
 // Names lists the credential types wallets can get: Employee and Workload first, then the others.
 func (s *Store) Names(ctx context.Context) ([]string, error) {
 	types, err := s.List(ctx)
-	var names []string
+
+	names := make([]string, 0, len(credential.BuiltIn)+len(types))
 	for _, t := range credential.BuiltIn {
 		names = append(names, t.Type)
 	}
+
 	for _, t := range types {
 		names = append(names, t.Type.Type)
 	}
+
 	return names, err
 }
 
@@ -149,18 +168,33 @@ func (s *Store) Create(ctx context.Context, in Input) (Type, error) {
 	if err != nil {
 		return Type{}, err
 	}
+
 	path := credential.Slug(in.Title)
 	if path == "" || slices.ContainsFunc(credential.BuiltIn, func(t credential.Type) bool {
 		return t.Path == path || strings.EqualFold(t.Type, in.Title)
 	}) {
 		return Type{}, InvalidError{"de titel bevat letters of cijfers en is niet Employee of Workload"}
 	}
-	fields, _ := json.Marshal(in.Fields)
-	t, err := scan(s.pool.QueryRow(ctx, "INSERT INTO credential_types (type, path, title, description, fields) VALUES ($1, $2, $1, $3, $4::jsonb) RETURNING "+columns,
-		in.Title, path, in.Description, fields))
+
+	fields, err := json.Marshal(in.Fields)
+	if err != nil {
+		return Type{}, err
+	}
+
+	t, err := scan(
+		s.pool.QueryRow(
+			ctx,
+			"INSERT INTO credential_types (type, path, title, description, fields) VALUES ($1, $2, $1, $3, $4::jsonb) RETURNING "+columns,
+			in.Title,
+			path,
+			in.Description,
+			fields,
+		),
+	)
 	if isDuplicate(err) {
 		return Type{}, ErrExists
 	}
+
 	return t, err
 }
 
@@ -169,16 +203,23 @@ func (s *Store) Update(ctx context.Context, id string, in Input) (Type, error) {
 	if _, err := uuid.Parse(id); err != nil {
 		return Type{}, ErrNotFound
 	}
+
 	in, err := clean(in)
 	if err != nil {
 		return Type{}, err
 	}
-	fields, _ := json.Marshal(in.Fields)
+
+	fields, err := json.Marshal(in.Fields)
+	if err != nil {
+		return Type{}, err
+	}
+
 	t, err := scan(s.pool.QueryRow(ctx, `UPDATE credential_types SET title = $2, description = $3, fields = $4::jsonb, updated_at = now()
 		WHERE id = $1 AND deleted_at IS NULL AND (fields = $4::jsonb OR NOT `+inUse+`) RETURNING `+columns, id, in.Title, in.Description, fields))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Type{}, s.whyNot(ctx, id)
 	}
+
 	return t, err
 }
 
@@ -187,19 +228,27 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	if _, err := uuid.Parse(id); err != nil {
 		return ErrNotFound
 	}
-	tag, err := s.pool.Exec(ctx, "UPDATE credential_types SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL AND NOT "+inUse, id)
+
+	tag, err := s.pool.Exec(
+		ctx,
+		"UPDATE credential_types SET deleted_at = now(), updated_at = now() WHERE id = $1 AND deleted_at IS NULL AND NOT "+inUse,
+		id,
+	)
 	if err != nil {
 		return err
 	}
+
 	if tag.RowsAffected() == 0 {
 		return s.whyNot(ctx, id)
 	}
+
 	return nil
 }
 
 // whyNot says why a change to the type with this id matched nothing.
 func (s *Store) whyNot(ctx context.Context, id string) error {
 	var held bool
+
 	err := s.pool.QueryRow(ctx, "SELECT "+inUse+" FROM credential_types WHERE id = $1 AND deleted_at IS NULL", id).Scan(&held)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -209,5 +258,6 @@ func (s *Store) whyNot(ctx context.Context, id string) error {
 	case held:
 		return ErrInUse
 	}
+
 	return ErrNotFound
 }

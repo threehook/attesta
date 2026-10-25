@@ -50,9 +50,11 @@ func parseTraceParent(header string) (traceContext, bool) {
 	if len(parts) < 4 || parts[0] != "00" || !lowerHex(parts[1], 32) || !lowerHex(parts[2], 16) || !lowerHex(parts[3], 2) {
 		return traceContext{}, false
 	}
+
 	if parts[1] == strings.Repeat("0", 32) || parts[2] == strings.Repeat("0", 16) {
 		return traceContext{}, false
 	}
+
 	return traceContext{traceID: parts[1], parentSpanID: parts[2]}, true
 }
 
@@ -66,11 +68,13 @@ func lowerHex(s string, n int) bool {
 	if len(s) != n {
 		return false
 	}
+
 	for _, c := range s {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -80,5 +84,6 @@ func randomHex(n int) (string, error) {
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
+
 	return hex.EncodeToString(b), nil
 }

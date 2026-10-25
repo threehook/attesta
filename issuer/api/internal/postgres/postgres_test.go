@@ -1,12 +1,11 @@
 package postgres_test
 
 import (
+	"attesta/issuer/internal/postgres"
+	"attesta/issuer/internal/postgres/postgrestest"
 	"context"
 	"sync"
 	"testing"
-
-	"attesta/issuer/internal/postgres"
-	"attesta/issuer/internal/postgres/postgrestest"
 )
 
 func TestCreatesTheDatabaseAndMigratesOnlyOnce(t *testing.T) {
@@ -18,33 +17,39 @@ func TestCreatesTheDatabaseAndMigratesOnlyOnce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+
 		var migrated int
 		if err := pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrated); err != nil {
 			t.Fatal(err)
 		}
+
 		if migrated != 11 {
 			t.Fatalf("%d migrations recorded, want 11", migrated)
 		}
+
 		pool.Close()
 	}
 }
 
 func TestSeveralReplicasCanStartTogether(t *testing.T) {
 	o, name := postgrestest.Server(t), postgrestest.DatabaseName()
+
 	var wg sync.WaitGroup
+
 	errs := make([]error, 3)
 	for i := range errs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			pool, err := postgres.Open(context.Background(), o, name)
 			if err == nil {
 				pool.Close()
 			}
+
 			errs[i] = err
-		}()
+		})
 	}
+
 	wg.Wait()
+
 	for _, err := range errs {
 		if err != nil {
 			t.Fatal(err)

@@ -1,5 +1,5 @@
-// Package approval parks an action of a workload that no mandate covers. People approve the request, and then the workload takes one Approval credential
-// for exactly that action.
+// Package approval parks an action of a workload that no mandate covers. People approve the request, and then the workload takes one Approval
+// credential for exactly that action.
 package approval
 
 import (
@@ -51,19 +51,24 @@ func NewStore(pool *pgxpool.Pool) *Store { return &Store{pool: pool, now: time.N
 
 const selectRequests = `SELECT r.id, r.workload, r.resource, r.action, r.created_at, r.expires_at,
   COALESCE(array_agg(a.approver ORDER BY a.approved_at, a.approver) FILTER (WHERE a.approver IS NOT NULL), '{}'),
-  CASE WHEN r.delivered_at IS NOT NULL THEN 'delivered' WHEN r.rejected_at IS NOT NULL THEN 'rejected' WHEN r.expires_at <= now() THEN 'expired' ELSE 'open' END
+  CASE WHEN r.delivered_at IS NOT NULL THEN 'delivered' WHEN r.rejected_at IS NOT NULL THEN 'rejected'
+    WHEN r.expires_at <= now() THEN 'expired' ELSE 'open' END
   FROM approval_requests r LEFT JOIN approval_request_approvals a ON a.request_id = r.id`
 
 const openOnly = " WHERE r.rejected_at IS NULL AND r.delivered_at IS NULL AND r.expires_at > now()"
 
 func scan(row pgx.Row) (Request, error) {
-	var r Request
-	var action []byte
-	var state string
+	var (
+		r      Request
+		action []byte
+		state  string
+	)
 	if err := row.Scan(&r.ID, &r.Workload, &r.Resource, &action, &r.CreatedAt, &r.ExpiresAt, &r.Approvers, &state); err != nil {
 		return Request{}, err
 	}
+
 	r.State = State(state)
+
 	return r, json.Unmarshal(action, &r.Action)
 }
 
@@ -72,36 +77,53 @@ func (s *Store) Open(ctx context.Context, workload, resource string, action map[
 	if resource == "" || len([]rune(resource)) > maxResource {
 		return Request{}, false, ErrInvalid
 	}
+
 	if action == nil {
 		action = map[string]string{}
 	}
+
 	encoded, err := json.Marshal(action)
 	if err != nil {
 		return Request{}, false, ErrInvalid
 	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Request{}, false, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, "UPDATE approval_requests SET rejected_at = now() WHERE workload = $1 AND resource = $2 AND rejected_at IS NULL AND delivered_at IS NULL AND expires_at <= now()", workload, resource); err != nil {
+
+	if _, err := tx.Exec(ctx, "UPDATE approval_requests SET rejected_at = now() WHERE workload = $1 AND resource = $2 AND rejected_at IS NULL AND "+
+		"delivered_at IS NULL AND expires_at <= now()", workload, resource); err != nil {
 		return Request{}, false, err
 	}
+
 	var id string
+
 	created := true
-	err = tx.QueryRow(ctx, "INSERT INTO approval_requests (workload, resource, action, expires_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
-		workload, resource, encoded, s.now().Add(lifetime)).Scan(&id)
+
+	err = tx.QueryRow(ctx,
+		"INSERT INTO approval_requests (workload, resource, action, expires_at) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING RETURNING id",
+		workload, resource, encoded, s.now().Add(lifetime)).
+		Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		created = false
-		err = tx.QueryRow(ctx, "SELECT id FROM approval_requests WHERE workload = $1 AND resource = $2 AND rejected_at IS NULL AND delivered_at IS NULL", workload, resource).Scan(&id)
+		err = tx.QueryRow(ctx,
+			"SELECT id FROM approval_requests WHERE workload = $1 AND resource = $2 AND rejected_at IS NULL AND delivered_at IS NULL",
+			workload, resource).
+			Scan(&id)
 	}
+
 	if err != nil {
 		return Request{}, false, err
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Request{}, false, err
 	}
+
 	r, err := s.Get(ctx, id)
+
 	return r, created, err
 }
 
@@ -111,6 +133,7 @@ func (s *Store) Get(ctx context.Context, id string) (Request, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Request{}, ErrNotFound
 	}
+
 	return r, err
 }
 
@@ -121,26 +144,34 @@ func (s *Store) List(ctx context.Context) ([]Request, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var out []Request
+
 	for rows.Next() {
 		r, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, r)
 	}
+
 	return out, rows.Err()
 }
 
 // Approve adds a person to the approvers of a request that waits. Approving twice changes nothing.
 func (s *Store) Approve(ctx context.Context, id, approver string) (Request, error) {
-	if _, err := s.pool.Exec(ctx, "INSERT INTO approval_request_approvals (request_id, approver) SELECT r.id, $2 FROM approval_requests r"+openOnly+" AND r.id = $1 ON CONFLICT DO NOTHING", id, approver); err != nil {
+	if _, err := s.pool.Exec(ctx,
+		"INSERT INTO approval_request_approvals (request_id, approver) SELECT r.id, $2 FROM approval_requests r"+openOnly+
+			" AND r.id = $1 ON CONFLICT DO NOTHING", id, approver); err != nil {
 		return Request{}, err
 	}
+
 	r, err := s.Get(ctx, id)
 	if err == nil && r.State != Open {
 		return Request{}, ErrNotFound
 	}
+
 	return r, err
 }
 
@@ -150,6 +181,7 @@ func (s *Store) Reject(ctx context.Context, id string) error {
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
+
 	return err
 }
 
@@ -157,5 +189,6 @@ func (s *Store) Reject(ctx context.Context, id string) error {
 func (s *Store) Deliver(ctx context.Context, id string, required int) (bool, error) {
 	tag, err := s.pool.Exec(ctx, `UPDATE approval_requests r SET delivered_at = now()`+openOnly+` AND r.id = $1
 	  AND (SELECT count(*) FROM approval_request_approvals a WHERE a.request_id = r.id) >= $2`, id, required)
+
 	return tag.RowsAffected() == 1, err
 }

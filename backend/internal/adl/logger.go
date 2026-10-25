@@ -60,22 +60,28 @@ type Logger struct {
 func New(ctx context.Context, cfg Config, log *slog.Logger) (*Logger, error) {
 	l := &Logger{log: log, out: io.Discard, resource: cfg.effectiveResource(), now: time.Now}
 	outputs := cfg.outputs()
+
 	var writers []io.Writer
+
 	if outputs[OutputFile] {
 		f, err := openSegments(cfg.File, segmentBytes)
 		if err != nil {
 			return nil, err
 		}
+
 		l.closer = f
 		writers = append(writers, f)
 	}
+
 	if outputs[OutputStdout] {
 		writers = append(writers, os.Stdout)
 	}
+
 	if len(writers) > 0 {
 		// The file comes first: MultiWriter stops at the first error, so a record that is not durable is never reported as written.
 		l.out = io.MultiWriter(writers...)
 	}
+
 	if outputs[OutputOTLP] {
 		if cfg.OTLPEndpoint == "" {
 			log.Error("adl: otlp output requested without ATTESTA_ADL_OTLP_ENDPOINT, skipping it")
@@ -89,7 +95,9 @@ func New(ctx context.Context, cfg Config, log *slog.Logger) (*Logger, error) {
 			l.otel = newOTelState(exporter, l.resource)
 		}
 	}
+
 	log.Info("adl decision logging enabled", "output", cfg.Output)
+
 	return l, nil
 }
 
@@ -98,13 +106,16 @@ func (l *Logger) Close(ctx context.Context) error {
 	if l == nil {
 		return nil
 	}
+
 	err := l.otel.shutdown(ctx)
 	if l.ship != nil {
 		err = errors.Join(err, l.ship.stop(ctx))
 	}
+
 	if l.closer != nil {
 		err = errors.Join(err, l.closer.Close())
 	}
+
 	return err
 }
 
@@ -114,16 +125,19 @@ func (l *Logger) Log(ctx context.Context, d Decision) error {
 	if l == nil {
 		return nil
 	}
+
 	rec, err := l.record(d)
 	if err != nil {
 		return err
 	}
+
 	var errs []error
 	if buf, err := json.Marshal(rec); err != nil {
 		errs = append(errs, fmt.Errorf("marshal the record: %w", err))
 	} else if _, err := l.out.Write(append(buf, '\n')); err != nil {
 		errs = append(errs, fmt.Errorf("write the record: %w", err))
 	}
+
 	if l.ship != nil {
 		if len(errs) == 0 {
 			l.ship.notify()
@@ -133,6 +147,7 @@ func (l *Logger) Log(ctx context.Context, d Decision) error {
 			errs = append(errs, err)
 		}
 	}
+
 	return errors.Join(errs...)
 }
 
@@ -141,6 +156,7 @@ func (l *Logger) record(d Decision) (Record, error) {
 	if err != nil {
 		return Record{}, fmt.Errorf("make a span id: %w", err)
 	}
+
 	rec := Record{
 		SpanID: spanID, EventName: EventAccessEvaluation, Timestamp: l.now().UnixMilli(), Status: StatusOk,
 		Attributes: map[string]any{}, Resource: l.resource, Body: Body{Request: authzenRequest(d)},
@@ -150,12 +166,16 @@ func (l *Logger) record(d Decision) (Record, error) {
 	} else if rec.TraceID, err = randomHex(16); err != nil {
 		return Record{}, fmt.Errorf("make a trace id: %w", err)
 	}
+
 	if d.Err != nil {
 		rec.Status = StatusError
 		rec.Attributes["error"] = d.Err.Error()
-		return rec, nil
+
+		return rec, nil //nolint:nilerr // the evaluation error is what the record says
 	}
+
 	rec.Body.Response = authzenResponse(d)
+
 	return rec, nil
 }
 
@@ -167,14 +187,17 @@ func authzenRequest(d Decision) map[string]any {
 		subject["id"] = d.SubjectID
 		subject["properties"] = map[string]any{"issuer": d.Issuer}
 	}
+
 	claims := d.Claims
 	if claims == nil {
 		claims = map[string]string{}
 	}
+
 	roles := d.UserRoles
 	if roles == nil {
 		roles = []string{}
 	}
+
 	context := map[string]any{
 		"request_id": d.RequestID, "policy_id": d.PolicyID, "credential_type": d.CredentialType,
 		"claims":     claims,
@@ -183,13 +206,16 @@ func authzenRequest(d Decision) map[string]any {
 	if len(d.Action) > 0 {
 		context["action_details"] = map[string]any{"values": d.Action, "origin": "application"}
 	}
+
 	if len(d.Also) > 0 {
 		also := make([]map[string]any, len(d.Also))
 		for i, c := range d.Also {
 			also[i] = map[string]any{"credential_type": c.Type, "issuer": c.Issuer, "claims": c.Claims}
 		}
+
 		context["also"] = also
 	}
+
 	return map[string]any{
 		"subject":  subject,
 		"action":   map[string]any{"name": "authorize"},
@@ -204,9 +230,11 @@ func authzenResponse(d Decision) map[string]any {
 	if by == "" {
 		by = "policy"
 	}
+
 	reason := map[string]any{by: d.Reason}
 	if d.Detail != "" {
 		reason["detail"] = d.Detail
 	}
+
 	return map[string]any{"decision": d.Allow, "context": map[string]any{"reason": reason}}
 }

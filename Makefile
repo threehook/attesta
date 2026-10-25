@@ -39,7 +39,11 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
 	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
-	azure-apply azure-down azure-up azure-destroy
+	azure-apply azure-down azure-up azure-destroy lint
+
+# golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
+lint:
+	@for m in backend issuer/api examples/laadpalen/api; do (cd $$m && golangci-lint run ./...) || exit 1; done
 
 build:
 	cd backend && go build ./...

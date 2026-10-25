@@ -45,13 +45,16 @@ func (e *OPA) Diagnose(source string) []Diagnostic {
 	if module.Package.Path.String() != "data."+policyPackage {
 		found = append(found, at(module.Package.Location, "the policy must be in package "+policyPackage))
 	}
+
 	var decision *ast.Rule
+
 	for _, r := range module.Rules {
 		if r.Head.Name.String() == decisionRule {
 			decision = r
 			break
 		}
 	}
+
 	if decision == nil {
 		found = append(found, at(module.Package.Location, "the policy defines no rule "+decisionRule))
 	}
@@ -60,13 +63,16 @@ func (e *OPA) Diagnose(source string) []Diagnostic {
 	if err := json.Unmarshal([]byte(inputSchema), &schema); err != nil {
 		panic(err)
 	}
+
 	schemas := ast.NewSchemaSet()
 	schemas.Put(ast.SchemaRootRef, schema)
 	compiler := ast.NewCompiler().WithCapabilities(e.capabilities).WithSchemas(schemas).WithStrict(true)
 	compiler.Compile(map[string]*ast.Module{"policy.rego": module})
+
 	if compiler.Failed() {
 		found = append(found, fromErrors(compiler.Errors)...)
 	}
+
 	if len(found) > 0 {
 		return found
 	}
@@ -75,6 +81,7 @@ func (e *OPA) Diagnose(source string) []Diagnostic {
 	if err := e.Validate(source); err != nil {
 		return []Diagnostic{at(decision.Location, err.Error())}
 	}
+
 	return nil
 }
 
@@ -83,10 +90,12 @@ func fromErrors(err error) []Diagnostic {
 	if !errors.As(err, &errs) {
 		return []Diagnostic{at(nil, err.Error())}
 	}
+
 	out := make([]Diagnostic, 0, len(errs))
 	for _, e := range errs {
 		out = append(out, at(e.Location, e.Message))
 	}
+
 	return out
 }
 
@@ -96,9 +105,11 @@ func at(loc *ast.Location, message string) Diagnostic {
 	if loc == nil || loc.Row < 1 {
 		return d
 	}
+
 	first, _, _ := strings.Cut(string(loc.Text), "\n")
 	first = strings.TrimRight(first, "\r")
 	d.Row, d.Col, d.EndRow = loc.Row, max(loc.Col, 1), loc.Row
 	d.EndCol = d.Col + max(utf8.RuneCountInString(first), 1)
+
 	return d
 }

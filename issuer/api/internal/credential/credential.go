@@ -28,7 +28,9 @@ var Departments = []string{"burgerzaken", "secretariaat"}
 // employeeTitle and employeeDescription are fixed: an Employee credential is always for the same purpose.
 const (
 	employeeTitle       = "Medewerker afdeling & rollen"
-	employeeDescription = "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt en welke rollen je hebt"
+	employeeDescription = "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke " +
+		"afdeling " +
+		"je werkt en welke rollen je hebt"
 )
 
 // mandateTitle and mandateDescription are fixed like the Employee's.
@@ -128,57 +130,74 @@ func (t Type) Check() error {
 	if n := len([]rune(strings.TrimSpace(t.Title))); n == 0 || n > maxTitle {
 		return fmt.Errorf("de titel is niet leeg en hoogstens %d tekens", maxTitle)
 	}
+
 	if len([]rune(t.Description)) > maxDesc {
 		return fmt.Errorf("de beschrijving is hoogstens %d tekens", maxDesc)
 	}
+
 	if len(t.Fields) == 0 || len(t.Fields) > maxFields {
 		return fmt.Errorf("een formulier heeft 1 tot %d velden", maxFields)
 	}
+
 	keys := map[string]bool{}
 	email := false
+
 	for _, f := range t.Fields {
 		if !keyPattern.MatchString(f.Key) || slices.Contains(reserved, f.Key) {
 			return fmt.Errorf("de naam %q van een veld begint met een kleine letter, bevat alleen letters en cijfers en is niet gereserveerd", f.Key)
 		}
+
 		if keys[f.Key] {
 			return fmt.Errorf("de naam %q komt twee keer voor", f.Key)
 		}
+
 		keys[f.Key] = true
 		if n := len([]rune(strings.TrimSpace(f.Label))); n == 0 || n > maxLabel {
 			return fmt.Errorf("het veld %q heeft een label van 1 tot %d tekens", f.Key, maxLabel)
 		}
+
 		if !slices.Contains([]string{KindText, KindEmail, KindDate, KindChoice, KindNumber}, f.Kind) {
 			return fmt.Errorf("het veld %q heeft een onbekend soort %q", f.Key, f.Kind)
 		}
+
 		if (f.Kind == KindChoice) != (len(f.Options) > 0) {
 			return fmt.Errorf("het veld %q heeft opties als en alleen als het een keuzelijst is", f.Key)
 		}
+
 		seen := map[string]bool{}
 		for _, o := range f.Options {
 			if o == "" || o != strings.TrimSpace(o) || len([]rune(o)) > maxLabel || seen[o] {
 				return fmt.Errorf("een optie van het veld %q is leeg, heeft spaties aan de rand, is te lang of komt twee keer voor", f.Key)
 			}
+
 			seen[o] = true
 		}
+
 		if err := f.checkNumber(); err != nil {
 			return err
 		}
+
 		if f.Key == "email" {
 			if f.Kind != KindEmail || !f.Required {
 				return errors.New("het veld email is een verplicht e-mailadres")
 			}
+
 			email = true
 		}
+
 		if f.Kind == KindEmail && f.Key != "email" {
 			return errors.New("alleen het veld email is een e-mailadres")
 		}
+
 		if f.Key == ValidUntilKey && f.Kind != KindDate {
 			return fmt.Errorf("het veld %s is een datum", ValidUntilKey)
 		}
 	}
+
 	if !email {
 		return errors.New("het formulier heeft een veld email: het identificeert de persoon")
 	}
+
 	return nil
 }
 
@@ -190,14 +209,17 @@ func parseNumber(s string) (*big.Rat, int, bool) {
 	if !numberPattern.MatchString(s) {
 		return nil, 0, false
 	}
+
 	r, ok := new(big.Rat).SetString(s)
 	if !ok {
 		return nil, 0, false
 	}
+
 	places := 0
 	if i := strings.IndexByte(s, '.'); i >= 0 {
 		places = len(s) - i - 1
 	}
+
 	return r, places, true
 }
 
@@ -207,11 +229,14 @@ func (f Field) checkNumber() error {
 		if f.Min != "" || f.Max != "" || f.Decimals != 0 {
 			return fmt.Errorf("alleen een getal heeft een minimum, een maximum en decimalen (veld %q)", f.Key)
 		}
+
 		return nil
 	}
+
 	if f.Decimals < 0 || f.Decimals > maxDecimals {
 		return fmt.Errorf("het veld %q heeft 0 tot %d decimalen", f.Key, maxDecimals)
 	}
+
 	var low, high *big.Rat
 	for _, b := range []struct {
 		text string
@@ -220,15 +245,19 @@ func (f Field) checkNumber() error {
 		if b.text == "" {
 			continue
 		}
+
 		r, _, ok := parseNumber(b.text)
 		if !ok {
 			return fmt.Errorf("het minimum en maximum van het veld %q zijn getallen", f.Key)
 		}
+
 		*b.into = r
 	}
+
 	if low != nil && high != nil && low.Cmp(high) > 0 {
 		return fmt.Errorf("het minimum van het veld %q is groter dan het maximum", f.Key)
 	}
+
 	return nil
 }
 
@@ -239,12 +268,15 @@ func NormalizeNumber(f Field, answer string) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%s must be a number", f.Key)
 	}
+
 	if places > f.Decimals {
 		if f.Decimals == 0 {
 			return "", fmt.Errorf("%s must be a whole number", f.Key)
 		}
+
 		return "", fmt.Errorf("%s has at most %d decimals", f.Key, f.Decimals)
 	}
+
 	for _, b := range []struct {
 		text  string
 		above bool
@@ -252,32 +284,40 @@ func NormalizeNumber(f Field, answer string) (string, error) {
 		if b.text == "" {
 			continue
 		}
+
 		bound, _, _ := parseNumber(b.text)
 		if c := r.Cmp(bound); (b.above && c > 0) || (!b.above && c < 0) {
 			if b.above {
 				return "", fmt.Errorf("%s is at most %s", f.Key, bound.FloatString(f.Decimals))
 			}
+
 			return "", fmt.Errorf("%s is at least %s", f.Key, bound.FloatString(f.Decimals))
 		}
 	}
+
 	return r.FloatString(f.Decimals), nil
 }
 
 // Slug turns a title into a path: lowercase letters and digits separated by hyphens.
 func Slug(title string) string {
 	var b strings.Builder
+
 	dash := false
+
 	for _, r := range strings.ToLower(title) {
 		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' {
 			if dash && b.Len() > 0 {
 				b.WriteByte('-')
 			}
+
 			dash = false
+
 			b.WriteRune(r)
 		} else {
 			dash = true
 		}
 	}
+
 	return b.String()
 }
 
@@ -285,12 +325,14 @@ func Slug(title string) string {
 func SplitRoles(text string) []string {
 	seen := map[string]bool{}
 	out := []string{}
-	for _, r := range strings.Split(text, ",") {
+
+	for r := range strings.SplitSeq(text, ",") {
 		if r = strings.TrimSpace(r); r != "" && !seen[r] {
 			seen[r] = true
 			out = append(out, r)
 		}
 	}
+
 	return out
 }
 
@@ -321,13 +363,16 @@ func Content(def Type, claims map[string]string, issuerName string) (sdjwt.Crede
 	// The title only names the credential, so it is always visible; the description is for the holder to read.
 	c.Claims["title"] = def.Title
 	c.Disclosable["description"] = def.Description
+
 	p := def.profile
 	if p == nil {
 		p = formProfile{}
 	}
+
 	if err := p.fill(def, claims, &c); err != nil {
 		return sdjwt.Credential{}, err
 	}
+
 	return c, nil
 }
 
@@ -338,8 +383,10 @@ func require(def Type, claims map[string]string, c *sdjwt.Credential, names ...s
 		if !ok {
 			return fmt.Errorf("%s credential has no %s", def.Type, name)
 		}
+
 		c.Disclosable[name] = value
 	}
+
 	return nil
 }
 
@@ -348,11 +395,14 @@ func endOfValidUntil(claims map[string]string, c *sdjwt.Credential) error {
 	if claims[ValidUntilKey] == "" {
 		return nil
 	}
+
 	day, err := ParseDate(claims[ValidUntilKey])
 	if err != nil {
 		return fmt.Errorf("%s: %w", ValidUntilKey, err)
 	}
+
 	c.ExpiresAt = EndOfDay(day)
+
 	return nil
 }
 
@@ -365,6 +415,7 @@ func (employeeProfile) fill(def Type, claims map[string]string, c *sdjwt.Credent
 	}
 	// An Employee always has the claim, an empty list when staff gave no roles, so a verifier that asks for the roles gets an answer.
 	c.Disclosable["roles"] = SplitRoles(claims["roles"])
+
 	return endOfValidUntil(claims, c)
 }
 
@@ -376,13 +427,17 @@ func (workloadProfile) fill(def Type, claims map[string]string, c *sdjwt.Credent
 		if claims[name] == "" {
 			return fmt.Errorf("%s credential has no %s", def.Type, name)
 		}
+
 		c.Disclosable[name] = claims[name]
 	}
+
 	at, err := time.Parse(time.RFC3339, claims[ExpiresAtKey])
 	if err != nil {
 		return fmt.Errorf("%s: %w", ExpiresAtKey, err)
 	}
+
 	c.ExpiresAt = at.UTC()
+
 	return nil
 }
 
@@ -395,18 +450,24 @@ func (mandateProfile) fill(def Type, claims map[string]string, c *sdjwt.Credenti
 		if claims[name] == "" {
 			return fmt.Errorf("%s credential has no %s", def.Type, name)
 		}
+
 		c.Disclosable[name] = claims[name]
 	}
+
 	approvers := SplitRoles(claims["approvers"])
 	if len(approvers) == 0 {
 		return fmt.Errorf("%s credential has no approvers", def.Type)
 	}
+
 	c.Disclosable["approvers"] = approvers
+
 	at, err := time.Parse(time.RFC3339, claims[ExpiresAtKey])
 	if err != nil {
 		return fmt.Errorf("%s: %w", ExpiresAtKey, err)
 	}
+
 	c.ExpiresAt = at.UTC()
+
 	return nil
 }
 
@@ -420,11 +481,14 @@ func (formProfile) fill(def Type, claims map[string]string, c *sdjwt.Credential)
 			if f.Required {
 				return fmt.Errorf("%s credential has no %s", def.Type, f.Key)
 			}
+
 			continue
 		}
+
 		if f.Key != ValidUntilKey {
 			c.Disclosable[f.Key] = value
 		}
 	}
+
 	return endOfValidUntil(claims, c)
 }

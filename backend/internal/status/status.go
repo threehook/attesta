@@ -1,6 +1,6 @@
-// Package status finds out whether a credential was revoked: it reads the issuer's signed status list (draft-ietf-oauth-status-list) and looks at the
-// credential's bit. It fails closed: a credential without a status reference, a list that cannot be read or has expired, and a list that does not
-// match the credential are all refused.
+// Package status finds out whether a credential was revoked: it reads the issuer's signed status list (draft-ietf-oauth-status-list) and looks at
+// the credential's bit. It fails closed: a credential without a status reference, a list that cannot be read or has expired, and a list that does
+// not match the credential are all refused.
 package status
 
 import (
@@ -70,18 +70,22 @@ func New(o Options) (*Checker, error) {
 			return nil, fmt.Errorf("status list prefix %q must be an URL that ends in /", p)
 		}
 	}
+
 	for from := range o.Hosts {
 		if !strings.HasSuffix(from, "/") && strings.Contains(strings.TrimPrefix(strings.TrimPrefix(from, "https://"), "http://"), "/") {
 			return nil, fmt.Errorf("status host %q must be a scheme and host", from)
 		}
 	}
+
 	c := &Checker{prefixes: o.Prefixes, hosts: o.Hosts, keys: o.Keys, client: o.Client, now: o.Now, lists: map[string]cached{}}
 	if c.client == nil {
 		c.client = &http.Client{Timeout: 5 * time.Second}
 	}
+
 	if c.now == nil {
 		c.now = time.Now
 	}
+
 	return c, nil
 }
 
@@ -90,23 +94,29 @@ func (c *Checker) Check(ctx context.Context, issuer string, ref *sdjwt.StatusRef
 	if ref == nil {
 		return ErrNoStatus
 	}
+
 	if !c.allowed(ref.URI) {
 		return fmt.Errorf("%w: %s is not an allowed status list", ErrUnavailable, ref.URI)
 	}
+
 	token, err := c.list(ctx, ref)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
+
 	if token.Issuer != issuer {
 		return fmt.Errorf("%w: the list is signed by %s, not by the issuer of the credential", ErrUnavailable, token.Issuer)
 	}
+
 	revoked, err := token.List.Revoked(ref.Index)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
+
 	if revoked {
 		return ErrRevoked
 	}
+
 	return nil
 }
 
@@ -116,6 +126,7 @@ func (c *Checker) allowed(uri string) bool {
 			return true
 		}
 	}
+
 	return false
 }
 
@@ -125,24 +136,30 @@ func (c *Checker) list(ctx context.Context, ref *sdjwt.StatusReference) (*sdjwt.
 	c.mu.Lock()
 	have, ok := c.lists[ref.URI]
 	c.mu.Unlock()
+
 	if ok && now.Before(have.validUntil) && (ref.Index < have.token.List.Len() || now.Sub(have.fetchedAt) < refetchGap) {
 		return have.token, nil
 	}
+
 	token, err := c.fetch(ctx, ref.URI)
 	if err != nil {
 		return nil, err
 	}
+
 	ttl := token.TTL
 	if ttl == 0 {
 		ttl = defaultTTL
 	}
+
 	valid := now.Add(ttl)
 	if !token.ExpiresAt.IsZero() && token.ExpiresAt.Before(valid) {
 		valid = token.ExpiresAt
 	}
+
 	c.mu.Lock()
 	c.lists[ref.URI] = cached{token: token, fetchedAt: now, validUntil: valid}
 	c.mu.Unlock()
+
 	return token, nil
 }
 
@@ -151,26 +168,33 @@ func (c *Checker) fetch(ctx context.Context, uri string) (*sdjwt.StatusListToken
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Set("Accept", "application/statuslist+jwt")
+
 	res, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching the status list: %w", err)
 	}
 	defer res.Body.Close()
+
 	if res.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("the status list answered %d", res.StatusCode)
 	}
+
 	body, err := io.ReadAll(io.LimitReader(res.Body, maxListBytes+1))
 	if err != nil || len(body) > maxListBytes {
 		return nil, errors.New("the status list could not be read or is too large")
 	}
+
 	token, err := sdjwt.VerifyStatusList(strings.TrimSpace(string(body)), c.keys, c.now)
 	if err != nil {
 		return nil, err
 	}
+
 	if token.URI != uri {
 		return nil, fmt.Errorf("the list says it is %s", token.URI)
 	}
+
 	return token, nil
 }
 
@@ -181,5 +205,6 @@ func (c *Checker) reach(uri string) string {
 			return strings.TrimSuffix(to, "/") + strings.TrimPrefix(uri, strings.TrimSuffix(from, "/"))
 		}
 	}
+
 	return uri
 }

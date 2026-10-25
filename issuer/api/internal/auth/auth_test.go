@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -16,15 +17,18 @@ import (
 // loginServer is a stand-in OpenID Connect server: metadata, keys, and tokens signed by them.
 type loginServer struct {
 	*httptest.Server
+
 	key *rsa.PrivateKey
 }
 
 func newLoginServer(t *testing.T) *loginServer {
 	t.Helper()
+
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	s := &loginServer{key: key}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
@@ -40,11 +44,13 @@ func newLoginServer(t *testing.T) *loginServer {
 	})
 	s.Server = httptest.NewServer(mux)
 	t.Cleanup(s.Close)
+
 	return s
 }
 
 func (s *loginServer) token(t *testing.T, mutate func(jwt.MapClaims)) string {
 	t.Helper()
+
 	claims := jwt.MapClaims{
 		"iss": "https://login.example/realms/r", "sub": "u", "azp": "issuer-gui", "exp": time.Now().Add(time.Minute).Unix(),
 		"iat": time.Now().Unix(), "realm_access": map[string]any{"roles": []string{"issuer-staff"}},
@@ -52,22 +58,27 @@ func (s *loginServer) token(t *testing.T, mutate func(jwt.MapClaims)) string {
 	if mutate != nil {
 		mutate(claims)
 	}
+
 	tok := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	tok.Header["kid"] = "k"
+
 	raw, err := tok.SignedString(s.key)
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	return raw
 }
 
 func call(h http.Handler, bearer string) int {
-	r := httptest.NewRequest("GET", "/info", nil)
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/info", nil)
 	if bearer != "" {
 		r.Header.Set("Authorization", "Bearer "+bearer)
 	}
+
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
+
 	return w.Code
 }
 
@@ -80,7 +91,16 @@ func TestProtect(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iss": "https://login.example/realms/r", "azp": "issuer-gui", "exp": time.Now().Add(time.Minute).Unix(), "realm_access": map[string]any{"roles": []string{"issuer-staff"}}})
+
+	forged := jwt.NewWithClaims(
+		jwt.SigningMethodRS256,
+		jwt.MapClaims{
+			"iss":          "https://login.example/realms/r",
+			"azp":          "issuer-gui",
+			"exp":          time.Now().Add(time.Minute).Unix(),
+			"realm_access": map[string]any{"roles": []string{"issuer-staff"}},
+		},
+	)
 	forged.Header["kid"] = "k"
 	forgedRaw, _ := forged.SignedString(other)
 
@@ -110,8 +130,10 @@ func TestLoginServerDown(t *testing.T) {
 	login := newLoginServer(t)
 	url := login.URL
 	login.Close()
+
 	v := New(Options{Issuer: "https://login.example/realms/r", DiscoveryURL: url, ClientID: "issuer-gui", Role: "issuer-staff"})
-	h := v.Protect(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+
+	h := v.Protect(http.HandlerFunc(func(_ http.ResponseWriter, _ *http.Request) {}))
 	if got := call(h, "abc"); got != http.StatusServiceUnavailable {
 		t.Fatalf("got %d", got)
 	}

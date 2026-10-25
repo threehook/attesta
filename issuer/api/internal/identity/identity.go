@@ -18,5 +18,6 @@ type Identity struct {
 func FromSeed(seed string) Identity {
 	sum := sha256.Sum256([]byte(seed))
 	key := ed25519.NewKeyFromSeed(sum[:])
-	return Identity{Key: key, DID: sdjwt.DIDKeyFromEd25519(key.Public().(ed25519.PublicKey))}
+
+	return Identity{Key: key, DID: sdjwt.DIDKeyFromEd25519(ed25519.PublicKey(key[ed25519.SeedSize:]))}
 }

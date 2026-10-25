@@ -22,6 +22,7 @@ func (s *Server) handlePutPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
 	if req.ID == "" || req.Source == "" {
 		writeError(w, http.StatusBadRequest, "id and source are required")
 		return
@@ -48,10 +49,12 @@ func (s *Server) handleDiagnosePolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
+
 	diagnostics := s.Authz.Diagnose(req.Source)
 	if diagnostics == nil {
 		diagnostics = []authz.Diagnostic{}
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"diagnostics": diagnostics})
 }
 
@@ -81,6 +84,7 @@ func statementsBody(list []authz.Statement) []statementBody {
 			out[i].Attributes[a.ID] = a.Value
 		}
 	}
+
 	return out
 }
 
@@ -88,32 +92,45 @@ func statementsBody(list []authz.Statement) []statementBody {
 // accepted; nothing is stored. The input has the shape a policy sees: resource, userRoles and credentials by type, whose claims are text.
 func (s *Server) handleEvaluatePolicy(w http.ResponseWriter, r *http.Request) {
 	var req evaluateRequest
+
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2*maxPolicySource))
 	dec.DisallowUnknownFields()
+
 	if err := dec.Decode(&req); err != nil {
 		var typeErr *json.UnmarshalTypeError
 		if errors.As(err, &typeErr) && typeErr.Type.Kind() == reflect.String {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid input: %s must be text", typeErr.Field))
 			return
 		}
+
 		writeError(w, http.StatusBadRequest, "invalid input: "+err.Error())
+
 		return
 	}
+
 	if diagnostics := s.Authz.Diagnose(req.Source); len(diagnostics) > 0 {
 		writeJSON(w, http.StatusOK, map[string]any{"diagnostics": diagnostics})
 		return
 	}
 
-	in := authz.Input{Resource: req.Input.Resource, UserRoles: req.Input.UserRoles, Action: req.Input.Action, Credentials: make(map[string]authz.Credential, len(req.Input.Credentials))}
+	in := authz.Input{
+		Resource:    req.Input.Resource,
+		UserRoles:   req.Input.UserRoles,
+		Action:      req.Input.Action,
+		Credentials: make(map[string]authz.Credential, len(req.Input.Credentials)),
+	}
 	for t, c := range req.Input.Credentials {
 		in.Credentials[t] = authz.Credential{Issuer: c.Issuer, Claims: c.Claims}
 	}
+
 	result, err := s.Authz.Evaluate(req.Source, in)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{"result": map[string]any{
-		"decision": result.Decision, "reason": result.Reason, "obligations": statementsBody(result.Obligations), "advice": statementsBody(result.Advice),
+		"decision": result.Decision, "reason": result.Reason, "obligations": statementsBody(result.Obligations),
+		"advice": statementsBody(result.Advice),
 	}})
 }

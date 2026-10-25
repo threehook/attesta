@@ -25,10 +25,12 @@ func newOTelExporter(ctx context.Context, cfg Config) (sdklog.Exporter, error) {
 	if cfg.OTLPInsecure {
 		opts = append(opts, otlploggrpc.WithInsecure())
 	}
+
 	exporter, err := otlploggrpc.New(ctx, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("create the otlp log exporter: %w", err)
 	}
+
 	return exporter, nil
 }
 
@@ -43,10 +45,12 @@ func newOTelStateWith(processor sdklog.Processor, resourceAttrs map[string]strin
 	for k, v := range resourceAttrs {
 		attrs = append(attrs, attribute.String(k, v))
 	}
+
 	provider := sdklog.NewLoggerProvider(
 		sdklog.WithResource(resource.NewSchemaless(attrs...)),
 		sdklog.WithProcessor(processor),
 	)
+
 	return &otelState{provider: provider, logger: provider.Logger("attesta/adl")}
 }
 
@@ -56,16 +60,20 @@ func (s *otelState) emit(ctx context.Context, rec Record) error {
 	if err != nil {
 		return fmt.Errorf("marshal the record for otlp: %w", err)
 	}
+
 	var r otellog.Record
 	r.SetTimestamp(time.UnixMilli(rec.Timestamp))
 	r.SetEventName(rec.EventName)
 	r.SetBody(attribute.StringValue(string(body)))
+
 	if rec.Status == StatusError {
 		r.SetSeverity(otellog.SeverityError)
 	} else {
 		r.SetSeverity(otellog.SeverityInfo)
 	}
+
 	s.logger.Emit(withSpanContext(ctx, rec), r)
+
 	return nil
 }
 
@@ -74,10 +82,12 @@ func withSpanContext(ctx context.Context, rec Record) context.Context {
 	if err != nil {
 		return ctx
 	}
+
 	spanID, err := trace.SpanIDFromHex(rec.SpanID)
 	if err != nil {
 		return ctx
 	}
+
 	return trace.ContextWithSpanContext(ctx, trace.NewSpanContext(trace.SpanContextConfig{TraceID: traceID, SpanID: spanID}))
 }
 
@@ -85,5 +95,6 @@ func (s *otelState) shutdown(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
+
 	return s.provider.Shutdown(ctx)
 }

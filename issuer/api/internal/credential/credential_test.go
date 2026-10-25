@@ -1,6 +1,8 @@
 package credential_test
 
 import (
+	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/identity"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,9 +14,6 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	sdjwt "github.com/threehook/sdjwt-go"
-
-	"attesta/issuer/internal/credential"
-	"attesta/issuer/internal/identity"
 )
 
 var diploma = credential.Type{
@@ -36,14 +35,17 @@ func TestEmployeeHoldsDepartmentAndRolesAndNothingAboutCourses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if c.Type != "Employee" || c.Claims["issuer_name"] != "Gemeente Vlierdam" || !c.ExpiresAt.IsZero() {
 		t.Fatalf("content %+v", c)
 	}
+
 	for _, name := range []string{"name", "email", "department", "organisation", "roles", "description"} {
 		if _, ok := c.Disclosable[name]; !ok {
 			t.Errorf("%s is not disclosable", name)
 		}
 	}
+
 	for _, name := range []string{"diploma", "diplomaValidUntil", "course"} {
 		if _, ok := c.Disclosable[name]; ok {
 			t.Errorf("%s must not be in an Employee", name)
@@ -58,12 +60,15 @@ func TestDiplomaEndsAtTheEndOfItsLastDayAndHoldsNoCourse(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if c.Type != "Diploma Laadpalen Management" || !c.ExpiresAt.Equal(time.Date(2099, 6, 30, 23, 59, 59, 0, time.UTC)) {
 		t.Fatalf("content %+v", c)
 	}
+
 	if _, ok := c.Disclosable["course"]; ok {
 		t.Fatalf("a diploma is its own type, it has no course claim: %v", c.Disclosable)
 	}
+
 	if _, ok := c.Claims["issuer_name"]; ok {
 		t.Fatal("an issuer name was written without one being set")
 	}
@@ -72,16 +77,19 @@ func TestDiplomaEndsAtTheEndOfItsLastDayAndHoldsNoCourse(t *testing.T) {
 func TestRejectsWhatItCannotBuild(t *testing.T) {
 	without := func(name string) map[string]string {
 		m := map[string]string{}
+
 		for k, v := range employee {
 			if k != name {
 				m[k] = v
 			}
 		}
+
 		return m
 	}
 	if _, err := credential.Content(credential.EmployeeType, without("department"), ""); err == nil {
 		t.Error("missing department accepted")
 	}
+
 	if _, err := credential.Content(credential.EmployeeType, without("roles"), ""); err != nil {
 		t.Errorf("an Employee without the roles claim was refused: %v", err)
 	}
@@ -94,6 +102,7 @@ func TestParsesBothDateFormats(t *testing.T) {
 			t.Errorf("%q: %v %v", s, d, err)
 		}
 	}
+
 	for _, s := range []string{"", "tomorrow", "31/12/2099", "2099-13-01", "32-01-2099"} {
 		if _, err := credential.ParseDate(s); err == nil {
 			t.Errorf("%q accepted", s)
@@ -105,11 +114,14 @@ func TestParsesBothDateFormats(t *testing.T) {
 func TestAnIssuedEmployeeCredentialVerifies(t *testing.T) {
 	issuer := identity.FromSeed("test")
 	_, holder, _ := ed25519.GenerateKey(rand.Reader)
+
 	c, err := credential.Content(credential.EmployeeType, employee, "Gemeente Vlierdam")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.HolderKey = map[string]any{"kty": "OKP", "crv": "Ed25519", "x": base64.RawURLEncoding.EncodeToString(holder.Public().(ed25519.PublicKey))}
+
+	c.HolderKey = map[string]any{"kty": "OKP", "crv": "Ed25519", "x": base64.RawURLEncoding.EncodeToString(holder[ed25519.SeedSize:])}
+
 	issued, err := sdjwt.Issue(issuer.Key, c)
 	if err != nil {
 		t.Fatal(err)
@@ -117,15 +129,21 @@ func TestAnIssuedEmployeeCredentialVerifies(t *testing.T) {
 
 	parts := strings.Split(strings.TrimSuffix(issued, "~"), "~")
 	shown := parts[0] + "~"
+
+	var shownSb119 strings.Builder
+
 	for _, d := range parts[1:] {
 		raw, _ := base64.RawURLEncoding.DecodeString(d)
 		if strings.Contains(string(raw), `"email"`) {
-			shown += d + "~"
+			shownSb119.WriteString(d + "~")
 		}
 	}
+
+	shown += shownSb119.String()
 	sum := sdHash(shown)
 	kb := jwt.NewWithClaims(jwt.SigningMethodEdDSA, jwt.MapClaims{"aud": "a", "nonce": "n", "iat": time.Now().Unix(), "sd_hash": sum})
 	kb.Header["typ"] = "kb+jwt"
+
 	signed, err := kb.SignedString(holder)
 	if err != nil {
 		t.Fatal(err)
@@ -135,9 +153,11 @@ func TestAnIssuedEmployeeCredentialVerifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if v.Issuer != issuer.DID || v.Type != "Employee" || v.Claims["email"] != "jerry@example.com" || v.Claims["issuer_name"] != "Gemeente Vlierdam" {
 		t.Fatalf("verified %+v", v)
 	}
+
 	if _, ok := v.Claims["department"]; ok {
 		t.Fatal("department was not shown")
 	}
@@ -149,14 +169,26 @@ func sdHash(presentation string) string {
 }
 
 func TestTitleAndDescriptionAreFixedByTheTypeWhateverTheEntitlementSays(t *testing.T) {
-	claims := map[string]string{"name": "n", "email": "e", "department": "burgerzaken", "organisation": "o", "title": "Eigen titel", "description": "Eigen tekst"}
+	claims := map[string]string{
+		"name":         "n",
+		"email":        "e",
+		"department":   "burgerzaken",
+		"organisation": "o",
+		"title":        "Eigen titel",
+		"description":  "Eigen tekst",
+	}
+
 	c, err := credential.Content(credential.EmployeeType, claims, "Gemeente")
 	if err != nil || c.Claims["title"] != "Medewerker afdeling & rollen" || c.Disclosable["title"] != nil {
 		t.Fatalf("%v %v", c, err)
 	}
-	if want := "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt en welke rollen je hebt"; c.Disclosable["description"] != want {
+
+	if want := "Deze credential is verplicht om werkzaamheden te mogen verrichten voor onze gemeente. Het geeft aan voor welke afdeling je werkt " +
+		"en " +
+		"welke rollen je hebt"; c.Disclosable["description"] != want {
 		t.Fatalf("description %v", c.Disclosable["description"])
 	}
+
 	d, err := credential.Content(diploma, map[string]string{"name": "n", "email": "e", "validUntil": "2099-01-01"}, "")
 	if err != nil || d.Claims["title"] != "Diploma Laadpalen Management" || d.Disclosable["description"] == "" {
 		t.Fatalf("%v %v", d, err)
@@ -166,11 +198,14 @@ func TestTitleAndDescriptionAreFixedByTheTypeWhateverTheEntitlementSays(t *testi
 func TestGivesAnEmployeeItsRolesAsAListEvenWhenThereAreNone(t *testing.T) {
 	employee := map[string]string{"description": "d", "name": "n", "email": "e", "department": "burgerzaken", "organisation": "o", "roles": "a, b,a"}
 	c, err := credential.Content(credential.EmployeeType, employee, "Gemeente")
+
 	roles, _ := c.Disclosable["roles"].([]string)
 	if err != nil || len(roles) != 2 || roles[0] != "a" || roles[1] != "b" {
 		t.Fatalf("%v %v", c.Disclosable, err)
 	}
+
 	delete(employee, "roles")
+
 	none, _ := credential.Content(credential.EmployeeType, employee, "Gemeente")
 	if list, ok := none.Disclosable["roles"].([]string); !ok || len(list) != 0 {
 		t.Fatalf("roles %v, want an empty list", none.Disclosable["roles"])
@@ -183,13 +218,16 @@ func TestAnOptionalFieldWithoutAnAnswerIsLeftOutAndARequiredOneIsNot(t *testing.
 		{Key: "floor", Label: "Verdieping", Kind: "text"},
 		{Key: "colour", Label: "Kleur", Kind: "choice", Required: true, Options: []string{"red", "blue"}},
 	}}
+
 	c, err := credential.Content(def, map[string]string{"email": "e@example.com", "colour": "red"}, "")
 	if err != nil || c.Disclosable["colour"] != "red" || c.Disclosable["email"] != "e@example.com" || !c.ExpiresAt.IsZero() {
 		t.Fatalf("%+v %v", c, err)
 	}
+
 	if _, ok := c.Disclosable["floor"]; ok {
 		t.Fatal("an unanswered optional field was written")
 	}
+
 	if _, err := credential.Content(def, map[string]string{"email": "e@example.com"}, ""); err == nil {
 		t.Fatal("a missing required field was accepted")
 	}
@@ -200,6 +238,7 @@ func fields(edit func(*[]credential.Field)) credential.Type {
 	if edit != nil {
 		edit(&f)
 	}
+
 	return credential.Type{Title: "Badge", Fields: f}
 }
 
@@ -207,6 +246,7 @@ func TestChecksTheFormOfACredentialType(t *testing.T) {
 	if err := fields(nil).Check(); err != nil {
 		t.Fatal(err)
 	}
+
 	bad := map[string]func(*[]credential.Field){
 		"no email":       func(f *[]credential.Field) { (*f)[0].Key = "mail" },
 		"optional email": func(f *[]credential.Field) { (*f)[0].Required = false },
@@ -231,13 +271,17 @@ func TestChecksTheFormOfACredentialType(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 		}
 	}
+
 	if err := (credential.Type{Title: " ", Fields: fields(nil).Fields}).Check(); err == nil {
 		t.Error("a blank title was accepted")
 	}
 }
 
 func TestSlugKeepsLettersAndDigitsAndSeparatesWithHyphens(t *testing.T) {
-	for in, want := range map[string]string{"Diploma Laadpalen Management": "diploma-laadpalen-management", "  Bedrijfs-pas #2! ": "bedrijfs-pas-2", "???": ""} {
+	for in, want := range map[string]string{
+		"Diploma Laadpalen Management": "diploma-laadpalen-management", "  Bedrijfs-pas #2! ": "bedrijfs-pas-2",
+		"???": "",
+	} {
 		if got := credential.Slug(in); got != want {
 			t.Errorf("%q: %q, want %q", in, got, want)
 		}
@@ -246,20 +290,29 @@ func TestSlugKeepsLettersAndDigitsAndSeparatesWithHyphens(t *testing.T) {
 
 func TestNormalizesANumberToTheDecimalsOfItsFieldAndHoldsItToItsBounds(t *testing.T) {
 	price := credential.Field{Key: "price", Kind: "number", Decimals: 2, Min: "0", Max: "99.5"}
-	for in, want := range map[string]string{"12": "12.00", "12,5": "12.50", " 0.1 ": "0.10", "99.50": "99.50", "-0": "0.00"} {
+	cases := map[string]string{
+		"12": "12.00", "12,5": "12.50",
+		" 0.1 ": "0.10", //nolint:gocritic // the surrounding whitespace is what the test is about
+		"99.50": "99.50", "-0": "0.00",
+	}
+
+	for in, want := range cases {
 		if got, err := credential.NormalizeNumber(price, in); err != nil || got != want {
 			t.Errorf("%q: %q %v, want %q", in, got, err, want)
 		}
 	}
+
 	for _, in := range []string{"", "x", "1.234", "-0.01", "99.51", "1e3", "1,000.5", "--1"} {
 		if got, err := credential.NormalizeNumber(price, in); err == nil {
 			t.Errorf("%q accepted as %q", in, got)
 		}
 	}
+
 	whole := credential.Field{Key: "floor", Kind: "number"}
 	if got, err := credential.NormalizeNumber(whole, "-3"); err != nil || got != "-3" {
 		t.Errorf("whole: %q %v", got, err)
 	}
+
 	if _, err := credential.NormalizeNumber(whole, "3.0"); err == nil {
 		t.Error("a decimal was accepted for a whole number")
 	}
@@ -276,6 +329,7 @@ func TestChecksTheBoundsOfANumberField(t *testing.T) {
 	if err := number(func(*credential.Field) {}).Check(); err != nil {
 		t.Fatal(err)
 	}
+
 	bad := map[string]func(*credential.Field){
 		"min above max":      func(f *credential.Field) { f.Min = "11" },
 		"min not a number":   func(f *credential.Field) { f.Min = "low" },
@@ -292,7 +346,8 @@ func TestChecksTheBoundsOfANumberField(t *testing.T) {
 }
 
 var agent = map[string]string{
-	"workload": "spiffe://corp.test/ns/cicd/sa/agent", "owner": "platform", "environment": "staging", credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
+	"workload": "spiffe://corp.test/ns/cicd/sa/agent", "owner": "platform", "environment": "staging",
+	credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
 }
 
 func TestWorkloadHoldsItsIdentityOwnerAndEnvironmentAndEndsAtTheMoment(t *testing.T) {
@@ -300,17 +355,21 @@ func TestWorkloadHoldsItsIdentityOwnerAndEnvironmentAndEndsAtTheMoment(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if c.Type != "Workload" || !c.ExpiresAt.Equal(time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC)) {
 		t.Fatalf("content %+v", c)
 	}
+
 	for _, name := range []string{"workload", "owner", "environment", "description"} {
 		if _, ok := c.Disclosable[name]; !ok {
 			t.Errorf("%s is not disclosable", name)
 		}
 	}
+
 	if _, ok := c.Disclosable[credential.ExpiresAtKey]; ok {
 		t.Error("expiresAt is a claim of the credential; it only sets the end")
 	}
+
 	if _, ok := c.Disclosable["email"]; ok {
 		t.Error("a Workload has no email")
 	}
@@ -319,15 +378,18 @@ func TestWorkloadHoldsItsIdentityOwnerAndEnvironmentAndEndsAtTheMoment(t *testin
 func TestAWorkloadCredentialNeedsItsClaimsAndAMoment(t *testing.T) {
 	for _, missing := range []string{"workload", "owner", "environment", credential.ExpiresAtKey} {
 		claims := map[string]string{}
+
 		for k, v := range agent {
 			if k != missing {
 				claims[k] = v
 			}
 		}
+
 		if _, err := credential.Content(credential.WorkloadType, claims, ""); err == nil {
 			t.Errorf("a Workload without %s was built", missing)
 		}
 	}
+
 	claims := map[string]string{"workload": "w", "owner": "o", "environment": "e", credential.ExpiresAtKey: "tomorrow"}
 	if _, err := credential.Content(credential.WorkloadType, claims, ""); err == nil {
 		t.Error("a Workload with a moment that is not RFC 3339 was built")
@@ -344,12 +406,15 @@ func TestMandateHoldsTheApproversOnceAndEndsAtTheMoment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	if c.Type != "Mandate" || !c.ExpiresAt.Equal(time.Date(2026, 10, 22, 9, 30, 0, 0, time.UTC)) {
 		t.Fatalf("content %+v", c)
 	}
+
 	if got := c.Disclosable["approvers"]; !reflect.DeepEqual(got, []string{"anna@corp.test", "bob@corp.test"}) {
 		t.Errorf("approvers = %v, want each person once", got)
 	}
+
 	if c.Disclosable["resource"] != "deploy:prod:v1.*" || c.Disclosable["workload"] != approved["workload"] {
 		t.Errorf("claims %v", c.Disclosable)
 	}
@@ -358,11 +423,13 @@ func TestMandateHoldsTheApproversOnceAndEndsAtTheMoment(t *testing.T) {
 func TestAMandateNeedsItsClaimsAnApproverAndAMoment(t *testing.T) {
 	for _, missing := range []string{"workload", "resource", "approvers", credential.ExpiresAtKey} {
 		claims := map[string]string{}
+
 		for k, v := range approved {
 			if k != missing {
 				claims[k] = v
 			}
 		}
+
 		if _, err := credential.Content(credential.MandateType, claims, ""); err == nil {
 			t.Errorf("a Mandate without %s was built", missing)
 		}
@@ -371,13 +438,17 @@ func TestAMandateNeedsItsClaimsAnApproverAndAMoment(t *testing.T) {
 
 func TestApprovalHoldsTheExactResourceAndTheApprovers(t *testing.T) {
 	claims := map[string]string{
-		"workload": "spiffe://corp.test/ns/cicd/sa/agent", "resource": "deploy:prod:v2.0.0", "approvers": "anna@corp.test,bob@corp.test", credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
+		"workload": "spiffe://corp.test/ns/cicd/sa/agent", "resource": "deploy:prod:v2.0.0", "approvers": "anna@corp.test,bob@corp.test",
+		credential.ExpiresAtKey: "2026-10-22T09:30:00Z",
 	}
+
 	c, err := credential.Content(credential.ApprovalType, claims, "Gemeente Vlierdam")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Type != "Approval" || c.Disclosable["resource"] != "deploy:prod:v2.0.0" || !reflect.DeepEqual(c.Disclosable["approvers"], []string{"anna@corp.test", "bob@corp.test"}) {
+
+	if c.Type != "Approval" || c.Disclosable["resource"] != "deploy:prod:v2.0.0" ||
+		!reflect.DeepEqual(c.Disclosable["approvers"], []string{"anna@corp.test", "bob@corp.test"}) {
 		t.Fatalf("content %+v", c)
 	}
 }

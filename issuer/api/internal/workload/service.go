@@ -1,14 +1,13 @@
 package workload
 
 import (
+	"attesta/issuer/internal/credential"
+	"attesta/issuer/internal/entitlement"
 	"context"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
-
-	"attesta/issuer/internal/credential"
-	"attesta/issuer/internal/entitlement"
 )
 
 // DefaultCredentialLifetime is how long a workload's credential lasts; the workload asks for a new one when it needs it.
@@ -76,12 +75,15 @@ func NewService(cfg Config, registry Registry, entitlements Entitlements, verifi
 	if cfg.CredentialLifetime == 0 {
 		cfg.CredentialLifetime = DefaultCredentialLifetime
 	}
+
 	if cfg.OfferLifetime == 0 {
 		cfg.OfferLifetime = DefaultOfferLifetime
 	}
+
 	if cfg.Now == nil {
 		cfg.Now = time.Now
 	}
+
 	return &Service{cfg: cfg, registry: registry, entitlements: entitlements, verifier: verifier, offers: offers, grants: grants}
 }
 
@@ -94,38 +96,48 @@ type Offers struct {
 	Mandate  string
 }
 
-// Offer checks the token and, for an enrolled workload, gives the links its wallet takes new credentials from: the Workload credential, and the Mandate
-// credential when people allowed something. Every call makes new entitlements, so the workload gets credentials for each run, and each ends by itself.
+// Offer checks the token and, for an enrolled workload, gives the links its wallet takes new credentials from: the Workload credential, and the
+// Mandate credential when people allowed something. Every call makes new entitlements, so the workload gets credentials for each run, and each ends
+// by itself.
 func (s *Service) Offer(ctx context.Context, token string) (Offers, error) {
 	spiffeID, err := s.verifier.Verify(ctx, token)
 	if err != nil {
 		return Offers{}, err
 	}
+
 	w, err := s.registry.FindEnrolled(ctx, spiffeID)
 	if errors.Is(err, ErrNotFound) {
 		return Offers{}, ErrNotEnrolled
 	}
+
 	if err != nil {
 		return Offers{}, err
 	}
+
 	now := s.cfg.Now()
 	end := now.Add(s.cfg.CredentialLifetime)
+
 	var offers Offers
 	if offers.Workload, err = s.offer(ctx, w.SpiffeID, credential.Workload, map[string]string{
 		"workload": w.SpiffeID, "owner": w.Owner, "environment": w.Environment, credential.ExpiresAtKey: end.UTC().Format(time.RFC3339),
 	}); err != nil {
 		return Offers{}, err
 	}
+
 	grant, ok, err := s.grants.GrantFor(ctx, w.SpiffeID)
 	if err != nil || !ok {
 		return offers, err
 	}
+
 	if grant.EndsAt.Before(end) {
 		end = grant.EndsAt
 	}
+
 	offers.Mandate, err = s.offer(ctx, w.SpiffeID, credential.Mandate, map[string]string{
-		"workload": w.SpiffeID, "resource": grant.Resource, "approvers": strings.Join(grant.Approvers, ","), credential.ExpiresAtKey: end.UTC().Format(time.RFC3339),
+		"workload": w.SpiffeID, "resource": grant.Resource, "approvers": strings.Join(grant.Approvers,
+			","), credential.ExpiresAtKey: end.UTC().Format(time.RFC3339),
 	})
+
 	return offers, err
 }
 
@@ -135,6 +147,7 @@ func (s *Service) offer(ctx context.Context, spiffeID, credentialType string, cl
 	if err != nil {
 		return "", fmt.Errorf("record the %s entitlement: %w", credentialType, err)
 	}
+
 	return s.offers.OfferFor(ctx, e, s.cfg.OfferLifetime)
 }
 
@@ -144,15 +157,19 @@ func (s *Service) Enroll(ctx context.Context, in Input) (Workload, error) {
 
 func (s *Service) List(ctx context.Context) ([]Workload, error) { return s.registry.List(ctx) }
 
-// Revoke ends the enrollment and the workload's mandate, and withdraws the credentials already made, so a verifier that reads the status list learns of it.
+// Revoke ends the enrollment and the workload's mandate, and withdraws the credentials already made, so a verifier that reads the status list learns
+// of it.
 func (s *Service) Revoke(ctx context.Context, id string) error {
 	w, err := s.registry.Revoke(ctx, id)
 	if err != nil {
 		return err
 	}
+
 	if err := s.grants.EndFor(ctx, w.SpiffeID); err != nil {
 		return err
 	}
+
 	_, err = s.entitlements.RevokeAll(ctx, entitlement.WorkloadOf(w.SpiffeID))
+
 	return err
 }

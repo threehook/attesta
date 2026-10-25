@@ -1,14 +1,13 @@
 package workload
 
 import (
+	"attesta/issuer/internal/svid"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"attesta/issuer/internal/svid"
 )
 
 type workloadJSON struct {
@@ -26,7 +25,7 @@ type offersJSON struct {
 }
 
 func jsonOf(w Workload) workloadJSON {
-	return workloadJSON{ID: w.ID, SpiffeID: w.SpiffeID, Owner: w.Owner, Environment: w.Environment, CreatedAt: w.CreatedAt}
+	return workloadJSON(w)
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
@@ -45,6 +44,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 	if protect == nil {
 		protect = func(h http.Handler) http.Handler { return h }
 	}
+
 	staff := http.NewServeMux()
 	staff.HandleFunc("POST /workloads", func(w http.ResponseWriter, r *http.Request) {
 		var in struct {
@@ -56,6 +56,7 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 			writeError(w, http.StatusBadRequest, "the request is not JSON")
 			return
 		}
+
 		enrolled, err := svc.Enroll(r.Context(), Input{SpiffeID: in.SpiffeID, Owner: in.Owner, Environment: in.Environment})
 		switch {
 		case errors.Is(err, ErrInvalid):
@@ -74,12 +75,15 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 		if err != nil {
 			slog.Error("could not read the workloads", "error", err)
 			writeError(w, http.StatusInternalServerError, "the workloads could not be read")
+
 			return
 		}
+
 		out := make([]workloadJSON, len(list))
 		for i, item := range list {
 			out[i] = jsonOf(item)
 		}
+
 		writeJSON(w, http.StatusOK, out)
 	})
 	staff.HandleFunc("DELETE /workloads/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +107,10 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 		if !ok || token == "" {
 			w.Header().Set("WWW-Authenticate", "Bearer")
 			writeError(w, http.StatusUnauthorized, "a JWT-SVID is required")
+
 			return
 		}
+
 		offers, err := svc.Offer(r.Context(), token)
 		switch {
 		case errors.Is(err, svid.ErrInvalid):
@@ -119,5 +125,6 @@ func Handler(svc *Service, protect func(http.Handler) http.Handler) http.Handler
 			writeJSON(w, http.StatusOK, offersJSON{Offer: offers.Workload, Mandate: offers.Mandate})
 		}
 	})
+
 	return mux
 }

@@ -3,12 +3,11 @@
 package httpapi
 
 import (
+	"attesta/backend/internal/authz"
+	"attesta/backend/internal/scripts"
 	"log/slog"
 	"net/http"
 	"strings"
-
-	"attesta/backend/internal/authz"
-	"attesta/backend/internal/scripts"
 )
 
 // Server holds the HTTP handlers' dependencies; call Routes to get an http.Handler.
@@ -34,6 +33,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /admin/policies", s.requireAdmin(s.handlePutPolicy))
 	mux.HandleFunc("POST /admin/policies/diagnose", s.requireAdmin(s.handleDiagnosePolicy))
 	mux.HandleFunc("POST /admin/policies/evaluate", s.requireAdmin(s.handleEvaluatePolicy))
+
 	return withCORS(mux, s.CORSOrigins)
 }
 
@@ -46,22 +46,27 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 // Access-Control-Allow-Origin header, so the browser blocks it.
 func withCORS(next http.Handler, allowlist string) http.Handler {
 	allowed := make(map[string]bool)
-	for _, origin := range strings.Split(allowlist, ",") {
+
+	for origin := range strings.SplitSeq(allowlist, ",") {
 		if origin = strings.TrimSpace(origin); origin != "" {
 			allowed[origin] = true
 		}
 	}
+
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if origin := r.Header.Get("Origin"); allowed[origin] {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
 		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Admin-Token")
+
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -72,6 +77,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusUnauthorized, "invalid admin token")
 			return
 		}
+
 		next(w, r)
 	}
 }

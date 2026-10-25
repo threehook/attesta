@@ -2,20 +2,6 @@
 package main
 
 import (
-	"context"
-	"crypto/sha256"
-	"errors"
-	"fmt"
-	"log/slog"
-	"net/http"
-	"os"
-	"os/signal"
-	"strings"
-	"syscall"
-	"time"
-
-	"github.com/spiffe/go-spiffe/v2/workloadapi"
-
 	"attesta/issuer/internal/approval"
 	"attesta/issuer/internal/auth"
 	"attesta/issuer/internal/config"
@@ -32,6 +18,19 @@ import (
 	"attesta/issuer/internal/statuslist"
 	"attesta/issuer/internal/svid"
 	"attesta/issuer/internal/workload"
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/spiffe/go-spiffe/v2/workloadapi"
 )
 
 func main() {
@@ -46,10 +45,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := postgres.Open(ctx, postgres.Options{Host: cfg.Database.Host, User: cfg.Database.User, Password: cfg.Database.Password}, cfg.Database.Name)
+	pool, err := postgres.Open(
+		ctx,
+		postgres.Options{Host: cfg.Database.Host, User: cfg.Database.User, Password: cfg.Database.Password},
+		cfg.Database.Name,
+	)
 	if err != nil {
 		return err
 	}
@@ -61,11 +65,24 @@ func run() error {
 	types := credtype.NewStore(pool)
 
 	status := statuslist.New(me, store, strings.TrimSuffix(cfg.PublicURL, "/"), nil)
+
 	var svc *service.Service
+
 	protocol := oid4vci.New(oid4vci.Config{
-		PublicURL: cfg.PublicURL, StatusURI: status.URI(), IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime, RenewalCooldown: cfg.RenewalCooldown,
-	}, oid4vci.NewSessions(pool, secret[:]), store, types, func(ctx context.Context, e entitlement.Entitlement) error { return svc.MailQRCode(ctx, e) })
-	svc = service.New(service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime}, store, role.NewStore(pool), types, protocol, mail.NewSMTP(cfg.SMTP))
+		PublicURL: cfg.PublicURL, StatusURI: status.URI(), IssuerName: cfg.Name, Identity: me, Secret: secret[:], OfferLifetime: cfg.QRLifetime,
+		RenewalCooldown: cfg.RenewalCooldown,
+	}, oid4vci.NewSessions(pool, secret[:]), store, types, func(ctx context.Context, e entitlement.Entitlement) error {
+		return svc.MailQRCode(ctx,
+			e)
+	})
+	svc = service.New(
+		service.Config{IssuerName: cfg.Name, QRLifetime: cfg.QRLifetime},
+		store,
+		role.NewStore(pool),
+		types,
+		protocol,
+		mail.NewSMTP(cfg.SMTP),
+	)
 
 	// A credential made just before the issuer stopped may not have been marked issued; its session still names the entitlement.
 	if err := protocol.Reconcile(ctx); err != nil {
@@ -73,6 +90,7 @@ func run() error {
 	}
 
 	var approvers *auth.Verifier
+
 	httpCfg := httpapi.Config{IssuerName: cfg.Name, DID: me.DID, Protocol: protocol.Handler(), Status: status.Handler()}
 	if cfg.Auth.Disabled {
 		slog.Warn("sign-in is switched off: anyone who reaches the forms can record entitlements")
@@ -88,31 +106,45 @@ func run() error {
 		if cfg.SPIFFE.Socket != "" {
 			options = append(options, workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.SPIFFE.Socket)))
 		}
+
 		bundles, err := workloadapi.NewJWTSource(ctx, options...)
 		if err != nil {
 			return fmt.Errorf("read the SPIFFE trust bundle: %w", err)
 		}
 		defer bundles.Close()
+
 		verifier, err := svid.New(bundles, cfg.SPIFFE.TrustDomain, cfg.SPIFFE.Audience)
 		if err != nil {
 			return err
 		}
+
 		registry := workload.NewStore(pool)
 		mandates := mandate.NewService(mandate.NewStore(pool), registry, store)
-		workloads := workload.NewService(workload.Config{CredentialLifetime: cfg.SPIFFE.CredentialLifetime}, registry, store, verifier, protocol, mandates)
+		workloads := workload.NewService(
+			workload.Config{CredentialLifetime: cfg.SPIFFE.CredentialLifetime},
+			registry,
+			store,
+			verifier,
+			protocol,
+			mandates,
+		)
 		httpCfg.Workloads = workload.Handler(workloads, httpCfg.Protect)
+
 		var protectApprovers func(http.Handler) http.Handler
 		if approvers != nil {
 			protectApprovers = approvers.Protect
 		}
+
 		approver := func(r *http.Request) string { return auth.Email(r.Context()) }
 		approvals := approval.NewService(approval.Config{
-			Required: cfg.SPIFFE.Approvals.Required, RequestLifetime: cfg.SPIFFE.Approvals.RequestLifetime, CredentialLifetime: cfg.SPIFFE.Approvals.CredentialLifetime,
-			PublicURL: cfg.PublicURL, Notify: cfg.SPIFFE.Approvals.Notify,
+			Required: cfg.SPIFFE.Approvals.Required, RequestLifetime: cfg.SPIFFE.Approvals.RequestLifetime,
+			CredentialLifetime: cfg.SPIFFE.Approvals.CredentialLifetime,
+			PublicURL:          cfg.PublicURL, Notify: cfg.SPIFFE.Approvals.Notify,
 		}, approval.NewStore(pool), verifier, registry, store, protocol, mail.NewSMTP(cfg.SMTP))
 		httpCfg.WorkloadApprovals = approval.WorkloadHandler(approvals)
 		httpCfg.Approvals = approval.PeopleHandler(approvals, protectApprovers, approver)
 		httpCfg.Mandates = mandate.Handler(mandates, protectApprovers, approver)
+
 		slog.Info("workloads are recognized in the SPIFFE trust domain " + cfg.SPIFFE.TrustDomain)
 	}
 
@@ -121,8 +153,10 @@ func run() error {
 		Handler:           httpapi.Handler(httpCfg, svc),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
 	failed := make(chan error, 1)
 	go func() { failed <- server.ListenAndServe() }()
+
 	slog.Info(fmt.Sprintf("issuer listening on %d, public url %s", cfg.Port, cfg.PublicURL))
 	slog.Info("issuer DID " + me.DID)
 
@@ -131,10 +165,13 @@ func run() error {
 		return err
 	case <-ctx.Done():
 	}
+
 	shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+
 	if err := server.Shutdown(shutdown); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+
 	return nil
 }

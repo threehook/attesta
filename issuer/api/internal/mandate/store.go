@@ -1,5 +1,5 @@
-// Package mandate keeps what named people allow a workload to do. Each time the workload asks for its credentials, the active mandate becomes a Mandate
-// credential, so the policy sees who approved what, and until when.
+// Package mandate keeps what named people allow a workload to do. Each time the workload asks for its credentials, the active mandate becomes a
+// Mandate credential, so the policy sees who approved what, and until when.
 package mandate
 
 import (
@@ -45,10 +45,13 @@ func clean(in Input, now time.Time) (Input, error) {
 	if in.Resource == "" || len([]rune(in.Resource)) > maxResource || strings.ContainsAny(in.Resource, " \t\r\n") {
 		return Input{}, ErrInvalid
 	}
+
 	if !in.ExpiresAt.After(now) || in.ExpiresAt.After(now.Add(maxLifetime)) {
 		return Input{}, ErrInvalid
 	}
+
 	in.ExpiresAt = in.ExpiresAt.UTC()
+
 	return in, nil
 }
 
@@ -69,7 +72,9 @@ const selectActive = `SELECT m.id, m.workload, m.resource, m.expires_at, m.creat
 
 func scan(row pgx.Row) (Mandate, error) {
 	var m Mandate
+
 	err := row.Scan(&m.ID, &m.Workload, &m.Resource, &m.ExpiresAt, &m.CreatedAt, &m.Approvers)
+
 	return m, err
 }
 
@@ -79,28 +84,40 @@ func (s *Store) Create(ctx context.Context, in Input, approver string) (Mandate,
 	if err != nil {
 		return Mandate{}, err
 	}
+
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Mandate{}, err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, "UPDATE mandates SET ended_at = now() WHERE workload = $1 AND ended_at IS NULL AND expires_at <= now()", in.Workload); err != nil {
+
+	if _, err := tx.Exec(ctx, "UPDATE mandates SET ended_at = now() WHERE workload = $1 AND ended_at IS NULL AND expires_at <= now()",
+		in.Workload); err != nil {
 		return Mandate{}, err
 	}
+
 	var id string
-	err = tx.QueryRow(ctx, "INSERT INTO mandates (workload, resource, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id", in.Workload, in.Resource, in.ExpiresAt).Scan(&id)
+
+	err = tx.QueryRow(ctx, "INSERT INTO mandates (workload, resource, expires_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING RETURNING id",
+		in.Workload,
+		in.Resource, in.ExpiresAt).
+		Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Mandate{}, ErrExists
 	}
+
 	if err != nil {
 		return Mandate{}, err
 	}
+
 	if _, err := tx.Exec(ctx, "INSERT INTO mandate_approvals (mandate_id, approver) VALUES ($1, $2)", id, approver); err != nil {
 		return Mandate{}, err
 	}
+
 	if err := tx.Commit(ctx); err != nil {
 		return Mandate{}, err
 	}
+
 	return s.Find(ctx, id)
 }
 
@@ -110,14 +127,18 @@ func (s *Store) Find(ctx context.Context, id string) (Mandate, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Mandate{}, ErrNotFound
 	}
+
 	return m, err
 }
 
 // Approve adds a person to the approvers of an active mandate. Approving twice changes nothing.
 func (s *Store) Approve(ctx context.Context, id, approver string) (Mandate, error) {
-	if _, err := s.pool.Exec(ctx, "INSERT INTO mandate_approvals (mandate_id, approver) SELECT id, $2 FROM mandates WHERE id = $1 AND "+active+" ON CONFLICT DO NOTHING", id, approver); err != nil {
+	if _, err := s.pool.Exec(ctx,
+		"INSERT INTO mandate_approvals (mandate_id, approver) SELECT id, $2 FROM mandates WHERE id = $1 AND "+active+" ON "+
+			"CONFLICT DO NOTHING", id, approver); err != nil {
 		return Mandate{}, err
 	}
+
 	return s.Find(ctx, id)
 }
 
@@ -127,9 +148,11 @@ func (s *Store) End(ctx context.Context, id string) (Mandate, error) {
 	if err != nil {
 		return Mandate{}, err
 	}
+
 	if _, err := s.pool.Exec(ctx, "UPDATE mandates SET ended_at = now() WHERE id = $1 AND ended_at IS NULL", id); err != nil {
 		return Mandate{}, err
 	}
+
 	return m, nil
 }
 
@@ -140,14 +163,18 @@ func (s *Store) List(ctx context.Context) ([]Mandate, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var out []Mandate
+
 	for rows.Next() {
 		m, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
+
 		out = append(out, m)
 	}
+
 	return out, rows.Err()
 }
 
@@ -157,5 +184,6 @@ func (s *Store) ActiveFor(ctx context.Context, spiffeID string) (Mandate, error)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Mandate{}, ErrNotFound
 	}
+
 	return m, err
 }
