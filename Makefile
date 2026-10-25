@@ -39,7 +39,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana \
 	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
-	azure-apply azure-down azure-up azure-destroy lint
+	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -303,3 +303,29 @@ azure-destroy:
 	@read -p "Destroy the Azure test infrastructure? [y/N] " a; [ "$$a" = y ] || { echo cancelled; exit 1; }
 	terraform -chdir=$(AZURE_DIR) init -input=false
 	terraform -chdir=$(AZURE_DIR) destroy
+
+# The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
+# Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
+AZURE_KUBE_CONTEXT := aks-attesta-test
+AZURE_BACKEND_IMAGE := ghcr.io/threehook/attesta-backend
+
+azure-backend-apply:
+	@test -n "$(TAG)" || { echo "usage: make azure-backend-apply TAG=<git sha>"; exit 1; }
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/backend/namespace.yaml
+	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret attesta-backend -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-backend -n $(NAMESPACE) \
+			--from-literal=admin-token=$$(openssl rand -hex 32)
+	$(MAKE) azure-backend-policies
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/backend/pvc.yaml -f k8s/cloud/backend/deployment.yaml -f k8s/cloud/backend/service.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/attesta-backend attesta-backend=$(AZURE_BACKEND_IMAGE):$(TAG) -n $(NAMESPACE)
+	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/attesta-backend -n $(NAMESPACE)
+
+# The policies the backend loads and watches (ConfigMap attesta-policies at /policies); today the CI/CD agent's. Changes apply without a restart.
+azure-backend-policies: KUBE_CONTEXT := $(AZURE_KUBE_CONTEXT)
+azure-backend-policies:
+	@$(call put-configmap,attesta-policies,$(CICD_POLICIES))
+
+azure-backend-delete:
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/backend/deployment.yaml -f k8s/cloud/backend/service.yaml --ignore-not-found
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete secret attesta-backend -n $(NAMESPACE) --ignore-not-found
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete configmap attesta-policies -n $(NAMESPACE) --ignore-not-found
