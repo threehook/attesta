@@ -89,3 +89,19 @@ variable "wallet_service_account" {
   type    = string
   default = "cicd-agent"
 }
+
+variable "issuer_seed_mode" {
+  type        = string
+  description = "Where the issuer's seed (its signing key and so its DID) comes from: create (Terraform makes a random one in the vault; it is never stored in the state) or provisioned (someone put it there; Terraform leaves it alone)"
+
+  validation {
+    condition     = contains(["create", "provisioned"], var.issuer_seed_mode)
+    error_message = "issuer_seed_mode is create or provisioned."
+  }
+}
+
+variable "issuer_seed_name" {
+  type        = string
+  default     = "issuer-seed"
+  description = "Name of the vault secret that holds the issuer's seed"
+}

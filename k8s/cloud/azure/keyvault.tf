@@ -60,3 +60,29 @@ resource "azurerm_role_assignment" "wallet" {
   role_definition_name = var.wallet_key_mode == "create" ? "Key Vault Crypto Officer" : "Key Vault Crypto User"
   scope                = var.wallet_key_mode == "create" ? azurerm_key_vault.this.id : azapi_resource.wallet_key[0].id
 }
+
+# The issuer's seed. In mode create it is random and made once; it is a write-only value, so it is sent to the vault and never stored in the state or the plan.
+# A new seed needs a new value_wo_version. In mode provisioned the secret is there already and Terraform leaves it alone.
+# Writing a secret is a data-plane call, so whoever applies needs the role below and an address that the vault's firewall admits.
+ephemeral "random_password" "issuer_seed" {
+  count   = var.issuer_seed_mode == "create" ? 1 : 0
+  length  = 64
+  special = false
+}
+
+resource "azurerm_role_assignment" "applier_secrets" {
+  count                = var.issuer_seed_mode == "create" ? 1 : 0
+  principal_id         = data.azurerm_client_config.current.object_id
+  role_definition_name = "Key Vault Secrets Officer"
+  scope                = azurerm_key_vault.this.id
+}
+
+resource "azurerm_key_vault_secret" "issuer_seed" {
+  count            = var.issuer_seed_mode == "create" ? 1 : 0
+  name             = var.issuer_seed_name
+  value_wo         = ephemeral.random_password.issuer_seed[0].result
+  value_wo_version = 1
+  key_vault_id     = azurerm_key_vault.this.id
+
+  depends_on = [azurerm_role_assignment.applier_secrets]
+}

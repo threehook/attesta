@@ -5,3 +5,4 @@ key_vault_purge_protection = false
 key_vault_soft_delete_days = 7
 key_vault_purge_on_destroy = true
 wallet_key_mode            = "create"
+issuer_seed_mode           = "create"
