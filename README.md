@@ -13,7 +13,7 @@ It works the same for the people in your organisation and for the pipelines, ser
 
 - **Share less.** A request names the claims it needs, such as a department. The wallet shows those and nothing else. The person confirms in their own wallet, or
   chooses to always share with an application they trust.
-- **Policies you can read.** Rules are written as code in Rego, changed without a restart, and tried out beforehand in the built-in Policy Editor and Policy
+- **Policies you can read.** Rules are written as code in OPA/Rego, changed without a restart, and tried out beforehand in the built-in Policy Editor and Policy
   Tester.
 - **Unattended systems are covered.** A pipeline, a service or an AI agent gets an identity and a wallet of its own, and every action it takes asks first.
 - **Take access back.** A revoked credential is denied. A mandate that was given to a system ends by itself, or earlier when someone ends it.
