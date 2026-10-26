@@ -63,16 +63,17 @@ resource "azurerm_role_assignment" "wallet" {
 
 # The issuer's seed. In mode create it is random and made once; it is a write-only value, so it is sent to the vault and never stored in the state or the plan.
 # A new seed needs a new value_wo_version. In mode provisioned the secret is there already and Terraform leaves it alone.
-# Writing a secret is a data-plane call, so whoever applies needs the role below and an address that the vault's firewall admits.
+# Reading and writing a secret are data-plane calls, so everyone who plans or applies (you and the workflow's app) needs the role below, and an address that the
+# vault's firewall admits.
 ephemeral "random_password" "issuer_seed" {
   count   = var.issuer_seed_mode == "create" ? 1 : 0
   length  = 64
   special = false
 }
 
-resource "azurerm_role_assignment" "applier_secrets" {
-  count                = var.issuer_seed_mode == "create" ? 1 : 0
-  principal_id         = data.azurerm_client_config.current.object_id
+resource "azurerm_role_assignment" "secrets_officer" {
+  for_each             = var.issuer_seed_mode == "create" ? var.secrets_officer_object_ids : toset([])
+  principal_id         = each.value
   role_definition_name = "Key Vault Secrets Officer"
   scope                = azurerm_key_vault.this.id
 }
@@ -84,5 +85,5 @@ resource "azurerm_key_vault_secret" "issuer_seed" {
   value_wo_version = 1
   key_vault_id     = azurerm_key_vault.this.id
 
-  depends_on = [azurerm_role_assignment.applier_secrets]
+  depends_on = [azurerm_role_assignment.secrets_officer]
 }

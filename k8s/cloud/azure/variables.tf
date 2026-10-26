@@ -105,3 +105,9 @@ variable "issuer_seed_name" {
   default     = "issuer-seed"
   description = "Name of the vault secret that holds the issuer's seed"
 }
+
+variable "secrets_officer_object_ids" {
+  type        = set(string)
+  default     = []
+  description = "Object ids of whoever runs Terraform, such as the person applying and the workflow's Entra app; they get the role Key Vault Secrets Officer (mode create)"
+}
