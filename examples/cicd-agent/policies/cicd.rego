@@ -7,7 +7,11 @@ package policy
 # carries the advice `request_approval`, which tells the agent it may park the action until people approve it.
 # input.credentials holds each presented credential by type, with its issuer and its disclosed claims by name (the approvers as JSON text, a list of texts).
 
-trusted_issuers := {"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA"}
+# The issuers' DIDs: the local issuer (its development seed) and the one on AKS (its seed is in the Key Vault; the DID changes when the vault is made again).
+trusted_issuers := {
+	"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA",
+	"did:key:z6Mkra6yQRUV8UU2xWTJ9FXqRW23546t4dVgXQQJDd6oc7yk",
+}
 
 # The agent's pod, in whatever trust domain the issuer serves: the issuer enrols and issues only for its own.
 agent := `^spiffe://[^/]+/ns/attesta/sa/cicd-agent$`
