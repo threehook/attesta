@@ -28,7 +28,7 @@ spec:
             # How wallets and staff reach the issuer, through make azure-forward; this address is written into the QR codes, the credentials and the metadata.
             # The wallet in the agent's pod and the backend beside it map it to the Service.
             - name: ATTESTA_ISSUER_PUBLIC_URL
-              value: http://issuer.tst.attesta.corbencreatives.nl:4001
+              value: http://issuer.tst.attesta.localhost:4001
             # The mails go to Mailpit (k8s/cloud/issuer/mailpit).
             - name: ATTESTA_ISSUER_SMTP_HOST
               value: issuer-mailpit
@@ -60,7 +60,7 @@ spec:
                   key: password
             # Staff sign in at Keycloak (k8s/local/issuer/keycloak); the API checks their tokens. The issuer is the address in the tokens, the metadata is read inside the cluster.
             - name: ATTESTA_ISSUER_OIDC_ISSUER
-              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth/realms/attesta
+              value: http://issuer.tst.attesta.localhost:8180/auth/realms/attesta
             - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
               value: http://issuer-keycloak:8080/auth/realms/attesta
           volumeMounts:

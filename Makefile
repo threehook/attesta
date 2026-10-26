@@ -377,11 +377,10 @@ azure-issuer-delete:
 		-f k8s/cloud/issuer/gui-deployment.yaml -f k8s/cloud/issuer/gui-service.yaml --ignore-not-found
 
 # The only way in: nodes and apps have no public IP. Forwards the pages (4000), the issuer API (4001), Keycloak (8180) and Mailpit's web page (8025) to this
-# machine until Ctrl-C. The addresses carry the name ISSUER_HOST, which must resolve to 127.0.0.1 here (a line in /etc/hosts), because tokens and credentials name it.
-ISSUER_HOST := issuer.tst.attesta.corbencreatives.nl
+# machine until Ctrl-C. The addresses carry the name ISSUER_HOST, because tokens and credentials name it; browsers resolve *.localhost to this machine themselves,
+# and a name under corbencreatives.nl would be forced to https by that domain's HSTS.
+ISSUER_HOST := issuer.tst.attesta.localhost
 azure-forward:
-	@getent hosts $(ISSUER_HOST) >/dev/null 2>&1 || dscacheutil -q host -a name $(ISSUER_HOST) | grep -q 127.0.0.1 || \
-		{ echo "add this line to /etc/hosts first: 127.0.0.1 $(ISSUER_HOST)"; exit 1; }
 	@echo "pages http://$(ISSUER_HOST):4000   Keycloak http://$(ISSUER_HOST):8180/auth   mail http://localhost:8025"
 	@trap 'kill 0' INT TERM EXIT; \
 		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/attesta-issuer-gui 4000:4000 & \
