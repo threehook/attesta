@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.11"
+  required_version = ">= 1.7"
 
   # Execution mode of the workspace is Local: the GitHub workflow runs Terraform, HCP keeps the state.
   cloud {
@@ -18,10 +18,6 @@ terraform {
     azapi = {
       source  = "Azure/azapi"
       version = "~> 2.0"
-    }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.6"
     }
   }
 }

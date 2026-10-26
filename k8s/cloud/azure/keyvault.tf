@@ -61,29 +61,35 @@ resource "azurerm_role_assignment" "wallet" {
   scope                = var.wallet_key_mode == "create" ? azurerm_key_vault.this.id : azapi_resource.wallet_key[0].id
 }
 
-# The issuer's seed. In mode create it is random and made once; it is a write-only value, so it is sent to the vault and never stored in the state or the plan.
-# A new seed needs a new value_wo_version. In mode provisioned the secret is there already and Terraform leaves it alone.
-# Reading and writing a secret are data-plane calls, so everyone who plans or applies (you and the workflow's app) needs the role below, and an address that the
-# vault's firewall admits.
-ephemeral "random_password" "issuer_seed" {
-  count   = var.issuer_seed_mode == "create" ? 1 : 0
-  length  = 64
-  special = false
+# The issuer's seed (its signing key and so its DID) is a vault secret that a cloud engineer makes by hand; Terraform never writes it. The issuer's pod reads it
+# through the Secrets Store CSI driver as its own identity, and may read nothing else of the vault's secrets than this role gives.
+resource "azurerm_user_assigned_identity" "issuer" {
+  name                = "id-${local.name}-issuer"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
 }
 
-resource "azurerm_role_assignment" "secrets_officer" {
-  for_each             = var.issuer_seed_mode == "create" ? var.secrets_officer_object_ids : toset([])
-  principal_id         = each.value
-  role_definition_name = "Key Vault Secrets Officer"
+resource "azurerm_federated_identity_credential" "issuer" {
+  name                = "issuer"
+  resource_group_name = azurerm_resource_group.this.name
+  parent_id           = azurerm_user_assigned_identity.issuer.id
+  issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject             = "system:serviceaccount:${var.issuer_namespace}:${var.issuer_service_account}"
+  audience            = ["api://AzureADTokenExchange"]
+}
+
+resource "azurerm_role_assignment" "issuer_seed" {
+  principal_id         = azurerm_user_assigned_identity.issuer.principal_id
+  principal_type       = "ServicePrincipal"
+  role_definition_name = "Key Vault Secrets User"
   scope                = azurerm_key_vault.this.id
 }
 
-resource "azurerm_key_vault_secret" "issuer_seed" {
-  count            = var.issuer_seed_mode == "create" ? 1 : 0
-  name             = var.issuer_seed_name
-  value_wo         = ephemeral.random_password.issuer_seed[0].result
-  value_wo_version = 1
-  key_vault_id     = azurerm_key_vault.this.id
+# An earlier version of this stack made the seed here. The secret stays in the vault; only the state forgets it, without reading it.
+removed {
+  from = azurerm_key_vault_secret.issuer_seed
 
-  depends_on = [azurerm_role_assignment.secrets_officer]
+  lifecycle {
+    destroy = false
+  }
 }

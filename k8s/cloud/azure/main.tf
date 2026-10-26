@@ -34,6 +34,11 @@ resource "azurerm_kubernetes_cluster" "this" {
   oidc_issuer_enabled       = true
   workload_identity_enabled = true
 
+  # Mounts vault secrets into pods through the Secrets Store CSI driver; the pod's own identity reads them (see keyvault.tf).
+  key_vault_secrets_provider {
+    secret_rotation_enabled = false
+  }
+
   api_server_access_profile {
     authorized_ip_ranges = var.api_allowed_cidrs
   }
