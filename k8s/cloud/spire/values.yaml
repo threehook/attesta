@@ -1,0 +1,18 @@
+# SPIRE for AKS, from the hardened Helm chart (make azure-spire). Workloads get their identity from k8s/cloud/spire/clusterspiffeid.yaml.
+global:
+  spire:
+    trustDomain: tst.attesta.corbencreatives.nl
+    clusterName: aks-tst-attesta
+    # The chart's recommendations switch on settings that a single small node does not need.
+    recommendations:
+      enabled: false
+spire-server:
+  controllerManager:
+    identities:
+      clusterSPIFFEIDs:
+        # Only the pods named in clusterspiffeid.yaml get an identity.
+        default:
+          enabled: false
+# Nothing here verifies SVIDs through OIDC discovery.
+spiffe-oidc-discovery-provider:
+  enabled: false

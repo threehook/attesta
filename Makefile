@@ -40,7 +40,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	k8s-traefik k8s-tls k8s-ingress grafana \
 	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
 	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete \
-	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
+	azure-spire azure-issuer-apply azure-issuer-delete azure-forward azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -339,6 +339,56 @@ azure-backend-delete:
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/backend/deployment.yaml -f k8s/cloud/backend/service.yaml --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete secret attesta-backend -n $(NAMESPACE) --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete configmap attesta-policies -n $(NAMESPACE) --ignore-not-found
+
+# SPIRE on AKS (server, agent, CSI driver and controller manager) from the hardened Helm chart, with the identities of k8s/cloud/spire.
+# Needs SPIRE's chart repository; azure-cicd-apply needs it installed, because the agent's pod mounts the CSI driver.
+azure-spire: KUBE_CONTEXT := $(AZURE_KUBE_CONTEXT)
+azure-spire:
+	helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ --force-update
+	helm upgrade --install spire-crds spiffe/spire-crds --kube-context $(KUBE_CONTEXT) -n spire-mgmt --create-namespace --wait
+	helm upgrade --install spire spiffe/spire --kube-context $(KUBE_CONTEXT) -n spire-mgmt -f k8s/cloud/spire/values.yaml --wait --timeout 10m
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/cloud/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/cloud/spire/clusterspiffeid.yaml
+
+# The issuer on AKS (k8s/cloud/issuer): Postgres, Keycloak, Mailpit, the API and the pages, from the images the images workflow pushed to ghcr.io:
+# make azure-issuer-apply TAG=<git sha>. Needs SPIRE (azure-spire). The credentials of the database and of the staff login are random and made once.
+azure-issuer-apply:
+	@test -n "$(TAG)" || { echo "usage: make azure-issuer-apply TAG=<git sha>"; exit 1; }
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/backend/namespace.yaml
+	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret attesta-issuer-db -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-issuer-db -n $(NAMESPACE) \
+			--from-literal=user=issuer --from-literal=password=$$(openssl rand -hex 24)
+	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret attesta-issuer-auth -n $(NAMESPACE) >/dev/null 2>&1 || \
+		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-issuer-auth -n $(NAMESPACE) \
+			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=staff-password=$$(openssl rand -hex 12) --from-literal=admin-password=$$(openssl rand -hex 12)
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/postgres -f k8s/cloud/issuer/keycloak -f k8s/cloud/issuer/mailpit
+	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak deployment/issuer-mailpit -n $(NAMESPACE)
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/api-deployment.yaml -f k8s/cloud/issuer/api-service.yaml \
+		-f k8s/cloud/issuer/gui-deployment.yaml -f k8s/cloud/issuer/gui-service.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=ghcr.io/threehook/attesta-issuer-api:$(TAG) -n $(NAMESPACE)
+	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=ghcr.io/threehook/attesta-issuer-gui:$(TAG) -n $(NAMESPACE)
+	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/attesta-issuer-api deployment/attesta-issuer-gui -n $(NAMESPACE)
+
+# Leaves the shared "attesta" namespace alone and the issuer's data: its volume claim and its Secrets.
+azure-issuer-delete:
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/issuer/postgres/deployment.yaml -f k8s/cloud/issuer/postgres/service.yaml \
+		-f k8s/cloud/issuer/keycloak -f k8s/cloud/issuer/mailpit --ignore-not-found
+	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/issuer/api-deployment.yaml -f k8s/cloud/issuer/api-service.yaml \
+		-f k8s/cloud/issuer/gui-deployment.yaml -f k8s/cloud/issuer/gui-service.yaml --ignore-not-found
+
+# The only way in: nodes and apps have no public IP. Forwards the pages (4000), the issuer API (4001), Keycloak (8180) and Mailpit's web page (8025) to this
+# machine until Ctrl-C. The addresses carry the name ISSUER_HOST, which must resolve to 127.0.0.1 here (a line in /etc/hosts), because tokens and credentials name it.
+ISSUER_HOST := issuer.tst.attesta.corbencreatives.nl
+azure-forward:
+	@getent hosts $(ISSUER_HOST) >/dev/null 2>&1 || dscacheutil -q host -a name $(ISSUER_HOST) | grep -q 127.0.0.1 || \
+		{ echo "add this line to /etc/hosts first: 127.0.0.1 $(ISSUER_HOST)"; exit 1; }
+	@echo "pages http://$(ISSUER_HOST):4000   Keycloak http://$(ISSUER_HOST):8180/auth   mail http://localhost:8025"
+	@trap 'kill 0' INT TERM EXIT; \
+		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/attesta-issuer-gui 4000:4000 & \
+		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/attesta-issuer-api 4001:4001 & \
+		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/issuer-keycloak 8180:8080 & \
+		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/issuer-mailpit 8025:8025 & \
+		wait
 
 # The CI/CD agent on AKS (k8s/cloud/cicd): make azure-cicd-apply TAG=<git sha>, the sha of the commit whose images the images workflow pushed.
 # Needs the Terraform applied (Key Vault, the wallet's identity) and, to get a credential, the issuer and SPIRE.

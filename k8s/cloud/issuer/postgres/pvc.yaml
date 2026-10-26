@@ -1,0 +1,11 @@
+# Kept apart from the Deployment so that azure-issuer-delete leaves the issuer's data in place.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: issuer-postgres
+  namespace: attesta
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi

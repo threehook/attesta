@@ -1,0 +1,37 @@
+# A mail server that keeps every mail it receives instead of sending it; the issuer's mails (QR codes, approval requests) are read on its web page, which
+# make azure-forward serves on port 8025. Mails are lost when the pod restarts.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-mailpit
+  namespace: attesta
+  labels:
+    app: issuer-mailpit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: issuer-mailpit
+  template:
+    metadata:
+      labels:
+        app: issuer-mailpit
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: mailpit
+          image: axllent/mailpit:v1.27
+          ports:
+            - containerPort: 1025
+            - containerPort: 8025
+          readinessProbe:
+            httpGet:
+              path: /livez
+              port: 8025
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi

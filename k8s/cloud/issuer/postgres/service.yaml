@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: issuer-postgres
+  namespace: attesta
+spec:
+  selector:
+    app: issuer-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432

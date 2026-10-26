@@ -1,0 +1,12 @@
+# Reached by the pages, by workloads in the cluster and, through make azure-forward, by staff and wallets.
+apiVersion: v1
+kind: Service
+metadata:
+  name: attesta-issuer-api
+  namespace: attesta
+spec:
+  selector:
+    app: attesta-issuer-api
+  ports:
+    - port: 4001
+      targetPort: 4001
