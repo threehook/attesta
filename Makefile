@@ -378,7 +378,11 @@ azure-issuer-apply:
 	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret attesta-issuer-auth -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-issuer-auth -n $(NAMESPACE) \
 			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=staff-password=$$(openssl rand -hex 12) --from-literal=admin-password=$$(openssl rand -hex 12)
-	$(MAKE) azure-issuer-seed
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/serviceaccount.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) annotate serviceaccount attesta-issuer-api -n $(NAMESPACE) --overwrite \
+		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-$(AZURE_NAME)-issuer --query clientId -o tsv)
+	sed -e 's/KEY_VAULT_NAME/$(call AZURE_ENV_VAR,key_vault_name)/' -e "s/TENANT_ID/$$(az account show --query tenantId -o tsv)/" k8s/cloud/issuer/seed.yaml | \
+		kubectl --context $(AZURE_KUBE_CONTEXT) apply -f -
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/postgres -f k8s/cloud/issuer/keycloak -f k8s/cloud/issuer/mailpit
 	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak deployment/issuer-mailpit -n $(NAMESPACE)
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/api-deployment.yaml -f k8s/cloud/issuer/api-service.yaml \
@@ -386,15 +390,6 @@ azure-issuer-apply:
 	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=ghcr.io/threehook/attesta-issuer-api:$(TAG) -n $(NAMESPACE)
 	kubectl --context $(AZURE_KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=ghcr.io/threehook/attesta-issuer-gui:$(TAG) -n $(NAMESPACE)
 	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/attesta-issuer-api deployment/attesta-issuer-gui -n $(NAMESPACE)
-
-# The issuer's seed (its signing key and so its DID) from the Key Vault, where Terraform made it (issuer_seed_mode in $(AZURE_DIR)), into the Secret
-# attesta-issuer-seed. Needs the role Key Vault Secrets User and, from outside the cluster, an address in KEY_VAULT_ALLOWED_CIDRS. The DID must be the one the
-# policies trust.
-ISSUER_SEED_NAME ?= issuer-seed
-azure-issuer-seed:
-	@seed=$$(az keyvault secret show --vault-name $(call AZURE_ENV_VAR,key_vault_name) --name $(ISSUER_SEED_NAME) --query value -o tsv) && test -n "$$seed" && \
-		printf '%s' "$$seed" | kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-issuer-seed -n $(NAMESPACE) \
-			--from-file=seed=/dev/stdin --dry-run=client -o yaml | kubectl --context $(AZURE_KUBE_CONTEXT) apply -f -
 
 # Leaves the shared "attesta" namespace alone and the issuer's data: its volume claim and its Secrets.
 azure-issuer-delete:

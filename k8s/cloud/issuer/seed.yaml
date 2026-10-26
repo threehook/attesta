@@ -1,0 +1,24 @@
+# The issuer's seed from the Key Vault: the CSI driver mounts the secret `issuer-seed` into the pod and keeps it as the Secret attesta-issuer-seed, which the
+# issuer reads as ATTESTA_ISSUER_SEED. A cloud engineer makes the secret by hand. KEY_VAULT_NAME and TENANT_ID are filled in by make azure-issuer-apply.
+apiVersion: secrets-store.csi.x-k8s.io/v1
+kind: SecretProviderClass
+metadata:
+  name: issuer-seed
+  namespace: attesta
+spec:
+  provider: azure
+  parameters:
+    usePodIdentity: "false"
+    keyvaultName: KEY_VAULT_NAME
+    tenantId: TENANT_ID
+    objects: |
+      array:
+        - |
+          objectName: issuer-seed
+          objectType: secret
+  secretObjects:
+    - secretName: attesta-issuer-seed
+      type: Opaque
+      data:
+        - objectName: issuer-seed
+          key: seed

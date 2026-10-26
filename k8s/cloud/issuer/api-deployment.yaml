@@ -14,7 +14,9 @@ spec:
     metadata:
       labels:
         app: attesta-issuer-api
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: attesta-issuer-api
       # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4001 for every Service in the namespace, which can
       # collide with our own settings of the same name.
       enableServiceLinks: false
@@ -46,7 +48,7 @@ spec:
             # How long the Approval credential lasts after people approved an action; the page Goedkeuringen shows it.
             - name: ATTESTA_ISSUER_APPROVAL_LIFETIME
               value: 15m
-            # Signs every credential and fixes the issuer's DID; from the Key Vault (make azure-issuer-seed).
+            # Signs every credential and fixes the issuer's DID; from the Key Vault (seed.yaml).
             - name: ATTESTA_ISSUER_SEED
               valueFrom:
                 secretKeyRef:
@@ -73,6 +75,10 @@ spec:
             - name: spiffe-workload-api
               mountPath: /spiffe-workload-api
               readOnly: true
+            # Mounting it is what makes the driver keep the secret as the Secret attesta-issuer-seed; nothing reads the files.
+            - name: issuer-seed
+              mountPath: /mnt/issuer-seed
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -96,3 +102,9 @@ spec:
           csi:
             driver: csi.spiffe.io
             readOnly: true
+        - name: issuer-seed
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: issuer-seed
