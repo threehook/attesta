@@ -40,7 +40,7 @@ DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 	k8s-traefik k8s-tls k8s-ingress grafana \
 	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
 	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete \
-	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
+	azure-spire azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -339,6 +339,16 @@ azure-backend-delete:
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete -f k8s/cloud/backend/deployment.yaml -f k8s/cloud/backend/service.yaml --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete secret attesta-backend -n $(NAMESPACE) --ignore-not-found
 	kubectl --context $(AZURE_KUBE_CONTEXT) delete configmap attesta-policies -n $(NAMESPACE) --ignore-not-found
+
+# SPIRE on AKS (server, agent, CSI driver and controller manager) from the hardened Helm chart, with the identities of k8s/cloud/spire.
+# Needs SPIRE's chart repository; azure-cicd-apply needs it installed, because the agent's pod mounts the CSI driver.
+azure-spire: KUBE_CONTEXT := $(AZURE_KUBE_CONTEXT)
+azure-spire:
+	helm repo add spiffe https://spiffe.github.io/helm-charts-hardened/ --force-update
+	helm upgrade --install spire-crds spiffe/spire-crds --kube-context $(KUBE_CONTEXT) -n spire-mgmt --create-namespace --wait
+	helm upgrade --install spire spiffe/spire --kube-context $(KUBE_CONTEXT) -n spire-mgmt -f k8s/cloud/spire/values.yaml --wait --timeout 10m
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/cloud/backend/namespace.yaml
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/cloud/spire/clusterspiffeid.yaml
 
 # The CI/CD agent on AKS (k8s/cloud/cicd): make azure-cicd-apply TAG=<git sha>, the sha of the commit whose images the images workflow pushed.
 # Needs the Terraform applied (Key Vault, the wallet's identity) and, to get a credential, the issuer and SPIRE.
