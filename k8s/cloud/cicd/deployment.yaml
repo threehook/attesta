@@ -86,6 +86,9 @@ spec:
               value: redirect_uri:http://127.0.0.1:8080/
             - name: ATTESTA_ALLOW_INSECURE_HTTP
               value: "1"
+            # The issuer's address in its credentials and offers is the one make azure-forward serves; inside the cluster it is reached at its Service.
+            - name: ATTESTA_WALLET_HOSTS
+              value: http://issuer.tst.attesta.corbencreatives.nl:4001=http://attesta-issuer-api:4001
           # The Key Vault address, how the wallet gets its key and its name: ConfigMap cicd-wallet-keys, made from the Terraform settings.
           envFrom:
             - configMapRef:
@@ -118,6 +121,11 @@ spec:
               value: stdout
             - name: ATTESTA_ADL_RESOURCE
               value: "application=cicd-agent"
+            # Revocation: status lists are read from the issuer only, at its Service.
+            - name: ATTESTA_STATUS_URL_PREFIXES
+              value: http://issuer.tst.attesta.corbencreatives.nl:4001/status/
+            - name: ATTESTA_STATUS_HOSTS
+              value: http://issuer.tst.attesta.corbencreatives.nl:4001=http://attesta-issuer-api:4001
             # The agent's policies; attesta reloads them when the ConfigMap changes: no restart (make azure-cicd-policies).
             - name: ATTESTA_POLICIES_DIR
               value: /policies
