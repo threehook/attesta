@@ -46,6 +46,12 @@ spec:
             # How long the Approval credential lasts after people approved an action; the page Goedkeuringen shows it.
             - name: ATTESTA_ISSUER_APPROVAL_LIFETIME
               value: 15m
+            # Signs every credential and fixes the issuer's DID; from the Key Vault (make azure-issuer-seed).
+            - name: ATTESTA_ISSUER_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-seed
+                  key: seed
             - name: ATTESTA_ISSUER_DB_HOST
               value: issuer-postgres:5432
             - name: ATTESTA_ISSUER_DB_USER
