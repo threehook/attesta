@@ -36,13 +36,20 @@ az ad app federated-credential delete --id "$CLIENT_ID" --federated-credential-i
 # Contributor creates the resources.
 az role assignment create --assignee "$CLIENT_ID" --role Contributor --scope "/subscriptions/$SUBSCRIPTION_ID" >/dev/null || true
 
-# Terraform gives the wallet's identity its role on the Key Vault. The app may assign only these two roles, Key Vault Crypto Officer and Key Vault Crypto User,
-# and no other. RBAC_SCOPE is where it may do that: the subscription by default; an environment whose resource group exists beforehand sets that group.
+# Terraform gives the identities of the wallet and the issuer their roles on the Key Vault. The app may assign and remove only these roles and no other:
+# Key Vault Crypto Officer, Key Vault Crypto User, Key Vault Reader and Key Vault Secrets User. RBAC_SCOPE is where it may do that: the subscription by
+# default; an environment whose resource group exists beforehand sets that group.
 RBAC_SCOPE=${RBAC_SCOPE:-/subscriptions/$SUBSCRIPTION_ID}
-ROLES="14b46e9e-c2b7-41b4-b07b-48a6ebf60603, 12338af0-0e69-4776-bea7-57ae8d297424"
+ROLES="14b46e9e-c2b7-41b4-b07b-48a6ebf60603, 12338af0-0e69-4776-bea7-57ae8d297424, 21090545-7ca7-4776-b22c-e363652d74d2, 4633458b-17de-408a-b874-0445c86b69e6"
 CONDITION="((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR (@Request[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$ROLES})) AND ((!(ActionMatches{'Microsoft.Authorization/roleAssignments/delete'})) OR (@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {$ROLES}))"
+# An assignment cannot be changed in place, so a run replaces it; that is what lets the list of roles above change.
+EXISTING=$(az role assignment list --assignee "$CLIENT_ID" --role "Role Based Access Control Administrator" --scope "$RBAC_SCOPE" --query '[].id' -o tsv)
+if [ -n "$EXISTING" ]; then
+	# shellcheck disable=SC2086 # one id per line
+	az role assignment delete --ids $EXISTING
+fi
 az role assignment create --assignee "$CLIENT_ID" --role "Role Based Access Control Administrator" --scope "$RBAC_SCOPE" \
-	--condition "$CONDITION" --condition-version 2.0 >/dev/null || true
+	--condition "$CONDITION" --condition-version 2.0 >/dev/null
 
 echo "AZURE_CLIENT_ID=$CLIENT_ID"
 echo "AZURE_TENANT_ID=$TENANT_ID"

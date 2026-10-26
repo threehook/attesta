@@ -93,3 +93,13 @@ removed {
     destroy = false
   }
 }
+
+# An earlier version of this stack gave the people and apps that ran Terraform the role Key Vault Secrets Officer. Those assignments stay until a person removes them:
+# the workflow's app may not remove them, and the person who makes the seed by hand needs theirs.
+removed {
+  from = azurerm_role_assignment.secrets_officer
+
+  lifecycle {
+    destroy = false
+  }
+}
