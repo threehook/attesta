@@ -31,9 +31,9 @@ spec:
               valueFrom: { secretKeyRef: { name: attesta-backend, key: admin-token } }
             # Staff sign in at Keycloak and come back to the address make azure-forward serves; the server's metadata is read inside the cluster.
             - name: ATTESTA_ISSUER_GUI_PUBLIC_URL
-              value: http://issuer.tst.attesta.corbencreatives.nl:4000
+              value: http://issuer.tst.attesta.localhost:4000
             - name: ATTESTA_ISSUER_OIDC_ISSUER
-              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth/realms/attesta
+              value: http://issuer.tst.attesta.localhost:8180/auth/realms/attesta
             - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
               value: http://issuer-keycloak:8080/auth/realms/attesta
             - name: ATTESTA_ISSUER_OIDC_CLIENT_SECRET

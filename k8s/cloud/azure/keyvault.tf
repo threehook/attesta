@@ -60,3 +60,36 @@ resource "azurerm_role_assignment" "wallet" {
   role_definition_name = var.wallet_key_mode == "create" ? "Key Vault Crypto Officer" : "Key Vault Crypto User"
   scope                = var.wallet_key_mode == "create" ? azurerm_key_vault.this.id : azapi_resource.wallet_key[0].id
 }
+
+# The issuer's seed (its signing key and so its DID) is a vault secret that a cloud engineer makes by hand; Terraform never writes it. The issuer's pod reads it
+# through the Secrets Store CSI driver as its own identity, and may read nothing else of the vault's secrets than this role gives.
+resource "azurerm_user_assigned_identity" "issuer" {
+  name                = "id-${local.name}-issuer"
+  location            = azurerm_resource_group.this.location
+  resource_group_name = azurerm_resource_group.this.name
+}
+
+resource "azurerm_federated_identity_credential" "issuer" {
+  name                = "issuer"
+  resource_group_name = azurerm_resource_group.this.name
+  parent_id           = azurerm_user_assigned_identity.issuer.id
+  issuer              = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject             = "system:serviceaccount:${var.issuer_namespace}:${var.issuer_service_account}"
+  audience            = ["api://AzureADTokenExchange"]
+}
+
+resource "azurerm_role_assignment" "issuer_seed" {
+  principal_id         = azurerm_user_assigned_identity.issuer.principal_id
+  principal_type       = "ServicePrincipal"
+  role_definition_name = "Key Vault Secrets User"
+  scope                = azurerm_key_vault.this.id
+}
+
+# An earlier version of this stack made the seed here. The secret stays in the vault; only the state forgets it, without reading it.
+removed {
+  from = azurerm_key_vault_secret.issuer_seed
+
+  lifecycle {
+    destroy = false
+  }
+}

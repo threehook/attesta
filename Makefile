@@ -34,13 +34,13 @@ endef
 DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
-.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
-	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
-	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
-	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete \
-	azure-spire azure-issuer-apply azure-issuer-delete azure-forward azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
+.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward docker-build-issuer k8s-issuer-apply \
+	k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs docker-build-laadpalen-api \
+	docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
+	k8s-traefik k8s-tls k8s-ingress grafana k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet \
+	openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs azure-apply azure-down azure-up azure-destroy azure-backend-apply \
+	azure-backend-policies azure-backend-delete azure-credentials azure-deploy azure-spire azure-issuer-apply azure-issuer-delete azure-forward \
+	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -314,6 +314,23 @@ azure-destroy:
 		TF_VAR_key_vault_allowed_cidrs="$$(gh variable get KEY_VAULT_ALLOWED_CIDRS 2>/dev/null || echo '[]')" \
 		terraform -chdir=$(AZURE_DIR) destroy -auto-approve -var-file=environments/$(AZURE_ENV).tfvars
 
+# The kubeconfig entry of the cluster. A cluster that was destroyed and applied again has a new API server name, so every target below that talks to the
+# cluster fetches the entry first (once per make run; the sub-makes skip it).
+azure-credentials:
+	@test $(MAKELEVEL) -gt 0 || az aks get-credentials --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER) --overwrite-existing
+
+azure-deploy azure-spire azure-backend-apply azure-backend-policies azure-backend-delete azure-issuer-apply azure-issuer-delete azure-forward \
+	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete: azure-credentials
+
+# Everything that runs in a new cluster, in the order they need each other: make azure-deploy TAG=<git sha>. The issuer's data is new as well, so enrol the
+# agent's SPIFFE ID on the page Systemen again (owner platform, environment staging).
+azure-deploy:
+	@test -n "$(TAG)" || { echo "usage: make azure-deploy TAG=<git sha>"; exit 1; }
+	$(MAKE) azure-spire
+	$(MAKE) azure-backend-apply TAG=$(TAG)
+	$(MAKE) azure-issuer-apply TAG=$(TAG)
+	$(MAKE) azure-cicd-apply TAG=$(TAG)
+
 # The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
 # Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
 AZURE_KUBE_CONTEXT := $(AZURE_CLUSTER)
@@ -361,6 +378,11 @@ azure-issuer-apply:
 	@kubectl --context $(AZURE_KUBE_CONTEXT) get secret attesta-issuer-auth -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(AZURE_KUBE_CONTEXT) create secret generic attesta-issuer-auth -n $(NAMESPACE) \
 			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=staff-password=$$(openssl rand -hex 12) --from-literal=admin-password=$$(openssl rand -hex 12)
+	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/serviceaccount.yaml
+	kubectl --context $(AZURE_KUBE_CONTEXT) annotate serviceaccount attesta-issuer-api -n $(NAMESPACE) --overwrite \
+		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-$(AZURE_NAME)-issuer --query clientId -o tsv)
+	sed -e 's/KEY_VAULT_NAME/$(call AZURE_ENV_VAR,key_vault_name)/' -e "s/TENANT_ID/$$(az account show --query tenantId -o tsv)/" k8s/cloud/issuer/seed.yaml | \
+		kubectl --context $(AZURE_KUBE_CONTEXT) apply -f -
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/postgres -f k8s/cloud/issuer/keycloak -f k8s/cloud/issuer/mailpit
 	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak deployment/issuer-mailpit -n $(NAMESPACE)
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/api-deployment.yaml -f k8s/cloud/issuer/api-service.yaml \
@@ -377,11 +399,10 @@ azure-issuer-delete:
 		-f k8s/cloud/issuer/gui-deployment.yaml -f k8s/cloud/issuer/gui-service.yaml --ignore-not-found
 
 # The only way in: nodes and apps have no public IP. Forwards the pages (4000), the issuer API (4001), Keycloak (8180) and Mailpit's web page (8025) to this
-# machine until Ctrl-C. The addresses carry the name ISSUER_HOST, which must resolve to 127.0.0.1 here (a line in /etc/hosts), because tokens and credentials name it.
-ISSUER_HOST := issuer.tst.attesta.corbencreatives.nl
+# machine until Ctrl-C. The addresses carry the name ISSUER_HOST, because tokens and credentials name it; browsers resolve *.localhost to this machine themselves,
+# and a name under corbencreatives.nl would be forced to https by that domain's HSTS.
+ISSUER_HOST := issuer.tst.attesta.localhost
 azure-forward:
-	@getent hosts $(ISSUER_HOST) >/dev/null 2>&1 || dscacheutil -q host -a name $(ISSUER_HOST) | grep -q 127.0.0.1 || \
-		{ echo "add this line to /etc/hosts first: 127.0.0.1 $(ISSUER_HOST)"; exit 1; }
 	@echo "pages http://$(ISSUER_HOST):4000   Keycloak http://$(ISSUER_HOST):8180/auth   mail http://localhost:8025"
 	@trap 'kill 0' INT TERM EXIT; \
 		kubectl --context $(AZURE_KUBE_CONTEXT) -n $(NAMESPACE) port-forward svc/attesta-issuer-gui 4000:4000 & \

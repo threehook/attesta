@@ -21,11 +21,11 @@ data:
         "secret": "${ISSUER_GUI_CLIENT_SECRET}",
         "standardFlowEnabled": true,
         "directAccessGrantsEnabled": false,
-        "redirectUris": ["http://issuer.tst.attesta.corbencreatives.nl:4000/callback"],
+        "redirectUris": ["http://issuer.tst.attesta.localhost:4000/callback"],
         "webOrigins": [],
         "attributes": {
           "pkce.code.challenge.method": "S256",
-          "post.logout.redirect.uris": "http://issuer.tst.attesta.corbencreatives.nl:4000/"
+          "post.logout.redirect.uris": "http://issuer.tst.attesta.localhost:4000/"
         }
       }],
       "users": [{

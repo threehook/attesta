@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.6"
+  required_version = ">= 1.7"
 
   # Execution mode of the workspace is Local: the GitHub workflow runs Terraform, HCP keeps the state.
   cloud {

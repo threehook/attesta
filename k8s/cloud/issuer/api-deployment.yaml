@@ -14,7 +14,9 @@ spec:
     metadata:
       labels:
         app: attesta-issuer-api
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: attesta-issuer-api
       # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4001 for every Service in the namespace, which can
       # collide with our own settings of the same name.
       enableServiceLinks: false
@@ -28,7 +30,7 @@ spec:
             # How wallets and staff reach the issuer, through make azure-forward; this address is written into the QR codes, the credentials and the metadata.
             # The wallet in the agent's pod and the backend beside it map it to the Service.
             - name: ATTESTA_ISSUER_PUBLIC_URL
-              value: http://issuer.tst.attesta.corbencreatives.nl:4001
+              value: http://issuer.tst.attesta.localhost:4001
             # The mails go to Mailpit (k8s/cloud/issuer/mailpit).
             - name: ATTESTA_ISSUER_SMTP_HOST
               value: issuer-mailpit
@@ -46,6 +48,12 @@ spec:
             # How long the Approval credential lasts after people approved an action; the page Goedkeuringen shows it.
             - name: ATTESTA_ISSUER_APPROVAL_LIFETIME
               value: 15m
+            # Signs every credential and fixes the issuer's DID; from the Key Vault (seed.yaml).
+            - name: ATTESTA_ISSUER_SEED
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-seed
+                  key: seed
             - name: ATTESTA_ISSUER_DB_HOST
               value: issuer-postgres:5432
             - name: ATTESTA_ISSUER_DB_USER
@@ -60,12 +68,16 @@ spec:
                   key: password
             # Staff sign in at Keycloak (k8s/local/issuer/keycloak); the API checks their tokens. The issuer is the address in the tokens, the metadata is read inside the cluster.
             - name: ATTESTA_ISSUER_OIDC_ISSUER
-              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth/realms/attesta
+              value: http://issuer.tst.attesta.localhost:8180/auth/realms/attesta
             - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
               value: http://issuer-keycloak:8080/auth/realms/attesta
           volumeMounts:
             - name: spiffe-workload-api
               mountPath: /spiffe-workload-api
+              readOnly: true
+            # Mounting it is what makes the driver keep the secret as the Secret attesta-issuer-seed; nothing reads the files.
+            - name: issuer-seed
+              mountPath: /mnt/issuer-seed
               readOnly: true
           resources:
             requests:
@@ -90,3 +102,9 @@ spec:
           csi:
             driver: csi.spiffe.io
             readOnly: true
+        - name: issuer-seed
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: issuer-seed

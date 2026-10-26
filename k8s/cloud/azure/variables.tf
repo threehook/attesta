@@ -89,3 +89,13 @@ variable "wallet_service_account" {
   type    = string
   default = "cicd-agent"
 }
+
+variable "issuer_namespace" {
+  type    = string
+  default = "attesta"
+}
+
+variable "issuer_service_account" {
+  type    = string
+  default = "attesta-issuer-api"
+}

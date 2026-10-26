@@ -35,7 +35,7 @@ spec:
               valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: staff-password } }
             # Tokens name the server as staff reach it, through make azure-forward; pods reach it by its Service name, and the back channel answers with that address.
             - name: KC_HOSTNAME
-              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth
+              value: http://issuer.tst.attesta.localhost:8180/auth
             - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
               value: "true"
             - name: KC_HTTP_RELATIVE_PATH

@@ -7,9 +7,14 @@ package policy
 # carries the advice `request_approval`, which tells the agent it may park the action until people approve it.
 # input.credentials holds each presented credential by type, with its issuer and its disclosed claims by name (the approvers as JSON text, a list of texts).
 
-trusted_issuers := {"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA"}
+# The issuers' DIDs: the local issuer (its development seed) and the one on AKS (its seed is in the Key Vault; the DID changes when the vault is made again).
+trusted_issuers := {
+	"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA",
+	"did:key:z6Mkra6yQRUV8UU2xWTJ9FXqRW23546t4dVgXQQJDd6oc7yk",
+}
 
-agent := "spiffe://attesta.local/ns/attesta/sa/cicd-agent"
+# The agent's pod, in whatever trust domain the issuer serves: the issuer enrols and issues only for its own.
+agent := `^spiffe://[^/]+/ns/attesta/sa/cicd-agent$`
 
 approvals_needed := 2
 
@@ -42,7 +47,7 @@ decision := deny("Workload ontbreekt") if {
 } else := deny(concat("", ["Uitgever niet vertrouwd: ", workload.issuer])) if {
 	not workload.issuer in trusted_issuers
 } else := deny(concat("", ["Systeem niet toegestaan: ", workload.claims.workload])) if {
-	workload.claims.workload != agent
+	not regex.match(agent, workload.claims.workload)
 } else := {"decision": "Permit", "reason": concat("", ["Toegestaan voor productie met eenmalige goedkeuring van ", concat(", ", sort(approval_approvers))])} if {
 	production
 	approved

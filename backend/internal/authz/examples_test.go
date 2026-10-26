@@ -39,6 +39,22 @@ func TestCICDPolicyAdvisesOnlyWhereAnApprovalCouldHelp(t *testing.T) {
 			Issuer: demoIssuer,
 			Claims: map[string]string{"workload": "spiffe://attesta.local/ns/x/sa/y"},
 		}}}, false},
+		"the agent in another trust domain": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
+			Issuer: demoIssuer,
+			Claims: map[string]string{"workload": "spiffe://tst.attesta.corbencreatives.nl/ns/attesta/sa/cicd-agent", "environment": "staging"},
+		}}}, true},
+		"a path that only ends like the agent's": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
+			Issuer: demoIssuer,
+			Claims: map[string]string{"workload": "spiffe://x.test/a/ns/attesta/sa/cicd-agent", "environment": "staging"},
+		}}}, false},
+		"the issuer on AKS": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
+			Issuer: "did:key:z6Mkra6yQRUV8UU2xWTJ9FXqRW23546t4dVgXQQJDd6oc7yk",
+			Claims: map[string]string{"workload": agent, "environment": "staging"},
+		}}}, true},
+		"an issuer that is not trusted": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
+			Issuer: "did:key:z6MkunknownIssuer",
+			Claims: map[string]string{"workload": agent, "environment": "staging"},
+		}}}, false},
 		"an unknown resource": {Input{Resource: "format-disk", Credentials: map[string]Credential{"Workload": workload}}, false},
 	} {
 		t.Run(name, func(t *testing.T) {
