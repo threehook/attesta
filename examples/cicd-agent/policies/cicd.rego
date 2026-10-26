@@ -9,7 +9,8 @@ package policy
 
 trusted_issuers := {"did:key:z6MkoaRYujmrv9XRRN1maDNHYHEBWDgV4uEtgH5kN4WsBQZA"}
 
-agent := "spiffe://attesta.local/ns/attesta/sa/cicd-agent"
+# The agent's pod, in whatever trust domain the issuer serves: the issuer enrols and issues only for its own.
+agent := `^spiffe://[^/]+/ns/attesta/sa/cicd-agent$`
 
 approvals_needed := 2
 
@@ -42,7 +43,7 @@ decision := deny("Workload ontbreekt") if {
 } else := deny(concat("", ["Uitgever niet vertrouwd: ", workload.issuer])) if {
 	not workload.issuer in trusted_issuers
 } else := deny(concat("", ["Systeem niet toegestaan: ", workload.claims.workload])) if {
-	workload.claims.workload != agent
+	not regex.match(agent, workload.claims.workload)
 } else := {"decision": "Permit", "reason": concat("", ["Toegestaan voor productie met eenmalige goedkeuring van ", concat(", ", sort(approval_approvers))])} if {
 	production
 	approved
