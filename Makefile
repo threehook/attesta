@@ -34,13 +34,13 @@ endef
 DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
-.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward \
-	docker-build-issuer k8s-issuer-apply k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs \
-	docker-build-laadpalen-api docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
-	k8s-traefik k8s-tls k8s-ingress grafana \
-	k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs \
-	azure-apply azure-down azure-up azure-destroy azure-backend-apply azure-backend-policies azure-backend-delete \
-	azure-spire azure-issuer-apply azure-issuer-delete azure-forward azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
+.PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward docker-build-issuer k8s-issuer-apply \
+	k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs docker-build-laadpalen-api \
+	docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
+	k8s-traefik k8s-tls k8s-ingress grafana k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet \
+	openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs azure-apply azure-down azure-up azure-destroy azure-backend-apply \
+	azure-backend-policies azure-backend-delete azure-credentials azure-deploy azure-spire azure-issuer-apply azure-issuer-delete azure-forward \
+	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete lint
 
 # golangci-lint (version 2.13.2, as in CI) with the repository's .golangci.yaml, in every Go module.
 lint:
@@ -313,6 +313,23 @@ azure-destroy:
 	TF_VAR_api_allowed_cidrs="$$(gh variable get API_ALLOWED_CIDRS)" \
 		TF_VAR_key_vault_allowed_cidrs="$$(gh variable get KEY_VAULT_ALLOWED_CIDRS 2>/dev/null || echo '[]')" \
 		terraform -chdir=$(AZURE_DIR) destroy -auto-approve -var-file=environments/$(AZURE_ENV).tfvars
+
+# The kubeconfig entry of the cluster. A cluster that was destroyed and applied again has a new API server name, so every target below that talks to the
+# cluster fetches the entry first (once per make run; the sub-makes skip it).
+azure-credentials:
+	@test $(MAKELEVEL) -gt 0 || az aks get-credentials --resource-group $(AZURE_RG) --name $(AZURE_CLUSTER) --overwrite-existing
+
+azure-deploy azure-spire azure-backend-apply azure-backend-policies azure-backend-delete azure-issuer-apply azure-issuer-delete azure-forward \
+	azure-cicd-apply azure-cicd-policies azure-cicd-keys azure-cicd-delete: azure-credentials
+
+# Everything that runs in a new cluster, in the order they need each other: make azure-deploy TAG=<git sha>. The issuer's data is new as well, so enrol the
+# agent's SPIFFE ID on the page Systemen again (owner platform, environment staging).
+azure-deploy:
+	@test -n "$(TAG)" || { echo "usage: make azure-deploy TAG=<git sha>"; exit 1; }
+	$(MAKE) azure-spire
+	$(MAKE) azure-backend-apply TAG=$(TAG)
+	$(MAKE) azure-issuer-apply TAG=$(TAG)
+	$(MAKE) azure-cicd-apply TAG=$(TAG)
 
 # The backend on AKS (k8s/cloud/backend), from the image the images workflow pushed to ghcr.io: make azure-backend-apply TAG=<git sha>.
 # Same pattern as k8s-apply: apply, then set the tag, because the manifest holds only a placeholder.
