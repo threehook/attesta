@@ -381,7 +381,8 @@ azure-issuer-apply:
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/serviceaccount.yaml
 	kubectl --context $(AZURE_KUBE_CONTEXT) annotate serviceaccount attesta-issuer-api -n $(NAMESPACE) --overwrite \
 		azure.workload.identity/client-id=$$(az identity show -g $(AZURE_RG) -n id-$(AZURE_NAME)-issuer --query clientId -o tsv)
-	sed -e 's/KEY_VAULT_NAME/$(call AZURE_ENV_VAR,key_vault_name)/' -e "s/TENANT_ID/$$(az account show --query tenantId -o tsv)/" k8s/cloud/issuer/seed.yaml | \
+	sed -e 's/KEY_VAULT_NAME/$(call AZURE_ENV_VAR,key_vault_name)/' -e "s/TENANT_ID/$$(az account show --query tenantId -o tsv)/" \
+		-e "s/CLIENT_ID/$$(az identity show -g $(AZURE_RG) -n id-$(AZURE_NAME)-issuer --query clientId -o tsv)/" k8s/cloud/issuer/seed.yaml | \
 		kubectl --context $(AZURE_KUBE_CONTEXT) apply -f -
 	kubectl --context $(AZURE_KUBE_CONTEXT) apply -f k8s/cloud/issuer/postgres -f k8s/cloud/issuer/keycloak -f k8s/cloud/issuer/mailpit
 	kubectl --context $(AZURE_KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak deployment/issuer-mailpit -n $(NAMESPACE)
