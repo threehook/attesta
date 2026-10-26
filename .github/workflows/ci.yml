@@ -135,6 +135,12 @@ jobs:
           - image: attesta-backend
             context: backend
             file: backend/Dockerfile
+          - image: attesta-issuer-api
+            context: issuer/api
+            file: issuer/api/Dockerfile
+          - image: attesta-issuer-gui
+            context: .
+            file: issuer/gui/Dockerfile
           - image: cicd-wallet
             context: .
             file: wallet/Dockerfile

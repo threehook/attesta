@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attesta-issuer-gui
+  namespace: attesta
+  labels:
+    app: attesta-issuer-gui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attesta-issuer-gui
+  template:
+    metadata:
+      labels:
+        app: attesta-issuer-gui
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: attesta-issuer-gui
+          image: ghcr.io/threehook/attesta-issuer-gui:dev
+          ports:
+            - containerPort: 4000
+          env:
+            - name: ATTESTA_ISSUER_API_URL
+              value: http://attesta-issuer-api:4001
+            # The Policy Editor has the backend check a policy.
+            - name: ATTESTA_BACKEND_URL
+              value: http://attesta-backend:8080
+            - name: ATTESTA_BACKEND_ADMIN_TOKEN
+              valueFrom: { secretKeyRef: { name: attesta-backend, key: admin-token } }
+            # Staff sign in at Keycloak and come back to the address make azure-forward serves; the server's metadata is read inside the cluster.
+            - name: ATTESTA_ISSUER_GUI_PUBLIC_URL
+              value: http://issuer.tst.attesta.corbencreatives.nl:4000
+            - name: ATTESTA_ISSUER_OIDC_ISSUER
+              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
+              value: http://issuer-keycloak:8080/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: attesta-issuer-auth, key: client-secret } }
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /logo.svg
+              port: 4000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /logo.svg
+              port: 4000
+            initialDelaySeconds: 10
+            periodSeconds: 10

@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: attesta-issuer-api
+  namespace: attesta
+  labels:
+    app: attesta-issuer-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: attesta-issuer-api
+  template:
+    metadata:
+      labels:
+        app: attesta-issuer-api
+    spec:
+      # Kubernetes would otherwise inject variables such as ATTESTA_ISSUER_PORT=tcp://10.0.0.1:4001 for every Service in the namespace, which can
+      # collide with our own settings of the same name.
+      enableServiceLinks: false
+      containers:
+        - name: attesta-issuer-api
+          # The image is a placeholder: make azure-issuer-apply sets the pushed tag (git sha) with `kubectl set image`.
+          image: ghcr.io/threehook/attesta-issuer-api:dev
+          ports:
+            - containerPort: 4001
+          env:
+            # How wallets and staff reach the issuer, through make azure-forward; this address is written into the QR codes, the credentials and the metadata.
+            # The wallet in the agent's pod and the backend beside it map it to the Service.
+            - name: ATTESTA_ISSUER_PUBLIC_URL
+              value: http://issuer.tst.attesta.corbencreatives.nl:4001
+            # The mails go to Mailpit (k8s/cloud/issuer/mailpit).
+            - name: ATTESTA_ISSUER_SMTP_HOST
+              value: issuer-mailpit
+            - name: ATTESTA_ISSUER_SMTP_PORT
+              value: "1025"
+            - name: ATTESTA_ISSUER_SMTP_TLS
+              value: none
+            # Workloads show their JWT-SVID (SPIRE, make azure-spire); the audience is what it must name and the workload asks SPIRE for exactly this.
+            - name: ATTESTA_ISSUER_SPIFFE_TRUST_DOMAIN
+              value: tst.attesta.corbencreatives.nl
+            - name: ATTESTA_ISSUER_SPIFFE_SOCKET
+              value: unix:///spiffe-workload-api/spire-agent.sock
+            - name: ATTESTA_ISSUER_SPIFFE_AUDIENCE
+              value: attesta-issuer
+            # How long the Approval credential lasts after people approved an action; the page Goedkeuringen shows it.
+            - name: ATTESTA_ISSUER_APPROVAL_LIFETIME
+              value: 15m
+            - name: ATTESTA_ISSUER_DB_HOST
+              value: issuer-postgres:5432
+            - name: ATTESTA_ISSUER_DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: user
+            - name: ATTESTA_ISSUER_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: password
+            # Staff sign in at Keycloak (k8s/local/issuer/keycloak); the API checks their tokens. The issuer is the address in the tokens, the metadata is read inside the cluster.
+            - name: ATTESTA_ISSUER_OIDC_ISSUER
+              value: http://issuer.tst.attesta.corbencreatives.nl:8180/auth/realms/attesta
+            - name: ATTESTA_ISSUER_OIDC_DISCOVERY_URL
+              value: http://issuer-keycloak:8080/auth/realms/attesta
+          volumeMounts:
+            - name: spiffe-workload-api
+              mountPath: /spiffe-workload-api
+              readOnly: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 4001
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 4001
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: spiffe-workload-api
+          csi:
+            driver: csi.spiffe.io
+            readOnly: true

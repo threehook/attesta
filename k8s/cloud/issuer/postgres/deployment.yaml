@@ -1,0 +1,67 @@
+# The issuer's database: its signing store and its entitlements. Only the issuer API reaches it; its Service is not exposed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: issuer-postgres
+  namespace: attesta
+  labels:
+    app: issuer-postgres
+spec:
+  replicas: 1
+  # The volume can be mounted by one pod at a time.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: issuer-postgres
+  template:
+    metadata:
+      labels:
+        app: issuer-postgres
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: user
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: attesta-issuer-db
+                  key: password
+            # The image would otherwise create a database named after the user. The issuer's store would find it empty and fail instead of provisioning its own.
+            - name: POSTGRES_DB
+              value: issuer_entitlements
+            # A subdirectory: the volume's root can hold a lost+found that initdb refuses.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 384Mi
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -U \"$POSTGRES_USER\""]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: issuer-postgres
