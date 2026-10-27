@@ -48,7 +48,7 @@ func TestCICDPolicyAdvisesOnlyWhereAnApprovalCouldHelp(t *testing.T) {
 			Claims: map[string]string{"workload": "spiffe://x.test/a/ns/attesta/sa/cicd-agent", "environment": "staging"},
 		}}}, false},
 		"the issuer on AKS": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
-			Issuer: "did:key:z6Mkra6yQRUV8UU2xWTJ9FXqRW23546t4dVgXQQJDd6oc7yk",
+			Issuer: "did:key:z6MkqLtGwFQo6feNXDjwUAxDt5atkyjWNeWFjyi1EbbxFgeJ",
 			Claims: map[string]string{"workload": agent, "environment": "staging"},
 		}}}, true},
 		"an issuer that is not trusted": {Input{Resource: "deploy:prod:v2.0.0", Credentials: map[string]Credential{"Workload": {
