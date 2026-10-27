@@ -1,0 +1,9 @@
+# The issuer's default mail server. The Secret attesta-issuer-smtp (make k8s-issuer-mail), listed after this in the API's envFrom, replaces these keys.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: attesta-issuer-smtp-default
+  namespace: attesta
+data:
+  ATTESTA_ISSUER_SMTP_HOST: issuer-mailpit
+  ATTESTA_ISSUER_SMTP_PORT: "1025"

@@ -24,10 +24,13 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 4001
-          # Where the mail with the QR code goes: the mail server's settings are in this Secret (make k8s-issuer-mail).
+          # Where the mail with the QR code goes: Mailpit, unless the Secret of make k8s-issuer-mail exists; the later entry wins.
           envFrom:
+            - configMapRef:
+                name: attesta-issuer-smtp-default
             - secretRef:
                 name: attesta-issuer-smtp
+                optional: true
           env:
             # Wallets reach the issuer through the https Ingress (k8s/local/ingress); this address is written into the QR codes and the issuer metadata.
             - name: ATTESTA_ISSUER_PUBLIC_URL

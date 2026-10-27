@@ -160,9 +160,12 @@ pnpm --filter @attesta/issuer-gui test    # the pages against a stand-in API and
 
 ## Mail
 
-In the cluster the SMTP settings are one Secret, `attesta-issuer-smtp`, made with
+In the cluster the issuer mails through Mailpit, which keeps every mail and delivers none. `make k8s-issuer-mailbox` serves its web page at http://localhost:8025,
+where the mail with the QR code is shown and the QR code can be downloaded.
+
+To deliver to real mailboxes, make the Secret `attesta-issuer-smtp` with
 `make k8s-issuer-mail SMTP_HOST=smtp.gmail.com SMTP_USER=<gmail> MAIL_FROM=<gmail>` (Gmail needs 2-Step Verification and an app password). It asks for the password and restarts the API.
-The sender must be an address or domain that the mail server allows. `make k8s-issuer-apply` stops until the Secret exists.
+The sender must be an address or domain that the mail server allows. Delete the Secret and restart the API to go back to Mailpit.
 
 ## Deploy (Docker Desktop Kubernetes)
 

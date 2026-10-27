@@ -35,7 +35,7 @@ DEMO_CERT_DIR := $(HOME)/.config/attesta/lego/.lego/certificates
 DEMO_CERT_NAME := _.attesta.corbencreatives.nl
 
 .PHONY: build test docker-build k8s-apply k8s-secret k8s-delete k8s-restart k8s-logs k8s-port-forward docker-build-issuer k8s-issuer-apply \
-	k8s-issuer-secret k8s-issuer-mail k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs docker-build-laadpalen-api \
+	k8s-issuer-secret k8s-issuer-mail k8s-issuer-mailbox k8s-issuer-delete k8s-issuer-restart k8s-issuer-logs k8s-issuer-gui-logs docker-build-laadpalen-api \
 	docker-build-laadpalen-gui laadpalen laadpalen-secret laadpalen-policies laadpalen-delete laadpalen-logs laadpalen-attesta-logs \
 	k8s-traefik k8s-tls k8s-ingress grafana k8s-spire k8s-issuer-spiffe k8s-issuer-approval-mail docker-build-cicd-agent docker-build-cicd-wallet \
 	openbao cicd cicd-secret cicd-policies cicd-api-key cicd-delete cicd-logs azure-apply azure-down azure-up azure-destroy azure-backend-apply \
@@ -105,8 +105,9 @@ k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/namespace.yaml
 	kubectl --context $(KUBE_CONTEXT) delete deployment/attesta-issuer service/attesta-issuer deployment/issuer-login service/issuer-login -n $(NAMESPACE) --ignore-not-found
 	$(MAKE) k8s-issuer-secret
-	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres -f k8s/local/issuer/keycloak
-	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak -n $(NAMESPACE)
+	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/backend/storageclass.yaml -f k8s/local/issuer/postgres-data -f k8s/local/issuer/postgres -f k8s/local/issuer/keycloak \
+		-f k8s/local/issuer/mailpit
+	kubectl --context $(KUBE_CONTEXT) rollout status deployment/issuer-postgres deployment/issuer-keycloak deployment/issuer-mailpit -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) apply -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-api attesta-issuer-api=$(ISSUER_API_IMAGE) -n $(NAMESPACE)
 	kubectl --context $(KUBE_CONTEXT) set image deployment/attesta-issuer-gui attesta-issuer-gui=$(ISSUER_GUI_IMAGE) -n $(NAMESPACE)
@@ -115,10 +116,8 @@ k8s-issuer-apply: docker-build-issuer
 	kubectl --context $(KUBE_CONTEXT) rollout status deployment/attesta-issuer-gui -n $(NAMESPACE)
 
 # The issuer database's account and the staff login's secrets, random, created once. Changing the database account later does not change the database that already
-# exists. The mail settings come from k8s-issuer-mail.
+# exists.
 k8s-issuer-secret:
-	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-smtp -n $(NAMESPACE) >/dev/null 2>&1 || \
-		{ echo "the issuer needs mail settings: run make k8s-issuer-mail SMTP_HOST=smtp.gmail.com SMTP_USER=<gmail> MAIL_FROM=<gmail>"; exit 1; }
 	@kubectl --context $(KUBE_CONTEXT) get secret attesta-issuer-db -n $(NAMESPACE) >/dev/null 2>&1 || \
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-db -n $(NAMESPACE) \
 			--from-literal=user=issuer --from-literal=password=$$(openssl rand -hex 24)
@@ -126,7 +125,11 @@ k8s-issuer-secret:
 		kubectl --context $(KUBE_CONTEXT) create secret generic attesta-issuer-auth -n $(NAMESPACE) \
 			--from-literal=client-secret=$$(openssl rand -hex 24) --from-literal=staff-password=$$(openssl rand -hex 12) --from-literal=admin-password=$$(openssl rand -hex 12)
 
-# Points the issuer at a real mail server: make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender> [SMTP_PORT=587]. The password is asked for and
+# Mailpit's web page, where the issuer's mails and their QR codes are read: http://localhost:8025
+k8s-issuer-mailbox:
+	kubectl --context $(KUBE_CONTEXT) port-forward -n $(NAMESPACE) svc/issuer-mailpit 8025:8025
+
+# Points the issuer at a real mail server instead of Mailpit: make k8s-issuer-mail SMTP_HOST=<server> SMTP_USER=<login> MAIL_FROM=<sender> [SMTP_PORT=587]. The password is asked for and
 # goes straight into the Secret, never on a command line. Port 587 secures the connection with STARTTLS and port 465 with TLS.
 SMTP_PORT ?= 587
 SMTP_SECRET ?= attesta-issuer-smtp
@@ -141,7 +144,7 @@ k8s-issuer-mail:
 
 # Leaves the shared "attesta" namespace alone — k8s-delete (backend) owns it — and the issuer's data: its volume claim and its Secret.
 k8s-issuer-delete:
-	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres -f k8s/local/issuer/keycloak --ignore-not-found
+	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/postgres -f k8s/local/issuer/keycloak -f k8s/local/issuer/mailpit --ignore-not-found
 	kubectl --context $(KUBE_CONTEXT) delete -f k8s/local/issuer/api-deployment.yaml -f k8s/local/issuer/api-service.yaml -f k8s/local/issuer/gui-deployment.yaml -f k8s/local/issuer/gui-service.yaml --ignore-not-found
 
 k8s-issuer-restart:
@@ -221,8 +224,8 @@ k8s-spire:
 k8s-issuer-spiffe:
 	kubectl --context $(KUBE_CONTEXT) patch deployment/attesta-issuer-api -n $(NAMESPACE) --patch-file k8s/local/issuer/api-spiffe-patch.yaml
 
-# Who is mailed when a workload asks for approval of an action: make k8s-issuer-approval-mail APPROVAL_NOTIFY=<address>[,<address>]. The mail goes through the issuer's mail server
-# (k8s-issuer-mail), so the addresses must be real mailboxes. An empty list sends no mail.
+# Who is mailed when a workload asks for approval of an action: make k8s-issuer-approval-mail APPROVAL_NOTIFY=<address>[,<address>]. The mail goes through the issuer's mail server:
+# Mailpit keeps it, a server set with k8s-issuer-mail delivers it, so there the addresses must be real mailboxes. An empty list sends no mail.
 APPROVAL_NOTIFY ?=
 k8s-issuer-approval-mail:
 	kubectl --context $(KUBE_CONTEXT) set env deployment/attesta-issuer-api -n $(NAMESPACE) ATTESTA_ISSUER_APPROVAL_NOTIFY="$(APPROVAL_NOTIFY)"
