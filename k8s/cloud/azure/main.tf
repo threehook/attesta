@@ -2,30 +2,41 @@ locals {
   name = "${var.environment}-${var.application}"
 }
 
-resource "azurerm_resource_group" "this" {
-  name     = "rg-${local.name}"
-  location = var.location
+# The group, VNet, subnet and vault are made by hand and kept (README), so the daily destroy leaves them; data sources find them.
+# resource "azurerm_resource_group" "this" {
+#   name     = "rg-${local.name}"
+#   location = var.location
+# }
+
+# resource "azurerm_virtual_network" "this" {
+#   name                = "vnet-${local.name}"
+#   location            = azurerm_resource_group.this.location
+#   resource_group_name = azurerm_resource_group.this.name
+#   address_space       = ["10.20.0.0/16"]
+# }
+
+# resource "azurerm_subnet" "aks" {
+#   name                 = "snet-aks"
+#   resource_group_name  = azurerm_resource_group.this.name
+#   virtual_network_name = azurerm_virtual_network.this.name
+#   address_prefixes     = ["10.20.0.0/22"]
+#   service_endpoints    = ["Microsoft.KeyVault"]
+# }
+
+data "azurerm_resource_group" "this" {
+  name = "rg-${local.name}"
 }
 
-resource "azurerm_virtual_network" "this" {
-  name                = "vnet-${local.name}"
-  location            = azurerm_resource_group.this.location
-  resource_group_name = azurerm_resource_group.this.name
-  address_space       = ["10.20.0.0/16"]
-}
-
-resource "azurerm_subnet" "aks" {
+data "azurerm_subnet" "aks" {
   name                 = "snet-aks"
-  resource_group_name  = azurerm_resource_group.this.name
-  virtual_network_name = azurerm_virtual_network.this.name
-  address_prefixes     = ["10.20.0.0/22"]
-  service_endpoints    = ["Microsoft.KeyVault"]
+  resource_group_name  = data.azurerm_resource_group.this.name
+  virtual_network_name = "vnet-${local.name}"
 }
 
 resource "azurerm_kubernetes_cluster" "this" {
   name                    = "aks-${local.name}"
-  location                = azurerm_resource_group.this.location
-  resource_group_name     = azurerm_resource_group.this.name
+  location                = data.azurerm_resource_group.this.location
+  resource_group_name     = data.azurerm_resource_group.this.name
   dns_prefix              = local.name
   private_cluster_enabled = false
   sku_tier                = "Free"
@@ -48,7 +59,7 @@ resource "azurerm_kubernetes_cluster" "this" {
     node_count      = var.node_count
     vm_size         = var.node_size
     os_disk_size_gb = 32
-    vnet_subnet_id  = azurerm_subnet.aks.id
+    vnet_subnet_id  = data.azurerm_subnet.aks.id
   }
 
   identity {

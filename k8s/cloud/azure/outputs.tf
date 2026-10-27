@@ -1,5 +1,5 @@
 output "resource_group" {
-  value = azurerm_resource_group.this.name
+  value = data.azurerm_resource_group.this.name
 }
 
 output "cluster" {
@@ -7,7 +7,7 @@ output "cluster" {
 }
 
 output "key_vault_uri" {
-  value = azurerm_key_vault.this.vault_uri
+  value = data.azurerm_key_vault.this.vault_uri
 }
 
 output "wallet_client_id" {
