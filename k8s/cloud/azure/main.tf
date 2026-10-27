@@ -2,7 +2,8 @@ locals {
   name = "${var.environment}-${var.application}"
 }
 
-# The group, VNet, subnet and vault are made by hand and kept (README), so the daily destroy leaves them; data sources find them.
+# In tst the group, VNet, subnet and vault are made by hand and kept (README), so the daily destroy leaves them; data sources find them.
+# Where Terraform creates them (a new environment, production), uncomment these blocks and replace the data sources.
 # resource "azurerm_resource_group" "this" {
 #   name     = "rg-${local.name}"
 #   location = var.location

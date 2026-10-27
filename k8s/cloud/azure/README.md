@@ -1,8 +1,8 @@
 # Azure infrastructure
 
-Terraform for the AKS cluster and the identities of the wallet and the issuer, applied by `.github/workflows/terraform.yml`. The resource group, VNet, subnet and
-Key Vault are made by hand once and kept; Terraform looks them up (their `resource` blocks are commented out in `main.tf` and `keyvault.tf`), so destroying the
-environment removes only the cluster, the identities and their role assignments. Terraform manages identities and their roles; it never writes into the vault.
+Terraform for the AKS cluster and the identities of the wallet and the issuer, applied by `.github/workflows/terraform.yml`. In tst the resource group, VNet, subnet and
+Key Vault are made by hand once and kept, so the daily destroy takes only the cluster, the identities and their role assignments; Terraform looks them up. Their
+`resource` blocks stay in `main.tf` and `keyvault.tf`, commented out, for an environment where Terraform creates them. Terraform manages identities and their roles; it never writes into the vault.
 
 ## What a cloud engineer makes by hand, once
 

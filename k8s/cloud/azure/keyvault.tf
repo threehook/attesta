@@ -1,6 +1,6 @@
 data "azurerm_client_config" "current" {}
 
-# Made by hand and kept (README); the data source below finds it.
+# In tst made by hand and kept (README), found by the data source below; uncomment where Terraform creates the vault.
 # resource "azurerm_key_vault" "this" {
 #   name                = var.key_vault_name
 #   location            = azurerm_resource_group.this.location
